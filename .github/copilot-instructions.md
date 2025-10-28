@@ -21,13 +21,30 @@
 5. **Report Generation** (`/projects/{id}/report.docx`) pulls full project graph (`ProjectReadWithFindings`) and feeds it to `generate_report_docx`/`pdf`.
 6. **Frontend** consumes JSON responses; charts are built from the `RiskMapping` utility model.
 
-## 🔧 Development Workflow
-- **Start the stack**: `docker-compose up --build -d` (backend, db, frontend).
-- **Run backend locally** (outside Docker) – ensure the same virtualenv and `pip install -r backend/requirements.txt` (includes `fastapi`, `sqlmodel`, `uvicorn`).
-- **Database migrations**: No Alembic; tables are auto‑created on startup (`create_db_and_tables`).
-- **Testing**: No test suite yet – add `pytest` under `backend/tests/` and run `docker exec vuln-manager-backend pytest`.
-- **Debugging**: Use `uvicorn backend.app.main:app --reload` inside the container or locally; logs show SQL statements (`engine = create_engine(..., echo=True)`).
-- **Lint/format**: `ruff` and `black` are recommended (not bundled). Add a pre‑commit hook if needed.
+## 🔧 Development & Deployment Workflow
+
+### Development Mode
+- **Start dev stack**: `ENVIRONMENT=development docker-compose -f docker-compose.dev.yml up --build -d`
+- **Run backend locally**: Ensure virtualenv and `pip install -r backend/requirements.txt`
+- **Hot Reload**: Development mode enables file watching and auto-reload
+- **Debugging**: Development mode includes SQL query logging and DEBUG level output
+- **Database**: Tables auto-created on startup via `create_db_and_tables`
+- **Testing**: Add tests under `backend/tests/` and run with `docker exec vuln-manager-backend pytest`
+- **Code Quality**: Use `ruff` and `black` (not bundled)
+
+### Production Mode
+- **Start prod stack**: `docker-compose up --build -d`
+- **Performance Settings**:
+  - 2 uvicorn workers (configurable via `WORKERS` env var)
+  - Connection pooling (pool_size=5, max_overflow=10)
+  - Limited concurrency (1000 connections)
+  - Optimized keep-alive (5 seconds)
+- **Logging**: INFO level only, no SQL query logging
+- **Resource Usage**:
+  - Disabled file watching
+  - Efficient connection handling
+  - Minimal logging overhead
+- **Monitoring**: Process and connection metrics available via status endpoints
 
 ## 📏 Project‑Specific Conventions
 - **Risk Rating Normalization** – always use `get_risk_rating` to map raw scanner values to the exact ENUM strings stored in PostgreSQL (`Critical`, `High`, `Medium`, `Low`, `None`).
@@ -38,11 +55,34 @@
 - **Docker Environment Variables** – `DATABASE_URL` defaults to `postgresql+psycopg2://user:password@db:5432/vuln_db`. Override in `.env` for local dev.
 
 ## 🔗 Integration Points & External Dependencies
-- **PostgreSQL** – accessed via `sqlmodel.create_engine`. Ensure the `psycopg2-binary` package is installed.
-- **XML Parsing** – uses `defusedxml` to prevent XXE attacks; only Burp and Nessus schemas are supported.
-- **Report Generation** – `python-docx` for DOCX, `reportlab` for PDF (declared in `backend/requirements.txt`).
-- **Frontend Build** – `npm install && npm run build` inside `frontend/`; the built static files are served by Nginx.
-- **Docker Compose** – `backend` depends on `db`; `frontend` depends on `backend` for API proxying (via Nginx `proxy_pass`).
+
+### Core Dependencies
+- **PostgreSQL**: Accessed via `sqlmodel.create_engine` with connection pooling
+  ```python
+  engine = create_engine(
+      DATABASE_URL,
+      echo=False,
+      pool_pre_ping=True,
+      pool_size=5,
+      max_overflow=10,
+      pool_recycle=3600
+  )
+  ```
+- **XML Parsing**: Uses `defusedxml` for secure XXE-free parsing
+- **Report Generation**: `python-docx` for DOCX, `reportlab` for PDF
+- **Frontend**: React app built with `npm run build`, served by Nginx
+
+### Deployment Configuration
+- **Database Connection**:
+  - Production: Pooled connections with timeout
+  - Development: Echo mode for query logging
+- **Server Settings**:
+  - Production: Multi-worker uvicorn without reload
+  - Development: Single worker with hot-reload
+- **Docker Services**:
+  - `backend`: FastAPI app with optimized uvicorn settings
+  - `db`: PostgreSQL with volume persistence
+  - `frontend`: Nginx serving React build with API proxy
 
 ## 📚 How to Extend
 1. **Add a new scanner**: create a parser function in `parsers.py`, update the `upload_report` endpoint to accept the new `scanner_type`, and extend `get_risk_rating` if needed.

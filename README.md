@@ -30,8 +30,49 @@ VulnManager is a comprehensive, full-stack web application designed to help cybe
 ### 1. Clone Repository and Build
 
 ```bash
-git clone [YOUR_REPO_URL] vuln-manager
+git clone https://github.com/aphesz/vuln-manager.git vuln-manager
 cd vuln-manager
 
 # Build images and start all three services (backend, db, frontend)
-docker-compose up --build -d# vuln-manager
+docker-compose up --build -d
+
+# For development with hot-reload, use:
+ENVIRONMENT=development docker-compose -f docker-compose.dev.yml up --build -d
+```
+
+### 2. Environment Configuration
+
+The application supports two deployment modes:
+
+#### Production Mode (Default)
+- Optimized for performance and stability
+- Multiple workers (2 by default)
+- Connection pooling
+- Minimal logging
+- No file watching/hot-reload
+
+#### Development Mode
+- Enhanced debugging
+- SQL query logging
+- Hot-reload enabled
+- Detailed logging
+- Single worker
+
+### 3. Performance Tuning
+
+Key configuration parameters (set in Dockerfile or environment):
+
+```ini
+# Backend Performance
+WORKERS=2                    # Number of uvicorn workers
+LIMIT_CONCURRENCY=1000       # Maximum concurrent connections
+BACKLOG=2048                # Connection queue size
+TIMEOUT_KEEP_ALIVE=5        # Keep-alive timeout in seconds
+
+# Database Optimization
+POOL_SIZE=5                 # Base pool size
+MAX_OVERFLOW=10             # Maximum additional connections
+POOL_RECYCLE=3600          # Connection recycle time in seconds
+```
+
+For high-traffic deployments, consider adjusting these values based on your hardware resources.
