@@ -11,7 +11,7 @@ services:
       # Connection to the 'db' service
       - DATABASE_URL=postgresql://pgakar:katakunci@db:5432/vulndb
     working_dir: /
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Using production settings from Dockerfile
     depends_on:
       - db
 

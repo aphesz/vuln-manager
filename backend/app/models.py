@@ -4,22 +4,6 @@ from typing import Optional, List
 from sqlmodel import Field, SQLModel, Relationship  # type: ignore
 from enum import Enum
 
-# ---------------------------------------------------------------------------
-# Enum definitions
-# ---------------------------------------------------------------------------
-
-class RiskRating(str, Enum):
-    """Enum matching the PostgreSQL ENUM for the `risk_rating` column.
-
-    Values: Critical, High, Medium, Low, Informational
-    """
-
-    Critical = "Critical"
-    High = "High"
-    Medium = "Medium"
-    Low = "Low"
-    Informational = "Informational"
-
 # --- Base Models ---
 
 class ProjectBase(SQLModel):
@@ -34,6 +18,8 @@ class FindingBase(SQLModel):
     # Use an Enum to enforce the allowed risk rating values at the ORM level.
     # The enum values match the PostgreSQL ENUM defined for the `risk_rating` column.
     class RiskRating(str, Enum):
+        """Enum for risk ratings with proper case values.
+        These must match exactly with the PostgreSQL enum type."""
         Critical = "Critical"
         High = "High"
         Medium = "Medium"

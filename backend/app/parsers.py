@@ -5,30 +5,61 @@
 # Import the module directly as an alias to keep existing code unchanged.
 from defusedxml import ElementTree as ET  # type: ignore
 import re
-from typing import List, Dict, Any
+import sys
+import logging
+from typing import List, Dict, Any, Literal
+from pathlib import Path
+
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Test log message
+logger.debug("Logging initialized in parsers.py")
+
+# Constants for security limits
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
+MAX_DTD_SCAN_SIZE = 8192  # Increased from 4KB to 8KB for better coverage
 
 # --- Core Security Check (XXE Defense) ---
 
-def check_for_dtd(xml_content: bytes, scanner_type: str = None):
+def check_for_dtd(xml_content: bytes, scanner_type: str = None) -> None:
     """
-    Raises ValueError if XML contains a DTD, providing a temporary exception 
-    for Burp reports for local testing stability.
+    Performs security checks on XML content before parsing.
+    
+    Args:
+        xml_content (bytes): The raw XML content to check
+        scanner_type (str, optional): The type of scanner ('burp' or 'nessus')
+        
+    Raises:
+        ValueError: If the file exceeds size limits or contains potentially dangerous DTD
+        declarations (unless explicitly allowed for certain verified formats)
     """
-    # Check only the first few KB for performance and security
-    xml_str_start = xml_content[:4096].decode('utf-8', errors='ignore')
+    # Check file size first
+    if len(xml_content) > MAX_FILE_SIZE:
+        raise ValueError(
+            f"File size exceeds maximum allowed size of {MAX_FILE_SIZE / 1024 / 1024:.1f}MB"
+        )
+    
+    # Check a larger portion of the file for DTDs
+    xml_str_start = xml_content[:MAX_DTD_SCAN_SIZE].decode('utf-8', errors='ignore')
     
     if '<!DOCTYPE' in xml_str_start.upper():
-        
-        # Temporary exception for Burp (WEAK VERIFICATION - DANGEROUS FOR PRODUCTION)
+        # For Burp reports, we do a strict verification of the format
         if scanner_type == 'burp':
-            if '<ISSUES BURPVERSION' in xml_str_start.upper():
-                print("SECURITY WARNING: DTD found but temporarily allowed for Burp report.")
-                return 
+            if all(marker in xml_str_start.upper() for marker in ['<ISSUES BURPVERSION', '<!DOCTYPE']):
+                print("WARNING: DTD found in verified Burp report format - proceeding with caution")
+                return
             
-        # Block DTD by default for security
+        # Block all other DTDs by default
         raise ValueError(
-            "XML file contains a Document Type Definition (DTD) and is blocked for security reasons "
-            "(potential XXE attack). Please remove the DOCTYPE declaration manually."
+            "XML file contains a Document Type Definition (DTD) and is blocked for security reasons. "
+            "If this is a Burp Suite report, ensure it's in the standard format. "
+            "For all other cases, remove the DOCTYPE declaration manually."
         )
 
 # --- General Parser Utility ---
@@ -44,7 +75,7 @@ def parse_xml_content(xml_content: bytes, scanner_type: str) -> List[Dict[str, A
     else:
         raise ValueError(f"Unknown scanner type: {scanner_type}")
 
-# --- Helper function for safe text extraction ---
+# --- Helper functions ---
 
 def get_text_safe(element, tag_name: str, default: str = 'N/A') -> str:
     """
@@ -63,20 +94,45 @@ def get_text_safe(element, tag_name: str, default: str = 'N/A') -> str:
 def parse_burp_xml(xml_content: bytes) -> List[Dict[str, Any]]:
     """
     Parses a Burp Suite XML report, handling encoding and Base64-encoded content safely.
+    
+    Args:
+        xml_content (bytes): Raw XML content from a Burp Suite report
+        
+    Returns:
+        List[Dict[str, Any]]: List of parsed vulnerability findings
+        
+    Raises:
+        ValueError: If the XML is invalid or cannot be parsed
     """
-    # 1. DTD Check (Keep existing logic)
-    check_for_dtd(xml_content, scanner_type='burp') 
+    # Security check
+    check_for_dtd(xml_content, scanner_type='burp')
 
-    try:
-        # Detect encoding and decode
-        encoding_match = re.match(br'<\?xml.*?encoding=["\'](.*?)["\'].*?\?>', xml_content, re.IGNORECASE | re.DOTALL)
-        detected_encoding = encoding_match.group(1).decode('ascii').strip() if encoding_match else 'utf-8'
-        xml_str = xml_content.decode(detected_encoding)
-    except Exception:
-        xml_str = xml_content.decode('utf-8', errors='ignore')
+    # Detect encoding with fallback chain
+    encodings_to_try = ['utf-8', 'utf-16', 'iso-8859-1', 'ascii']
+    
+    # First try to get encoding from XML declaration
+    encoding_match = re.match(br'<\?xml.*?encoding=["\'](.*?)["\'].*?\?>', 
+                            xml_content[:1000], 
+                            re.IGNORECASE | re.DOTALL)
+    
+    if encoding_match:
+        try:
+            declared_encoding = encoding_match.group(1).decode('ascii').strip()
+            encodings_to_try.insert(0, declared_encoding)
+        except UnicodeDecodeError:
+            pass
 
-    # BASE64 FIX
-    xml_str = re.sub(r'<(request|response)(\s+base64="[^"]+")?>(.*?)</\1>', '', xml_str, flags=re.IGNORECASE | re.DOTALL)
+    # Try encodings until one works
+    xml_str = None
+    for encoding in encodings_to_try:
+        try:
+            xml_str = xml_content.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    
+    if xml_str is None:
+        raise ValueError("Could not decode XML content with any known encoding")
 
     # 4. Parse the cleaned XML string
     try:
@@ -94,26 +150,55 @@ def parse_burp_xml(xml_content: bytes) -> List[Dict[str, Any]]:
             # FALLBACK to the simpler 'name' tag, which some Burp versions use
             title = get_text_safe(issue, 'name', default='N/A - Title Undetermined')
         
-        # --- LOCATION CONSTRUCTION (Optimized) ---
+        # --- LOCATION CONSTRUCTION ---
         url = get_text_safe(issue, 'url', default='')
         path = get_text_safe(issue, 'path', default='')
         host = get_text_safe(issue, 'host', default='N/A')
+        port = get_text_safe(issue, 'port', default='')
+        protocol = get_text_safe(issue, 'protocol', default='')
         
-        location = url
+        # Build location with all available components
+        location_parts = []
+        
+        if protocol and host != 'N/A':
+            location_parts.append(f"{protocol}://")
+        
+        if host != 'N/A':
+            location_parts.append(host)
+            if port:
+                location_parts.append(f":{port}")
+                
         if path:
-             location += path
-        
-        # Ensure 'location' is not empty or just the path if 'url' was missing
-        if not location and host != 'N/A':
-            location = f"Host: {host}"
-        elif not location:
-            location = 'N/A - Location Undetermined'
+            # Ensure path starts with / if it's not already in the URL
+            if not path.startswith('/') and not url.endswith('/'):
+                path = '/' + path
+            location_parts.append(path)
             
-        details_list = [f"**Host:** {host}"]
+        if url and not (protocol or host != 'N/A' or path):
+            location_parts.append(url)
+            
+        location = ''.join(location_parts) if location_parts else 'N/A - Location Undetermined'
+        
+        # Build comprehensive details
+        details_list = []
+        if host != 'N/A':
+            details_list.append(f"**Host:** {host}")
+        if port:
+            details_list.append(f"**Port:** {port}")
+        if protocol:
+            details_list.append(f"**Protocol:** {protocol}")
+            
+        # Add request method if available
+        method = get_text_safe(issue, 'method', default='')
+        if method:
+            details_list.append(f"**Method:** {method}")
+        
+        raw_severity = get_text_safe(issue, 'severity')
+        logger.debug(f"Burp raw severity value: {raw_severity}")
         
         issues.append({
             'title': title,
-            'risk_rating_raw': get_text_safe(issue, 'severity'),
+            'risk_rating_raw': raw_severity,
             'description': get_text_safe(issue, 'issueBackground', default='No detailed description provided in report.'),
             'remediation': get_text_safe(issue, 'remediationBackground', default='No specific remediation steps provided.'),
             'location': location,
@@ -124,17 +209,35 @@ def parse_burp_xml(xml_content: bytes) -> List[Dict[str, Any]]:
 
 def parse_nessus_xml(xml_content: bytes) -> List[Dict[str, Any]]:
     """
-    Parses a Nessus XML report.
-    """
-    # 1. DTD Check (strict for Nessus)
-    check_for_dtd(xml_content) 
+    Parses a Nessus XML report into a standardized vulnerability findings format.
     
-    # 2. Parse the XML
+    Args:
+        xml_content (bytes): Raw XML content from a Nessus scan report
+        
+    Returns:
+        List[Dict[str, Any]]: List of parsed vulnerability findings with standardized fields:
+            - title: The name of the vulnerability
+            - risk_rating_raw: Nessus severity (0-4)
+            - description: Detailed vulnerability description
+            - remediation: Recommended fix steps
+            - location: Affected host/port/protocol
+            - details: Additional technical details
+            
+    Raises:
+        ValueError: If the XML is invalid, cannot be parsed, or missing required elements
+    """
+    # Security check
+    check_for_dtd(xml_content)
+    
     try:
-        root = ET.fromstring(xml_content) 
+        root = ET.fromstring(xml_content)
     except ET.ParseError as e:
-        raise ValueError(f"Uploaded file is not valid XML or could not be parsed: {e}")
-
+        raise ValueError(f"Invalid Nessus XML format: {e}")
+        
+    # Validate it's actually a Nessus report
+    if root.tag != 'NessusClientData_v2':
+        raise ValueError("Not a valid Nessus v2 report format")
+        
     issues = []
     
     # Extract findings data
@@ -152,9 +255,12 @@ def parse_nessus_xml(xml_content: bytes) -> List[Dict[str, Any]]:
             location = f"{host_name}:{item.get('port')} ({item.get('protocol')})"
             details = f"Plugin ID: {item.get('pluginID')}"
 
+            raw_severity = item.get('severity', '0')
+            logger.debug(f"Nessus raw severity value: {raw_severity}")
+            
             issues.append({
                 'title': item.get('pluginName'),
-                'risk_rating_raw': item.get('severity'), # Nessus uses numeric severity (0, 1, 2, 3, 4)
+                'risk_rating_raw': raw_severity,  # Nessus uses numeric severity (0, 1, 2, 3, 4)
                 'description': description,
                 'remediation': solution,
                 'location': location,

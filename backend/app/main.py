@@ -3,8 +3,22 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.responses import FileResponse
 from sqlmodel import SQLModel, Session, create_engine, select
+from sqlalchemy import text
 from typing import Optional, List, Dict, Any
 import os
+import sys
+import logging
+
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.INFO if os.getenv('ENVIRONMENT') == 'production' else logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Test log message on startup
+logger.debug("Logging initialized in main.py")
 
 # Custom imports
 from app.models import (
@@ -12,10 +26,13 @@ from app.models import (
     Finding,
     Instance,
     RiskMapping,
-    RiskRating,
+    FindingBase,  # Import FindingBase instead of top-level RiskRating
     ProjectReadWithFindings,
     FindingReadWithInstances,
 )
+
+# Use the RiskRating from FindingBase
+RiskRating = FindingBase.RiskRating
 from app.parsers import parse_xml_content
 from app.reports import generate_report_docx, generate_report_pdf
 
@@ -26,7 +43,7 @@ from app.reports import generate_report_docx, generate_report_pdf
 # For production you can still set DATABASE_URL to a PostgreSQL DSN (e.g.,
 # "postgresql+psycopg2://user:password@db:5432/vuln_db").
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL, echo=False)
 
 def create_db_and_tables():
     """Initializes the database and creates all tables defined in SQLModel."""
@@ -47,38 +64,140 @@ app = FastAPI(
 
 # --- Utility Functions ---
 
+def fix_risk_ratings_in_db(session: Session):
+    """
+    Fix any incorrectly cased risk ratings in the database.
+    """
+    logger.info("Checking for risk ratings that need fixing...")
+    
+    try:
+        # First, get a list of all findings
+        findings = session.exec(select(Finding)).all()
+        logger.info(f"Found {len(findings)} total findings")
+        
+        fixed_count = 0
+        for finding in findings:
+            current = finding.risk_rating
+            logger.debug(f"Checking finding {finding.id} with risk_rating '{current}'")
+            
+            # Map the current rating to the correct enum value
+            if current == 'MEDIUM':
+                finding.risk_rating = RiskRating.Medium.value
+                fixed_count += 1
+            elif current == 'LOW':
+                finding.risk_rating = RiskRating.Low.value
+                fixed_count += 1
+            elif current == 'HIGH':
+                finding.risk_rating = RiskRating.High.value
+                fixed_count += 1
+            elif current == 'CRITICAL':
+                finding.risk_rating = RiskRating.Critical.value
+                fixed_count += 1
+            elif current in ('INFORMATION', 'INFORMATIONAL'):
+                finding.risk_rating = RiskRating.Informational.value
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            logger.info(f"Fixed {fixed_count} risk ratings")
+            session.commit()
+        else:
+            logger.info("No risk ratings needed fixing")
+            
+    except Exception as e:
+        logger.error(f"Error fixing risk ratings: {str(e)}", exc_info=True)
+        session.rollback()
+        raise
+
 def get_risk_rating(raw_rating: str) -> RiskRating:
     """Map raw scanner severity to the :class:`RiskRating` enum.
 
     The function returns a ``RiskRating`` member, which SQLModel stores as the
     corresponding string value in the PostgreSQL ``risk_rating`` ENUM column.
+    
+    Valid values are: Critical, High, Medium, Low, Informational
+    
+    Args:
+        raw_rating: The raw risk rating from a scanner (can be numeric or text)
+        
+    Returns:
+        RiskRating: A valid enum member with proper case
     """
-
+    logger.debug(f"Converting raw risk rating: {raw_rating!r}")
+    
+    # Handle None/empty values
+    if not raw_rating:
+        logger.warning("Empty risk rating, defaulting to Low")
+        return RiskRating.Low
+    
+    raw_str = str(raw_rating).strip()
+    
+    # First try exact match (handles already correct values)
+    try:
+        return RiskRating(raw_str)
+    except ValueError:
+        pass
+    
+    # Then try proper case version of the string
+    try:
+        proper_case = raw_str.lower().capitalize()
+        if proper_case == 'Information':  # Special case
+            proper_case = 'Informational'
+        return RiskRating(proper_case)
+    except ValueError:
+        pass
+    
+    # Finally try mapping from known scanner values
     mapping = {
-        # Burp mappings
-        "CRITICAL": RiskRating.Critical,
-        "HIGH": RiskRating.High,
-        "MEDIUM": RiskRating.Medium,
-        "LOW": RiskRating.Low,
-        "INFORMATION": RiskRating.Informational,
-        "FALSE POSITIVE": RiskRating.Informational,
-        # Nessus mappings (numeric strings)
-        "4": RiskRating.Critical,
-        "3": RiskRating.High,
-        "2": RiskRating.Medium,
-        "1": RiskRating.Low,
-        "0": RiskRating.Informational,
+        # Numeric ratings (Nessus)
+        '0': RiskRating.Informational,
+        '1': RiskRating.Low,
+        '2': RiskRating.Medium,
+        '3': RiskRating.High,
+        '4': RiskRating.Critical,
+        
+        # Common text variations
+        'INFO': RiskRating.Informational,
+        'INFORMATIONAL': RiskRating.Informational,
+        'INFORMATION': RiskRating.Informational,
+        'FALSE POSITIVE': RiskRating.Informational,
     }
-
-    return mapping.get(raw_rating.upper(), RiskRating.Informational)
+    
+    result = mapping.get(raw_str.upper(), RiskRating.Low)
+    logger.debug(f"Mapped {raw_rating!r} to {result.value}")
+    return result
 
 def process_and_save_issue(session: Session, project_id: int, issue_data: Dict[str, Any]):
     """
     Checks for an existing Finding, creates or updates it, and adds a new Instance.
-    """
-    title = issue_data['title']
-    standard_risk = get_risk_rating(issue_data['risk_rating_raw'])
     
+    Args:
+        session: Database session
+        project_id: ID of the project to add findings to
+        issue_data: Dictionary containing finding data from scanner
+        
+    Returns:
+        bool: True if successful
+        
+    Raises:
+        ValueError: If required data is missing or invalid
+    """
+    # Validate required fields
+    if not issue_data.get('title'):
+        raise ValueError("Finding title is required")
+        
+    title = issue_data['title']
+    raw_risk = issue_data.get('risk_rating_raw')
+    
+    logger.info(f"Processing finding: {title!r}")
+    logger.debug(f"Raw risk rating: {raw_risk!r}")
+    
+    try:
+        standard_risk = get_risk_rating(raw_risk)
+        logger.debug(f"Normalized risk rating: {standard_risk.value}")
+    except Exception as e:
+        logger.error(f"Error converting risk rating {raw_risk!r}: {e}")
+        standard_risk = RiskRating.Low
+        
     # 1. Check for existing Finding (Deduplication Logic)
     existing_finding = session.exec(
         select(Finding)
@@ -118,6 +237,10 @@ def process_and_save_issue(session: Session, project_id: int, issue_data: Dict[s
 def on_startup():
     """Runs when the FastAPI application starts."""
     create_db_and_tables()
+    
+    # Fix the database using direct connection first
+    from app.db import fix_risk_ratings_direct
+    fix_risk_ratings_direct()
 
 @app.get("/health")
 def health_check():
@@ -171,15 +294,20 @@ async def upload_report(
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
+        logger.info(f"Starting to process {file.filename} as {scanner_type} report")
         xml_content = await file.read()
         
         # 1. Parse the XML content using the robust utility function
+        logger.debug("Parsing XML content...")
         issues_data = parse_xml_content(xml_content, scanner_type)
+        logger.debug(f"Found {len(issues_data)} issues in report")
         
     except ValueError as e:
+        logger.error(f"Parsing Error: {e}")
         # Handles DTD security block, invalid XML, or unknown scanner type errors
         raise HTTPException(status_code=400, detail=f"Parsing Error: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error during parsing: {e}", exc_info=True)
         # Catch all other unexpected errors during file processing
         raise HTTPException(status_code=500, detail=f"Internal Server Error during file processing: {e}")
 
