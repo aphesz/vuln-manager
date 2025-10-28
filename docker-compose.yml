@@ -1,0 +1,44 @@
+services:
+  # FastAPI Backend Service (API)
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount code for live-reloading during development
+      - ./backend/app:/app
+    environment:
+      # Connection to the 'db' service
+      - DATABASE_URL=postgresql://pgakar:katakunci@db:5432/vulndb
+    working_dir: /
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - db
+
+  # React Frontend Service (UI)
+  frontend:
+    build: ./frontend 
+    ports:
+      # Map host port 3000 to container port 80 (Nginx)
+      - "3000:80"     
+    volumes:
+      # Mount source code for build process (assuming `npm run build` will happen)
+      - ./frontend:/app
+      - /app/node_modules # Exclude node_modules from volume mount
+    depends_on:
+      - backend
+
+  # PostgreSQL Database Service
+  db:
+    image: postgres:14-alpine
+    volumes:
+      # Persist database data across restarts
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      # These credentials MUST match the DATABASE_URL above
+      - POSTGRES_USER=pgakar
+      - POSTGRES_PASSWORD=katakunci
+      - POSTGRES_DB=vulndb
+    
+volumes:
+  postgres_data:

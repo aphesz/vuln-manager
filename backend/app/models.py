@@ -1,0 +1,108 @@
+# backend/app/models.py
+
+from typing import Optional, List
+from sqlmodel import Field, SQLModel, Relationship  # type: ignore
+from enum import Enum
+
+# ---------------------------------------------------------------------------
+# Enum definitions
+# ---------------------------------------------------------------------------
+
+class RiskRating(str, Enum):
+    """Enum matching the PostgreSQL ENUM for the `risk_rating` column.
+
+    Values: Critical, High, Medium, Low, Informational
+    """
+
+    Critical = "Critical"
+    High = "High"
+    Medium = "Medium"
+    Low = "Low"
+    Informational = "Informational"
+
+# --- Base Models ---
+
+class ProjectBase(SQLModel):
+    """Base model for project creation and updates."""
+    # Required fields must use an explicit ellipsis default for Pydantic v2.
+    name: str = Field(..., index=True)
+    consultant_name: Optional[str] = None
+
+class FindingBase(SQLModel):
+    """Base model for a single, deduplicated vulnerability finding."""
+    title: str = Field(..., index=True)
+    # Use an Enum to enforce the allowed risk rating values at the ORM level.
+    # The enum values match the PostgreSQL ENUM defined for the `risk_rating` column.
+    class RiskRating(str, Enum):
+        Critical = "Critical"
+        High = "High"
+        Medium = "Medium"
+        Low = "Low"
+        Informational = "Informational"
+
+    risk_rating: RiskRating = Field(..., index=True)  # Normalized risk
+    description: str = Field(...)
+    remediation: str = Field(...)
+
+class InstanceBase(SQLModel):
+    """Base model for a single instance (or occurrence) of a finding."""
+    location: str = Field(...)
+    details: str = Field(...)
+    status: str = Field(default="New - Unvalidated", index=True)  # e.g., 'New', 'Confirmed', 'Remediated'
+
+# --- Table Models ---
+
+class Project(ProjectBase, table=True):
+    """Database model for a project."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # Relationships
+    findings: List["Finding"] = Relationship(back_populates="project")
+
+class Finding(FindingBase, table=True):
+    """Database model for a Finding (the vulnerability definition)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: Optional[int] = Field(default=None, foreign_key="project.id")
+
+    # Relationships
+    project: Optional[Project] = Relationship(back_populates="findings")
+    instances: List["Instance"] = Relationship(back_populates="finding")
+
+class Instance(InstanceBase, table=True):
+    """Database model for an Instance."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    finding_id: Optional[int] = Field(default=None, foreign_key="finding.id")
+
+    # Relationships
+    finding: Optional[Finding] = Relationship(back_populates="instances")
+
+# --- Read Models (For FastAPI Responses) ---
+
+# 1. Instance Read Model
+class InstanceRead(InstanceBase):
+    id: int
+    finding_id: int
+
+# 2. Finding Read Model 
+class FindingReadWithInstances(FindingBase):
+    id: int
+    project_id: int
+    instances: List[InstanceRead] = []
+
+# 3. Project Read Model
+class ProjectReadWithFindings(ProjectBase):
+    """Used to read a Project including all its Findings (and their Instances)."""
+    id: int
+    findings: List[FindingReadWithInstances] = []
+
+# --- Utility Models (The Fixes) ---
+
+class RiskMapping(SQLModel):
+    """A utility class to represent risk categories (not mapped to DB table)."""
+    risk: str
+    count: int
+
+class FindingStatus(SQLModel): # <-- ADDED THIS MODEL TO FIX THE IMPORTERROR
+    """A utility class for finding statuses (not mapped to DB table)."""
+    status_name: str
+    status_id: int
