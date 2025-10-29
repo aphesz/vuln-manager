@@ -1,6 +1,7 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text
@@ -56,11 +57,34 @@ def get_session():
 
 # --- FastAPI App Initialization ---
 
+from app.websocket import WebSocketManager
+
 app = FastAPI(
     title="VulnManager API",
     description="API for managing vulnerability assessment projects and reports.",
     version="1.0.0"
 )
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (can be restricted in production)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize WebSocket manager
+ws_manager = WebSocketManager()
+
+@app.websocket("/ws/{project_id}")
+async def websocket_endpoint(websocket: WebSocket, project_id: int):
+    await ws_manager.connect(websocket, project_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, project_id)
 
 # --- Utility Functions ---
 
@@ -166,7 +190,7 @@ def get_risk_rating(raw_rating: str) -> RiskRating:
     logger.debug(f"Mapped {raw_rating!r} to {result.value}")
     return result
 
-def process_and_save_issue(session: Session, project_id: int, issue_data: Dict[str, Any]):
+async def process_and_save_issue(session: Session, project_id: int, issue_data: Dict[str, Any]):
     """
     Checks for an existing Finding, creates or updates it, and adds a new Instance.
     
@@ -229,6 +253,14 @@ def process_and_save_issue(session: Session, project_id: int, issue_data: Dict[s
     session.add(instance)
     
     session.commit()
+    
+    # Send WebSocket notification
+    await ws_manager.broadcast_finding_update(
+        project_id,
+        finding.id,
+        'update' if existing_finding else 'create'
+    )
+    
     return True
 
 # --- Application Startup and Health Check ---
@@ -278,24 +310,21 @@ def read_project(project_id: int, session: Session = Depends(get_session)):
 
 # --- Endpoint: Report Upload and Parsing ---
 
-@app.post("/projects/{project_id}/upload/{scanner_type}", status_code=201)
-async def upload_report(
+async def _process_upload(
     project_id: int,
     scanner_type: str,
-    file: UploadFile = File(...),
-    session: Session = Depends(get_session)
-):
+    xml_content: bytes,
+    session: Session
+) -> Dict[str, Any]:
     """
-    Uploads an XML report, parses it, and saves findings/instances to the database.
-    Supported types: 'burp', 'nessus'.
+    Shared logic for processing uploaded reports.
     """
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
-        logger.info(f"Starting to process {file.filename} as {scanner_type} report")
-        xml_content = await file.read()
+        logger.info(f"Processing report as {scanner_type} for project {project_id}")
         
         # 1. Parse the XML content using the robust utility function
         logger.debug("Parsing XML content...")
@@ -314,13 +343,89 @@ async def upload_report(
     # 2. Process and Save all issues to the database (Deduplication occurs here)
     new_instances_count = 0
     for issue in issues_data:
-        process_and_save_issue(session, project_id, issue)
+        await process_and_save_issue(session, project_id, issue)
         new_instances_count += 1
 
     return {
         "message": f"Successfully processed report for Project {project_id}.",
         "new_instances_count": new_instances_count
     }
+
+# NOTE: The /auto endpoint must be defined FIRST, before the generic /{scanner_type} endpoint,
+# otherwise FastAPI will match /auto against /{scanner_type} and pass "auto" as the scanner_type
+@app.post("/projects/{project_id}/upload/auto", status_code=201)
+async def upload_report_auto(
+    project_id: int,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session)
+):
+    """
+    Auto-detects scanner type from XML content and processes accordingly.
+    Supports: Burp Suite XML, Nessus v2 XML
+    """
+    xml_content = await file.read()
+    
+    # Auto-detect scanner type
+    xml_str = xml_content.decode('utf-8', errors='ignore')
+    
+    if '<NessusClientData' in xml_str:
+        scanner_type = 'nessus'
+    elif '<issues burpversion' in xml_str.lower() or '<issues' in xml_str.lower():
+        scanner_type = 'burp'
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not auto-detect scanner type. Supported formats: Burp Suite XML, Nessus v2 XML"
+        )
+    
+    logger.info(f"Auto-detected scanner type: {scanner_type}")
+    return await _process_upload(project_id, scanner_type, xml_content, session)
+
+@app.post("/projects/{project_id}/upload/{scanner_type}", status_code=201)
+async def upload_report(
+    project_id: int,
+    scanner_type: str,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session)
+):
+    """
+    Uploads an XML report, parses it, and saves findings/instances to the database.
+    Supported types: 'burp', 'nessus'.
+    """
+    xml_content = await file.read()
+    return await _process_upload(project_id, scanner_type, xml_content, session)
+
+@app.get("/projects/{project_id}/risk_summary")
+def get_risk_summary(project_id: int, session: Session = Depends(get_session)):
+    """
+    Returns a summary of findings grouped by risk level.
+    Used for risk visualization charts.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Initialize risk summary
+    risk_summary = {
+        'Critical': 0,
+        'High': 0,
+        'Medium': 0,
+        'Low': 0,
+        'Informational': 0
+    }
+    
+    # Count findings by risk level
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    for finding in findings:
+        # finding.risk_rating is already a string (enum value)
+        risk_level = finding.risk_rating
+        if risk_level in risk_summary:
+            risk_summary[risk_level] += 1
+    
+    return risk_summary
 
 # --- Endpoint: Report Generation ---
 
