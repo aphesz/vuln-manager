@@ -8,6 +8,40 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [1.1.1] - October 30, 2025
+
+### 🐛 Fixed
+
+#### Theme Toggle Button Issues
+- **Header Theme Toggle** - Added theme toggle button to main header (visible on all pages)
+- **Button Styling** - Fixed `color="inherit"` issue with proper theme-aware styling
+- **Icon Button Colors** - Updated IconButton styling with `theme.palette.text.primary`
+- **Hover Effects** - Added smooth hover background for better visibility
+- **Button Sizing** - Increased button size from default to `large` for better usability
+- **Tooltips** - Added helpful tooltips to theme toggle buttons
+
+### 📝 Changed
+
+- **App.tsx** - Added theme toggle to header with proper icon imports
+- **Dashboard.tsx** - Enhanced IconButton styling for theme and settings buttons
+- Both components now properly use `useThemeContext()` for theme-aware rendering
+
+### 🧪 Testing & Validation
+
+**Visual Verification**:
+- ✅ Theme toggle visible in header on projects page
+- ✅ Theme toggle visible in header on dashboard page
+- ✅ Icons properly colored in both light and dark modes
+- ✅ Hover effects work smoothly
+- ✅ Tooltips appear on hover
+
+**Build Verification**:
+- Build hash changed: `index-Dmj00Alz.js` (previous: `index-D7LPVKc1.js`)
+- All containers restarted successfully
+- Backend and frontend both healthy
+
+---
+
 ## [1.1.0] - October 30, 2025
 
 ### ✨ Added
