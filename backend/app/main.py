@@ -308,6 +308,50 @@ def read_project(project_id: int, session: Session = Depends(get_session)):
         
     return project
 
+@app.put("/projects/{project_id}", response_model=Project)
+def update_project(project_id: int, project_update: Project, session: Session = Depends(get_session)):
+    """Updates an existing project (name, consultant, archive status)."""
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Update fields
+    project.name = project_update.name
+    project.consultant_name = project_update.consultant_name
+    project.is_archived = project_update.is_archived
+    project.archived_at = project_update.archived_at
+    
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return project
+
+@app.delete("/projects/{project_id}", status_code=204)
+def delete_project(project_id: int, session: Session = Depends(get_session)):
+    """Deletes a project and all associated findings and instances."""
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Delete all instances for this project's findings
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    for finding in findings:
+        instances = session.exec(
+            select(Instance).where(Instance.finding_id == finding.id)
+        ).all()
+        for instance in instances:
+            session.delete(instance)
+        session.delete(finding)
+    
+    # Delete the project
+    session.delete(project)
+    session.commit()
+    
+    logger.info(f"Project {project_id} and all associated findings deleted")
+
 # --- Endpoint: Report Upload and Parsing ---
 
 async def _process_upload(

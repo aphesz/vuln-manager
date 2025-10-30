@@ -87,8 +87,8 @@ const FindingDialog = ({ finding, open, onClose }: FindingDialogProps) => {
         {tabValue === 0 && (
           <Box>
             <Typography variant="h6" gutterBottom>Description</Typography>
-            <Typography variant="body1" paragraph>
-              {finding.description}
+            <Typography variant="body1" paragraph sx={{ whiteSpace: 'pre-wrap' }}>
+              {stripHtmlTags(finding.description)}
             </Typography>
           </Box>
         )}
@@ -129,8 +129,8 @@ const FindingDialog = ({ finding, open, onClose }: FindingDialogProps) => {
         {tabValue === 2 && (
           <Box>
             <Typography variant="h6" gutterBottom>Remediation Steps</Typography>
-            <Typography variant="body1">
-              {finding.remediation}
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+              {stripHtmlTags(finding.remediation)}
             </Typography>
           </Box>
         )}
@@ -154,6 +154,32 @@ interface FindingsTableProps {
   onPreferencesChange: (columns: any) => void;
 }
 
+// Utility function to strip HTML tags and decode HTML entities
+const stripHtmlTags = (html: string): string => {
+  if (!html) return '';
+  
+  // Create a temporary element to parse HTML
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  
+  // Get text content (strips all HTML)
+  let text = div.textContent || div.innerText || '';
+  
+  // Decode common HTML entities
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  
+  // Clean up excess whitespace
+  text = text.replace(/\s+/g, ' ').trim();
+  
+  return text;
+};
+
 // Main FindingsTable component
 const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsTableProps) => {
   const [selectedFinding, setSelectedFinding] = useState(null);
@@ -165,7 +191,11 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsT
       headerName: 'Title',
       flex: 2,
       renderCell: (params: GridRenderCellParams) => (
-        <Typography variant="body2" sx={{ cursor: 'pointer' }}>
+        <Typography 
+          variant="body2" 
+          sx={{ cursor: 'pointer' }}
+          onClick={() => setSelectedFinding(params.row)}
+        >
           {params.value}
         </Typography>
       ),

@@ -3,6 +3,7 @@
 from typing import Optional, List
 from sqlmodel import Field, SQLModel, Relationship  # type: ignore
 from enum import Enum
+from datetime import datetime
 
 # --- Base Models ---
 
@@ -11,6 +12,8 @@ class ProjectBase(SQLModel):
     # Required fields must use an explicit ellipsis default for Pydantic v2.
     name: str = Field(..., index=True)
     consultant_name: Optional[str] = None
+    is_archived: bool = Field(default=False, index=True)
+    archived_at: Optional[datetime] = None
 
 class FindingBase(SQLModel):
     """Base model for a single, deduplicated vulnerability finding."""

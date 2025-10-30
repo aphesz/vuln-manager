@@ -10,12 +10,46 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.units import inch
+import html
+import re
 
 # Type checking import to avoid circular dependencies in SQLModel
 if TYPE_CHECKING:
     from app.models import Project # We need the Project model structure for typing
 
 # --- Utility Functions ---
+
+def strip_html_tags(text: str) -> str:
+    """
+    Remove HTML tags and decode HTML entities from text.
+    
+    Args:
+        text: Text potentially containing HTML markup
+        
+    Returns:
+        Plain text with HTML tags removed and entities decoded
+    """
+    if not text:
+        return ''
+    
+    # Decode HTML entities first (&nbsp; -> space, &lt; -> <, etc.)
+    text = html.unescape(text)
+    
+    # Remove HTML tags using regex
+    # Matches: <tag>, </tag>, <tag attr="value">, etc.
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Clean up excess whitespace while preserving paragraph breaks
+    # Replace multiple spaces with single space
+    text = re.sub(r' +', ' ', text)
+    
+    # Replace multiple newlines with double newline (paragraph break)
+    text = re.sub(r'\n\n+', '\n\n', text)
+    
+    # Strip leading and trailing whitespace
+    text = text.strip()
+    
+    return text
 
 def generate_report_docx(project: 'Project', file_path: str):
     """
@@ -62,18 +96,18 @@ def generate_report_docx(project: 'Project', file_path: str):
             # Risk/Description
             document.add_paragraph(f"Risk Rating: {finding.risk_rating}")
             document.add_heading("Description", 3)
-            document.add_paragraph(finding.description)
+            document.add_paragraph(strip_html_tags(finding.description))
             
             # Remediation
             document.add_heading("Remediation / Solution", 3)
-            document.add_paragraph(finding.remediation)
+            document.add_paragraph(strip_html_tags(finding.remediation))
             
             # Instances/Locations
             document.add_heading(f"Vulnerable Instances ({len(finding.instances)})", 3)
             
             for instance in finding.instances:
                 document.add_paragraph(f"Location: {instance.location}", style='List Bullet')
-                document.add_paragraph(f"Details: {instance.details}")
+                document.add_paragraph(f"Details: {strip_html_tags(instance.details)}")
                 document.add_paragraph(f"Status: {instance.status}")
                 
             document.add_page_break()
@@ -208,8 +242,8 @@ def generate_report_pdf(project: 'Project', file_path: str):
             # Finding details table
             finding_data = [
                 ['Risk Rating', finding.risk_rating],
-                ['Description', finding.description],
-                ['Remediation', finding.remediation],
+                ['Description', strip_html_tags(finding.description)],
+                ['Remediation', strip_html_tags(finding.remediation)],
                 ['Instances', str(len(finding.instances))]
             ]
             
@@ -235,7 +269,7 @@ def generate_report_pdf(project: 'Project', file_path: str):
                 instance_data = [
                     [f'Instance {j}'],
                     ['Location', instance.location],
-                    ['Details', instance.details],
+                    ['Details', strip_html_tags(instance.details)],
                     ['Status', instance.status]
                 ]
                 

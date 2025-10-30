@@ -84,14 +84,20 @@ const Dashboard = () => {
 
   // WebSocket setup for real-time updates
   useEffect(() => {
-    const ws = WebSocketService.getInstance();
-    const unsubscribe = ws.subscribe('finding_update', (data: { project_id: string }) => {
-      if (data.project_id === projectId) {
-        fetchProject();
-      }
+    if (!projectId) return;
+
+    const projectNum = parseInt(projectId as string, 10);
+    const ws = WebSocketService.getInstance(projectNum);
+    
+    const unsubscribe = ws.subscribe('finding_update', (data: any) => {
+      console.log('Received finding_update:', data);
+      fetchProject();
     });
 
-    return unsubscribe; // Return the unsubscribe function directly
+    return () => {
+      unsubscribe();
+      ws.disconnect();
+    };
   }, [projectId]);
 
   // Fetch project data
@@ -188,10 +194,18 @@ const Dashboard = () => {
                 </Button>
                 <Button
                   variant="outlined"
+                  href={`${API_BASE_URL}/projects/${projectId}/report.docx`}
+                  target="_blank"
+                  download
+                >
+                  Export to DOCX
+                </Button>
+                <Button
+                  variant="outlined"
                   href={`${API_BASE_URL}/projects/${projectId}/report.pdf`}
                   target="_blank"
                 >
-                  PDF Report
+                  Export to PDF
                 </Button>
               </Box>
             </CardContent>

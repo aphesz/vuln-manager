@@ -2,28 +2,49 @@ type Listener<T> = (data: T) => void;
 
 class WebSocketService {
   private static instance: WebSocketService;
+  private static instances: Map<number, WebSocketService> = new Map();
   private ws: WebSocket | null = null;
   private listeners: Map<string, Set<Listener<any>>> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimeout = 1000;
+  private projectId: number | null = null;
 
-  private constructor() {
-    this.connect();
+  private constructor(projectId?: number) {
+    this.projectId = projectId || null;
+    if (projectId) {
+      this.connect();
+    }
   }
 
-  static getInstance(): WebSocketService {
-    if (!WebSocketService.instance) {
-      WebSocketService.instance = new WebSocketService();
+  static getInstance(projectId?: number): WebSocketService {
+    // If no projectId provided, return shared instance (used for global events)
+    if (!projectId) {
+      if (!WebSocketService.instance) {
+        WebSocketService.instance = new WebSocketService();
+      }
+      return WebSocketService.instance;
     }
-    return WebSocketService.instance;
+
+    // For project-specific connections, maintain separate instances
+    if (!WebSocketService.instances.has(projectId)) {
+      WebSocketService.instances.set(projectId, new WebSocketService(projectId));
+    }
+    return WebSocketService.instances.get(projectId)!;
   }
 
   private connect() {
-    // Build WebSocket URL - use relative path with proper protocol
+    if (!this.projectId) {
+      console.warn('WebSocketService: Cannot connect without projectId');
+      return;
+    }
+
+    // Build WebSocket URL - connect directly to backend WebSocket endpoint
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const host = window.location.host;
-    const wsUrl = process.env.REACT_APP_WS_URL || `${protocol}://${host}/api/ws`;
+    const host = window.location.hostname;
+    const port = window.location.protocol === 'https:' ? '8000' : '8000';
+    const wsUrl = `${protocol}://${host}:${port}/ws/${this.projectId}`;
+    
     try {
       this.ws = new WebSocket(wsUrl);
 
@@ -37,9 +58,11 @@ class WebSocketService {
       };
 
       this.ws.onclose = () => {
+        console.log(`WebSocket connection closed for project ${this.projectId}`);
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           setTimeout(() => {
             this.reconnectAttempts++;
+            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
             this.connect();
           }, this.reconnectTimeout * Math.pow(2, this.reconnectAttempts));
         }
@@ -47,14 +70,25 @@ class WebSocketService {
 
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        console.log(`Failed to connect to ${wsUrl}`);
       };
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
-        console.log('WebSocket connection established');
+        console.log(`WebSocket connection established for project ${this.projectId}`);
       };
     } catch (error) {
       console.error('Failed to establish WebSocket connection:', error);
+    }
+  }
+
+  /**
+   * Gracefully close the WebSocket connection
+   */
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
     }
   }
 
@@ -81,7 +115,16 @@ class WebSocketService {
   send(type: string, payload: any) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
+    } else {
+      console.warn('WebSocket is not open. Current state:', this.ws?.readyState);
     }
+  }
+
+  /**
+   * Check if WebSocket is currently connected
+   */
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 }
 
