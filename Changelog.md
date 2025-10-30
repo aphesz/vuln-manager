@@ -8,6 +8,37 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [1.1.4] - October 30, 2025
+
+### 🐛 Fixed
+
+#### Dashboard Title Contrast
+- **Dashboard Title** - Now uses explicit `theme.palette.text.primary` color
+- **Section Headers** - Risk Distribution and Quick Actions headers use theme colors
+- **Font Weight** - Increased to 600 for better readability and visual hierarchy
+- **Light Mode** - Dashboard titles now clearly readable on light background
+- **Dark Mode** - Titles remain clear on dark background
+
+### 📝 Changed
+
+- **Dashboard.tsx** - Updated h4 and h6 Typography components with explicit color and fontWeight
+- All section titles now respect the active theme mode
+
+### 🧪 Testing & Validation
+
+**Visual Verification**:
+- ✅ Dashboard title clearly readable in light mode
+- ✅ Section headers (Risk Distribution, Quick Actions) have good contrast
+- ✅ Dark mode titles still properly visible
+- ✅ Typography hierarchy improved with increased fontWeight
+
+**Build Verification**:
+- Build hash changed: `index-Dn8rR-dN.js` (previous: `index-BXoucli7.js`)
+- All containers running and healthy
+- No console errors
+
+---
+
 ## [1.1.3] - October 30, 2025
 
 ### 🐛 Fixed
