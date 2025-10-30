@@ -19,6 +19,14 @@ const getDesignTokens = (mode: PaletteMode) => ({
             light: '#ff4081',
             dark: '#c51162',
           },
+          background: {
+            default: '#f5f5f5',
+            paper: '#ffffff',
+          },
+          text: {
+            primary: '#212121',
+            secondary: '#666666',
+          },
           risk: {
             critical: '#dc3545',
             high: '#ff9800',
@@ -26,16 +34,12 @@ const getDesignTokens = (mode: PaletteMode) => ({
             low: '#4caf50',
             informational: '#757575',
           },
-          background: {
-            default: '#f5f5f5',
-            paper: '#ffffff',
-          },
         }
       : {
-          // Dark mode
+          // Dark mode - Premium dark palette
           primary: {
             main: '#90caf9',
-            light: '#e3f2fd',
+            light: '#bbdefb',
             dark: '#42a5f5',
           },
           secondary: {
@@ -43,16 +47,21 @@ const getDesignTokens = (mode: PaletteMode) => ({
             light: '#f8bbd0',
             dark: '#f06292',
           },
-          risk: {
-            critical: '#ff5252',
-            high: '#ffa726',
-            medium: '#64b5f6',
-            low: '#81c784',
-            informational: '#bdbdbd',
-          },
           background: {
-            default: '#121212',
-            paper: '#1e1e1e',
+            default: '#0d1117', // GitHub dark background
+            paper: '#161b22', // Slightly lighter for cards
+          },
+          text: {
+            primary: '#e6edf3', // Light gray for primary text
+            secondary: '#8b949e', // Medium gray for secondary text
+          },
+          divider: '#30363d',
+          risk: {
+            critical: '#ff6b6b',
+            high: '#ffa94d',
+            medium: '#74c0fc',
+            low: '#69db7c',
+            informational: '#a6adba',
           },
         }),
   },
@@ -61,18 +70,30 @@ const getDesignTokens = (mode: PaletteMode) => ({
     h1: {
       fontSize: '2rem',
       fontWeight: 500,
+      letterSpacing: '-0.5px',
     },
     h2: {
       fontSize: '1.75rem',
       fontWeight: 500,
+      letterSpacing: '-0.3px',
     },
     h3: {
       fontSize: '1.5rem',
       fontWeight: 500,
     },
+    h4: {
+      fontSize: '1.25rem',
+      fontWeight: 500,
+    },
     body1: {
       fontSize: '1rem',
       lineHeight: 1.5,
+      letterSpacing: '0.3px',
+    },
+    body2: {
+      fontSize: '0.875rem',
+      lineHeight: 1.43,
+      letterSpacing: '0.4px',
     },
   },
   components: {
@@ -80,6 +101,7 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         root: {
           textTransform: 'none' as const,
+          fontWeight: 500,
         } as any,
       },
     },
@@ -90,6 +112,13 @@ const getDesignTokens = (mode: PaletteMode) => ({
         },
       },
     },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
+      },
+    },
     MuiDataGrid: {
       styleOverrides: {
         root: {
@@ -97,6 +126,30 @@ const getDesignTokens = (mode: PaletteMode) => ({
           '& .MuiDataGrid-cell:focus': {
             outline: 'none',
           },
+          '& .MuiDataGrid-cell:focus-within': {
+            outline: 'none',
+          },
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          backgroundImage: 'none',
         },
       },
     },
@@ -144,6 +197,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Save theme preference to localStorage
   useEffect(() => {
     localStorage.setItem('themeMode', mode);
+    // Update HTML data attribute for additional styling if needed
+    document.documentElement.setAttribute('data-theme', mode);
   }, [mode]);
 
   return (
