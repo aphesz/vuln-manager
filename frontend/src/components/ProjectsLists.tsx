@@ -61,6 +61,10 @@ const ProjectsLists: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | number | null>(null);
 
+  // Inline edit states
+  const [editingProjectId, setEditingProjectId] = useState<string | number | null>(null);
+  const [editFormData, setEditFormData] = useState({ name: '', consultant_name: '' });
+
   useEffect(() => {
     fetchProjects();
   }, []);
@@ -195,6 +199,48 @@ const ProjectsLists: React.FC = () => {
     handleMenuClose();
   };
 
+  // Inline Edit Handlers
+  const handleStartEdit = (project: Project) => {
+    setEditingProjectId(project.id);
+    setEditFormData({
+      name: project.name,
+      consultant_name: project.consultant_name || '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editFormData.name.trim()) {
+      alert('Project name is required');
+      return;
+    }
+    try {
+      await axios.put(`${API_BASE_URL}/projects/${editingProjectId}`, {
+        name: editFormData.name,
+        consultant_name: editFormData.consultant_name || null,
+        is_archived: false,
+        archived_at: null,
+      });
+      setEditingProjectId(null);
+      fetchProjects();
+    } catch (err) {
+      console.error('Failed to save project:', err);
+      alert('Failed to save project');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingProjectId(null);
+    setEditFormData({ name: '', consultant_name: '' });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSaveEdit();
+    } else if (e.key === 'Escape') {
+      handleCancelEdit();
+    }
+  };
+
   // Filter projects by archive status
   const activeProjects = projects.filter((p) => !p.is_archived);
   const archivedProjects = projects.filter((p) => p.is_archived);
@@ -245,14 +291,83 @@ const ProjectsLists: React.FC = () => {
             }}
           >
             <CardContent sx={{ flex: 1 }}>
-              <Typography variant="h6">{project.name}</Typography>
-              <Typography variant="body2" color="textSecondary">
-                Consultant: {project.consultant_name || 'N/A'}
-              </Typography>
-              {project.is_archived && (
-                <Typography variant="caption" color="textSecondary">
-                  Archived: {new Date(project.archived_at!).toLocaleDateString()}
-                </Typography>
+              {editingProjectId === project.id ? (
+                // Inline Edit Mode
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  <TextField
+                    autoFocus
+                    label="Project Name"
+                    size="small"
+                    fullWidth
+                    value={editFormData.name}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, name: e.target.value })
+                    }
+                    onKeyDown={handleKeyDown}
+                  />
+                  <TextField
+                    label="Consultant Name"
+                    size="small"
+                    fullWidth
+                    value={editFormData.consultant_name}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, consultant_name: e.target.value })
+                    }
+                    onKeyDown={handleKeyDown}
+                  />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="primary"
+                      onClick={handleSaveEdit}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleCancelEdit}
+                    >
+                      Cancel
+                    </Button>
+                  </Box>
+                </Box>
+              ) : (
+                // Display Mode
+                <>
+                  <Typography
+                    variant="h6"
+                    onClick={() => handleStartEdit(project)}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': {
+                        textDecoration: 'underline',
+                        color: 'primary.main',
+                      },
+                    }}
+                  >
+                    {project.name}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    color="textSecondary"
+                    onClick={() => handleStartEdit(project)}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': {
+                        color: 'primary.main',
+                      },
+                    }}
+                  >
+                    Consultant: {project.consultant_name || 'N/A'}
+                  </Typography>
+                  {project.is_archived && (
+                    <Typography variant="caption" color="textSecondary">
+                      Archived: {new Date(project.archived_at!).toLocaleDateString()}
+                    </Typography>
+                  )}
+                </>
               )}
             </CardContent>
             <Box sx={{ p: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
