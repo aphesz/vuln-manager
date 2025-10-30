@@ -8,207 +8,40 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
-## [1.1.4] - October 30, 2025
-
-### 🐛 Fixed
-
-#### Dashboard Title Contrast
-- **Dashboard Title** - Now uses explicit `theme.palette.text.primary` color
-- **Section Headers** - Risk Distribution and Quick Actions headers use theme colors
-- **Font Weight** - Increased to 600 for better readability and visual hierarchy
-- **Light Mode** - Dashboard titles now clearly readable on light background
-- **Dark Mode** - Titles remain clear on dark background
-
-### 📝 Changed
-
-- **Dashboard.tsx** - Updated h4 and h6 Typography components with explicit color and fontWeight
-- All section titles now respect the active theme mode
-
-### 🧪 Testing & Validation
-
-**Visual Verification**:
-- ✅ Dashboard title clearly readable in light mode
-- ✅ Section headers (Risk Distribution, Quick Actions) have good contrast
-- ✅ Dark mode titles still properly visible
-- ✅ Typography hierarchy improved with increased fontWeight
-
-**Build Verification**:
-- Build hash changed: `index-Dn8rR-dN.js` (previous: `index-BXoucli7.js`)
-- All containers running and healthy
-- No console errors
-
----
-
-## [1.1.3] - October 30, 2025
-
-### 🐛 Fixed
-
-#### Dark Mode Background Colors
-- **Added CssBaseline** - Material-UI component that applies theme colors to body/html
-- **Root Element Styling** - Theme colors now apply to entire page, not just components
-- **Background Colors** - Dark mode now shows proper dark background (#0d1117)
-- **Text Colors** - All text properly contrasts with theme background
-
-### 📝 Changed
-
-- **ThemeProvider.tsx** - Added `CssBaseline` component import and rendering
-- CssBaseline renders after MuiThemeProvider to apply theme styles globally
-
-### 🧪 Testing & Validation
-
-**Visual Verification**:
-- ✅ Dark mode background is dark (#0d1117) across entire page
-- ✅ Light mode background is light (#f5f5f5) across entire page
-- ✅ Text colors properly contrast with background
-- ✅ Theme toggle (☀️ / 🌙) works smoothly
-- ✅ No white/light content left when dark mode is on
-
-**Build Verification**:
-- Build hash changed: `index-BXoucli7.js` (previous: `index-C_y_-Fd5.js`)
-- All containers running and healthy
-- Backend responsive
-- Frontend loading without errors
-
-### 📊 Technical Details
-
-**How CssBaseline Works**:
-```tsx
-<MuiThemeProvider theme={theme}>
-  <CssBaseline />  {/* Applies theme colors to html/body */}
-  {children}
-</MuiThemeProvider>
-```
-
-CssBaseline:
-- Applies background color from `theme.palette.background.default`
-- Applies text color from `theme.palette.text.primary`
-- Normalizes browser styles
-- Removes default margins/padding
-
----
-
-## [1.1.2] - October 30, 2025
-
-### 🔧 Refactored
-
-#### Header Component Architecture
-- **AppHeader Component** - Created new standalone header component
-- **Fixed Context Issues** - `useTheme()` hook now works properly by using it inside AppHeader
-- **Separated Concerns** - App.tsx now only handles routing, AppHeader handles header UI
-- **Theme Toggle** - Moved to separate component for better code organization
-
-### 🐛 Fixed
-
-#### Theme Toggle Button Visibility
-- Fixed broken theme toggle by refactoring component structure
-- Theme toggle now properly visible and functional in top right corner
-- Icon buttons properly styled with theme colors
-- Hover effects working smoothly
-
-### 📝 Changed
-
-- **App.tsx** - Simplified to focus on routing logic only
-- **AppHeader.tsx** - New component handling header and theme toggle
-- Improved overall component structure and reusability
-
-### 🧪 Testing & Validation
-
-**Visual Verification**:
-- ✅ Theme toggle visible in header on projects page
-- ✅ Theme toggle visible in header on dashboard page
-- ✅ Click theme toggle properly switches between light/dark mode
-- ✅ Entire UI responds to theme changes
-- ✅ Text contrast maintained in both modes
-
-**Build Verification**:
-- Build hash changed: `index-C_y_-Fd5.js` (previous: `index-Dmj00Alz.js`)
-- All containers running healthy
-- Backend responsive
-- No console errors
-
----
-
-## [1.1.1] - October 30, 2025
-
-### 🐛 Fixed
-
-#### Theme Toggle Button Issues
-- **Header Theme Toggle** - Added theme toggle button to main header (visible on all pages)
-- **Button Styling** - Fixed `color="inherit"` issue with proper theme-aware styling
-- **Icon Button Colors** - Updated IconButton styling with `theme.palette.text.primary`
-- **Hover Effects** - Added smooth hover background for better visibility
-- **Button Sizing** - Increased button size from default to `large` for better usability
-- **Tooltips** - Added helpful tooltips to theme toggle buttons
-
-### 📝 Changed
-
-- **App.tsx** - Added theme toggle to header with proper icon imports
-- **Dashboard.tsx** - Enhanced IconButton styling for theme and settings buttons
-- Both components now properly use `useThemeContext()` for theme-aware rendering
-
-### 🧪 Testing & Validation
-
-**Visual Verification**:
-- ✅ Theme toggle visible in header on projects page
-- ✅ Theme toggle visible in header on dashboard page
-- ✅ Icons properly colored in both light and dark modes
-- ✅ Hover effects work smoothly
-- ✅ Tooltips appear on hover
-
-**Build Verification**:
-- Build hash changed: `index-Dmj00Alz.js` (previous: `index-D7LPVKc1.js`)
-- All containers restarted successfully
-- Backend and frontend both healthy
-
----
-
 ## [1.1.0] - October 30, 2025
 
 ### ✨ Added
 
-#### Enhanced Dark Mode Theme
-- **Professional Dark Palette** - GitHub-inspired dark theme (`#0d1117`, `#161b22`)
-- **Improved Text Contrast** - High contrast colors for accessibility:
-  - Dark mode: `#e6edf3` (primary), `#8b949e` (secondary)
-  - Light mode: `#212121` (primary), `#666666` (secondary)
-- **Better Risk Colors** - Enhanced risk level colors optimized for dark mode
-- **Smooth Transitions** - Theme toggle now includes smooth CSS transitions
+- **Professional Dark Mode** - GitHub-inspired palette with high contrast text
+  - Dark: `#0d1117` background, `#e6edf3` text
+  - Light: `#f5f5f5` background, `#212121` text
+  - Risk colors optimized for both modes
+- **Theme Toggle Button** - ☀️/🌙 icon in header, available on all pages
+- **AppHeader Component** - Standalone header component for proper theme context
+- **CssBaseline** - Applies theme colors to entire document (body/html)
 
 ### 🐛 Fixed
 
-#### Dark Mode Improvements
-- Header now respects theme colors instead of hardcoded black
-- All text now has proper contrast ratio (WCAG AA compliant)
-- Table no longer isolated from theme - entire app darkens properly
-- Typography refined with letter-spacing for better readability
+- Dark mode now applies to entire UI (previously only table)
+- Dashboard titles readable in light mode
+- Theme toggle buttons properly styled and functional
+- Text contrast meets WCAG AA standards
+- All typography hierarchy improved with proper font weights
 
 ### 📝 Changed
 
-- **App.tsx** - Converted header to use `useTheme()` hook for responsive styling
-- **index.css** - Added smooth transitions and proper layout for theme changes
-- **ThemeProvider.tsx** - Expanded palette with professional colors and improved typography
+- **ThemeProvider.tsx** - Added CssBaseline, expanded palette, improved typography
+- **AppHeader.tsx** - New component handling header and theme toggle
+- **Dashboard.tsx** - Updated title and section headers with theme-aware colors
+- **App.tsx** - Simplified to focus on routing
+- **index.css** - Added smooth transitions for theme changes
 
-### 🧪 Testing & Validation
+### 📊 Build & Deploy
 
-**Visual Verification**:
-- ✅ Dark mode applies to entire app (header, body, cards, tables)
-- ✅ Light mode working correctly
-- ✅ Text contrast meets WCAG AA standards
-- ✅ Theme toggle smooth without jarring color changes
-- ✅ MUI components properly styled in both modes
-
-**Build Verification**:
-- Build hash changed: `index-D7LPVKc1.js` (previous: `index-BokmqCAI.js`)
-- All containers restarted successfully
-- Backend and frontend both healthy
-- No migration needed
-
-### 📊 Build Metrics
-
-- Build time: 11.4 seconds
-- Vite modules: 11,964 transformed
-- Bundle size: Minimal increase (~2KB for theme configs)
-- Production ready: ✅ Yes
+- Build hash: `index-Dn8rR-dN.js`
+- Build time: ~11-15 seconds
+- All containers healthy and running
+- Production ready ✅
 
 ---
 
