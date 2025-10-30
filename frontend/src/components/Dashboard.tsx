@@ -150,11 +150,35 @@ const Dashboard = () => {
       {/* Header */}
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4">{project.name}</Typography>
-        <Box>
-          <IconButton onClick={toggleTheme} color="inherit">
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <IconButton 
+            onClick={toggleTheme} 
+            size="large"
+            sx={{
+              color: theme.palette.text.primary,
+              '&:hover': {
+                backgroundColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.1)' 
+                  : 'rgba(0, 0, 0, 0.05)',
+              },
+            }}
+            title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+          >
             {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
-          <IconButton onClick={() => setSettingsDialogOpen(true)} color="inherit">
+          <IconButton 
+            onClick={() => setSettingsDialogOpen(true)}
+            size="large"
+            sx={{
+              color: theme.palette.text.primary,
+              '&:hover': {
+                backgroundColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.1)' 
+                  : 'rgba(0, 0, 0, 0.05)',
+              },
+            }}
+            title="Settings"
+          >
             <SettingsIcon />
           </IconButton>
         </Box>
