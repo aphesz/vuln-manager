@@ -8,6 +8,54 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [1.1.3] - October 30, 2025
+
+### 🐛 Fixed
+
+#### Dark Mode Background Colors
+- **Added CssBaseline** - Material-UI component that applies theme colors to body/html
+- **Root Element Styling** - Theme colors now apply to entire page, not just components
+- **Background Colors** - Dark mode now shows proper dark background (#0d1117)
+- **Text Colors** - All text properly contrasts with theme background
+
+### 📝 Changed
+
+- **ThemeProvider.tsx** - Added `CssBaseline` component import and rendering
+- CssBaseline renders after MuiThemeProvider to apply theme styles globally
+
+### 🧪 Testing & Validation
+
+**Visual Verification**:
+- ✅ Dark mode background is dark (#0d1117) across entire page
+- ✅ Light mode background is light (#f5f5f5) across entire page
+- ✅ Text colors properly contrast with background
+- ✅ Theme toggle (☀️ / 🌙) works smoothly
+- ✅ No white/light content left when dark mode is on
+
+**Build Verification**:
+- Build hash changed: `index-BXoucli7.js` (previous: `index-C_y_-Fd5.js`)
+- All containers running and healthy
+- Backend responsive
+- Frontend loading without errors
+
+### 📊 Technical Details
+
+**How CssBaseline Works**:
+```tsx
+<MuiThemeProvider theme={theme}>
+  <CssBaseline />  {/* Applies theme colors to html/body */}
+  {children}
+</MuiThemeProvider>
+```
+
+CssBaseline:
+- Applies background color from `theme.palette.background.default`
+- Applies text color from `theme.palette.text.primary`
+- Normalizes browser styles
+- Removes default margins/padding
+
+---
+
 ## [1.1.2] - October 30, 2025
 
 ### 🔧 Refactored
