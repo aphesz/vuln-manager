@@ -8,6 +8,47 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [1.1.2] - October 30, 2025
+
+### 🔧 Refactored
+
+#### Header Component Architecture
+- **AppHeader Component** - Created new standalone header component
+- **Fixed Context Issues** - `useTheme()` hook now works properly by using it inside AppHeader
+- **Separated Concerns** - App.tsx now only handles routing, AppHeader handles header UI
+- **Theme Toggle** - Moved to separate component for better code organization
+
+### 🐛 Fixed
+
+#### Theme Toggle Button Visibility
+- Fixed broken theme toggle by refactoring component structure
+- Theme toggle now properly visible and functional in top right corner
+- Icon buttons properly styled with theme colors
+- Hover effects working smoothly
+
+### 📝 Changed
+
+- **App.tsx** - Simplified to focus on routing logic only
+- **AppHeader.tsx** - New component handling header and theme toggle
+- Improved overall component structure and reusability
+
+### 🧪 Testing & Validation
+
+**Visual Verification**:
+- ✅ Theme toggle visible in header on projects page
+- ✅ Theme toggle visible in header on dashboard page
+- ✅ Click theme toggle properly switches between light/dark mode
+- ✅ Entire UI responds to theme changes
+- ✅ Text contrast maintained in both modes
+
+**Build Verification**:
+- Build hash changed: `index-C_y_-Fd5.js` (previous: `index-Dmj00Alz.js`)
+- All containers running healthy
+- Backend responsive
+- No console errors
+
+---
+
 ## [1.1.1] - October 30, 2025
 
 ### 🐛 Fixed
