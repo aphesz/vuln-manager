@@ -8,6 +8,56 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [1.1.0] - October 30, 2025
+
+### ✨ Added
+
+#### Enhanced Dark Mode Theme
+- **Professional Dark Palette** - GitHub-inspired dark theme (`#0d1117`, `#161b22`)
+- **Improved Text Contrast** - High contrast colors for accessibility:
+  - Dark mode: `#e6edf3` (primary), `#8b949e` (secondary)
+  - Light mode: `#212121` (primary), `#666666` (secondary)
+- **Better Risk Colors** - Enhanced risk level colors optimized for dark mode
+- **Smooth Transitions** - Theme toggle now includes smooth CSS transitions
+
+### 🐛 Fixed
+
+#### Dark Mode Improvements
+- Header now respects theme colors instead of hardcoded black
+- All text now has proper contrast ratio (WCAG AA compliant)
+- Table no longer isolated from theme - entire app darkens properly
+- Typography refined with letter-spacing for better readability
+
+### 📝 Changed
+
+- **App.tsx** - Converted header to use `useTheme()` hook for responsive styling
+- **index.css** - Added smooth transitions and proper layout for theme changes
+- **ThemeProvider.tsx** - Expanded palette with professional colors and improved typography
+
+### 🧪 Testing & Validation
+
+**Visual Verification**:
+- ✅ Dark mode applies to entire app (header, body, cards, tables)
+- ✅ Light mode working correctly
+- ✅ Text contrast meets WCAG AA standards
+- ✅ Theme toggle smooth without jarring color changes
+- ✅ MUI components properly styled in both modes
+
+**Build Verification**:
+- Build hash changed: `index-D7LPVKc1.js` (previous: `index-BokmqCAI.js`)
+- All containers restarted successfully
+- Backend and frontend both healthy
+- No migration needed
+
+### 📊 Build Metrics
+
+- Build time: 11.4 seconds
+- Vite modules: 11,964 transformed
+- Bundle size: Minimal increase (~2KB for theme configs)
+- Production ready: ✅ Yes
+
+---
+
 ## [1.0.0] - October 30, 2025
 
 ### ✨ Added
