@@ -149,7 +149,12 @@ const Dashboard = () => {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h4">{project.name}</Typography>
+        <Typography 
+          variant="h4" 
+          sx={{ color: theme.palette.text.primary, fontWeight: 600 }}
+        >
+          {project.name}
+        </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <IconButton 
             onClick={toggleTheme} 
@@ -190,7 +195,9 @@ const Dashboard = () => {
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Risk Distribution</Typography>
+              <Typography variant="h6" gutterBottom sx={{ color: theme.palette.text.primary, fontWeight: 600 }}>
+                Risk Distribution
+              </Typography>
               <RiskChart findings={project.findings} />
             </CardContent>
           </Card>
@@ -200,7 +207,9 @@ const Dashboard = () => {
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Quick Actions</Typography>
+              <Typography variant="h6" gutterBottom sx={{ color: theme.palette.text.primary, fontWeight: 600 }}>
+                Quick Actions
+              </Typography>
               <Box sx={{ display: 'flex', gap: 2 }}>
                 <Button
                   variant="contained"
