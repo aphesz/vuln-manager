@@ -21,6 +21,9 @@ COPY ./app /code/app
 COPY ./alembic.ini /code/alembic.ini
 COPY ./alembic /code/alembic
 
+# Copy tests directory
+COPY ./tests /code/tests
+
 # Install debugging tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \

@@ -1,9 +1,10 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { useTheme, Box, IconButton } from '@mui/material'
+import { useTheme, Box, IconButton, Button } from '@mui/material'
 import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
+  Assessment as SLAIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
 
@@ -18,7 +19,7 @@ const AppHeader = () => {
       aria-label="Application header"
       sx={{
         backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#343a40',
-        color: theme.palette.text.primary,
+        color: '#ffffff',
         padding: '15px 20px',
         marginBottom: '20px',
         boxShadow: theme.shadows[1],
@@ -33,9 +34,9 @@ const AppHeader = () => {
           sx={{
             fontSize: '1.2em',
             fontWeight: 500,
-            color: theme.palette.text.primary,
+            color: '#ffffff',
             '&:hover': {
-              color: theme.palette.primary.main,
+              color: theme.palette.primary.light,
             },
             cursor: 'pointer',
             margin: 0,
@@ -44,27 +45,44 @@ const AppHeader = () => {
           🛡️ VulnManager Dashboard
         </Box>
       </Link>
-      <IconButton 
-        onClick={toggleTheme}
-        size="large"
-        aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode (current: ${mode} mode)`}
-        aria-pressed={mode === 'dark'}
-        sx={{
-          color: theme.palette.text.primary,
-          '&:hover': {
-            backgroundColor: theme.palette.mode === 'dark' 
-              ? 'rgba(255, 255, 255, 0.1)' 
-              : 'rgba(0, 0, 0, 0.05)',
-          },
-          '&:focus-visible': {
-            outline: `2px solid ${theme.palette.primary.main}`,
-            outlineOffset: '2px',
-          },
-        }}
-        title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-      >
-        {mode === 'dark' ? <LightModeIcon aria-hidden="true" /> : <DarkModeIcon aria-hidden="true" />}
-      </IconButton>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Button
+          component={Link}
+          to="/sla"
+          variant="outlined"
+          startIcon={<SLAIcon />}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="View SLA dashboard"
+        >
+          SLA Dashboard
+        </Button>
+        <IconButton 
+          onClick={toggleTheme}
+          size="large"
+          aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode (current: ${mode} mode)`}
+          aria-pressed={mode === 'dark'}
+          sx={{
+            color: '#ffffff',
+            '&:hover': {
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+            '&:focus-visible': {
+              outline: `2px solid ${theme.palette.primary.main}`,
+              outlineOffset: '2px',
+            },
+          }}
+          title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {mode === 'dark' ? <LightModeIcon aria-hidden="true" /> : <DarkModeIcon aria-hidden="true" />}
+        </IconButton>
+      </Box>
     </Box>
   )
 }

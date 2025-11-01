@@ -42,12 +42,23 @@ class FindingBase(SQLModel):
         AtRisk = "At Risk"
         Overdue = "Overdue"
 
+    class IssueStatus(str, Enum):
+        """Enum for issue tracking statuses."""
+        Open = "Open"
+        PartiallyClosed = "Partially Closed"
+        Closed = "Closed"
+
     risk_rating: RiskRating = Field(..., index=True)  # Normalized risk
     description: str = Field(...)
     remediation: str = Field(...)
     
     # Peer Review fields
     review_status: ReviewStatus = Field(default=ReviewStatus.Pending, index=True)
+    reviewer_name: Optional[str] = Field(default=None, max_length=100)
+    
+    # Issue Status field
+    issue_status: IssueStatus = Field(default=IssueStatus.Open, index=True)
+    issue_status_comment: Optional[str] = None  # Optional comment for status changes
     
     # Jira Integration fields
     jira_issue_key: Optional[str] = Field(default=None, index=True)

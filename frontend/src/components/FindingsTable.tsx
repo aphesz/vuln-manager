@@ -2,14 +2,15 @@
 /** @jsx React.createElement */
 /** @jsxFrag React.Fragment */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   DataGrid,
   GridToolbar,
   GridActionsCellItem,
   GridRenderCellParams,
+  GridColDef,
 } from '@mui/x-data-grid';
-import { Finding, Instance, RiskRating } from '../types';
+import { Finding, Instance, RiskRating, ReviewStatus, SLAStatus, IssueStatus } from '../types';
 import {
   Box,
   Chip,
@@ -24,8 +25,26 @@ import {
   Tabs,
   Tab,
   Paper,
+  Tooltip,
+  Select,
+  MenuItem,
+  TextField,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
+import {
+  CheckCircle as ApprovedIcon,
+  Cancel as RejectedIcon,
+  RateReview as ReviewIcon,
+  Pending as PendingIcon,
+  BugReport as JiraIcon,
+  Warning as WarningIcon,
+  Error as ErrorIcon,
+  CheckCircle as SuccessIcon,
+} from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
+import FindingReviewPanel from './FindingReviewPanel';
+import IssueStatusService from '../services/IssueStatusService';
 
 interface RiskChipProps {
   level: RiskRating;
@@ -50,13 +69,22 @@ interface FindingDialogProps {
   finding: Finding | null;
   open: boolean;
   onClose: () => void;
+  onRefresh?: () => void;
 }
 
 // Detailed view dialog for a finding
-const FindingDialog = ({ finding, open, onClose }: FindingDialogProps) => {
+const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps) => {
   const [tabValue, setTabValue] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   if (!finding) return null;
+
+  const handleStatusChange = () => {
+    setRefreshKey((prev: number) => prev + 1);
+    if (onRefresh) {
+      onRefresh();
+    }
+  };
 
   return (
     <Dialog 
@@ -82,6 +110,8 @@ const FindingDialog = ({ finding, open, onClose }: FindingDialogProps) => {
           <Tab label="Overview" />
           <Tab label="Instances" />
           <Tab label="Remediation" />
+          <Tab label="Peer Review" />
+          <Tab label="Issue Status" />
         </Tabs>
 
         {tabValue === 0 && (
@@ -134,6 +164,94 @@ const FindingDialog = ({ finding, open, onClose }: FindingDialogProps) => {
             </Typography>
           </Box>
         )}
+
+        {tabValue === 3 && (
+          <Box key={refreshKey}>
+            <FindingReviewPanel
+              findingId={finding.id}
+              currentStatus={finding.review_status || 'Pending'}
+              currentReviewerName={finding.reviewer_name}
+              onStatusChange={handleStatusChange}
+            />
+          </Box>
+        )}
+
+        {tabValue === 4 && (
+          <Box>
+            <Typography variant="h6" gutterBottom>
+              Issue Tracking Status
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Track whether this finding is open, partially resolved, or fully closed.
+            </Typography>
+
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Issue Status</InputLabel>
+              <Select
+                value={finding.issue_status || 'Open'}
+                label="Issue Status"
+                onChange={async (e) => {
+                  const newStatus = e.target.value as IssueStatus;
+                  try {
+                    await IssueStatusService.updateIssueStatus(
+                      finding.id,
+                      newStatus,
+                      undefined,
+                      'analyst@example.com'
+                    );
+                    handleStatusChange();
+                  } catch (err) {
+                    console.error('Failed to update issue status:', err);
+                  }
+                }}
+              >
+                <MenuItem value="Open">Open</MenuItem>
+                <MenuItem value="Partially Closed">Partially Closed</MenuItem>
+                <MenuItem value="Closed">Closed</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Status Comment (Optional)"
+              defaultValue={finding.issue_status_comment || ''}
+              helperText="Add notes about the current status"
+              onBlur={async (e) => {
+                const comment = e.target.value;
+                if (comment !== (finding.issue_status_comment || '')) {
+                  try {
+                    await IssueStatusService.updateIssueStatus(
+                      finding.id,
+                      finding.issue_status || 'Open',
+                      comment,
+                      'analyst@example.com'
+                    );
+                    handleStatusChange();
+                  } catch (err) {
+                    console.error('Failed to update status comment:', err);
+                  }
+                }
+              }}
+            />
+
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                <strong>Status Guide:</strong>
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                • <strong>Open:</strong> Finding is unresolved and requires attention
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                • <strong>Partially Closed:</strong> Some instances resolved, others remain
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                • <strong>Closed:</strong> All instances resolved and verified
+              </Typography>
+            </Box>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
@@ -152,6 +270,7 @@ interface FindingsTableProps {
     };
   };
   onPreferencesChange: (columns: any) => void;
+  onRefresh?: () => void;
 }
 
 // Utility function to strip HTML tags and decode HTML entities
@@ -181,15 +300,75 @@ const stripHtmlTags = (html: string): string => {
 };
 
 // Main FindingsTable component
-const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsTableProps) => {
+const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }: FindingsTableProps) => {
   const [selectedFinding, setSelectedFinding] = useState(null);
   const theme = useTheme();
 
-  const columns = [
+  // Update selectedFinding when findings array changes (after refresh)
+  useEffect(() => {
+    if (selectedFinding) {
+      const updatedFinding = findings.find((f: Finding) => f.id === selectedFinding.id);
+      if (updatedFinding) {
+        setSelectedFinding(updatedFinding);
+      }
+    }
+  }, [findings]);
+
+  // Helper functions for status rendering
+  const getReviewStatusColor = (status: ReviewStatus | undefined) => {
+    switch (status) {
+      case 'Approved': return 'success';
+      case 'Rejected': return 'error';
+      case 'In Review': return 'info';
+      case 'Pending':
+      default: return 'warning';
+    }
+  };
+
+  const getReviewStatusIcon = (status: ReviewStatus | undefined) => {
+    switch (status) {
+      case 'Approved': return <ApprovedIcon sx={{ fontSize: 16 }} />;
+      case 'Rejected': return <RejectedIcon sx={{ fontSize: 16 }} />;
+      case 'In Review': return <ReviewIcon sx={{ fontSize: 16 }} />;
+      case 'Pending':
+      default: return <PendingIcon sx={{ fontSize: 16 }} />;
+    }
+  };
+
+  const getSLAStatusColor = (status: SLAStatus | undefined) => {
+    switch (status) {
+      case 'On Track': return theme.palette.success.main;
+      case 'At Risk': return theme.palette.warning.main;
+      case 'Overdue': return theme.palette.error.main;
+      default: return theme.palette.grey[500];
+    }
+  };
+
+  const getSLAStatusIcon = (status: SLAStatus | undefined) => {
+    switch (status) {
+      case 'On Track': return <SuccessIcon sx={{ fontSize: 16 }} />;
+      case 'At Risk': return <WarningIcon sx={{ fontSize: 16 }} />;
+      case 'Overdue': return <ErrorIcon sx={{ fontSize: 16 }} />;
+      default: return null;
+    }
+  };
+
+  const formatDeadline = (deadline: string | undefined) => {
+    if (!deadline) return 'Not set';
+    const date = new Date(deadline);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const columns: GridColDef[] = [
     {
       field: 'title',
       headerName: 'Title',
       flex: 2,
+      minWidth: 150,
       renderCell: (params: GridRenderCellParams) => (
         <Typography 
           variant="body2" 
@@ -203,20 +382,171 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsT
     {
       field: 'risk_rating',
       headerName: 'Risk Level',
-      width: 130,
+      flex: 1,
+      minWidth: 120,
       renderCell: (params: GridRenderCellParams) => <RiskChip level={params.value} />,
+    },
+    {
+      field: 'review_status',
+      headerName: 'Review Status',
+      flex: 1,
+      minWidth: 140,
+      renderCell: (params: GridRenderCellParams) => {
+        const status = (params.value as ReviewStatus) || 'Pending';
+        return (
+          <Chip
+            label={status}
+            size="small"
+            color={getReviewStatusColor(status) as any}
+            icon={getReviewStatusIcon(status)}
+            sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+          />
+        );
+      },
+    },
+    {
+      field: 'jira_status',
+      headerName: 'Jira',
+      flex: 1,
+      minWidth: 110,
+      renderCell: (params: GridRenderCellParams) => {
+        const jiraKey = params.row.jira_issue_key;
+        const jiraStatus = params.value;
+        
+        if (!jiraKey) {
+          return (
+            <Chip
+              label="No Issue"
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: '0.7rem' }}
+            />
+          );
+        }
+        
+        return (
+          <Tooltip title={`${jiraKey}: ${jiraStatus || 'Unknown'}`} arrow>
+            <Chip
+              label={jiraStatus || jiraKey}
+              size="small"
+              icon={<JiraIcon sx={{ fontSize: 14 }} />}
+              color="primary"
+              sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}
+            />
+          </Tooltip>
+        );
+      },
+    },
+    {
+      field: 'sla_status',
+      headerName: 'SLA Status',
+      flex: 1,
+      minWidth: 130,
+      renderCell: (params: GridRenderCellParams) => {
+        const status = params.value as SLAStatus;
+        
+        if (!status) {
+          return (
+            <Chip
+              label="Not Set"
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: '0.7rem' }}
+            />
+          );
+        }
+        
+        return (
+          <Chip
+            label={status}
+            size="small"
+            icon={getSLAStatusIcon(status) || undefined}
+            sx={{
+              bgcolor: getSLAStatusColor(status),
+              color: 'white',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+            }}
+          />
+        );
+      },
+    },
+    {
+      field: 'issue_status',
+      headerName: 'Issue Status',
+      flex: 1,
+      minWidth: 130,
+      renderCell: (params: GridRenderCellParams) => {
+        const status = params.value as string | undefined;
+        
+        if (!status || status === 'Open') {
+          return (
+            <Chip
+              label="Open"
+              size="small"
+              color="error"
+              sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+            />
+          );
+        }
+        
+        if (status === 'Partially Closed') {
+          return (
+            <Chip
+              label="Partially Closed"
+              size="small"
+              color="warning"
+              sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}
+            />
+          );
+        }
+        
+        return (
+          <Chip
+            label="Closed"
+            size="small"
+            color="success"
+            sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+          />
+        );
+      },
+    },
+    {
+      field: 'remediation_deadline',
+      headerName: 'Deadline',
+      flex: 1,
+      minWidth: 120,
+      renderCell: (params: GridRenderCellParams) => {
+        const deadline = params.value as string | undefined;
+        const isOverdue = deadline && new Date(deadline) < new Date();
+        
+        return (
+          <Typography
+            variant="body2"
+            sx={{
+              fontSize: '0.875rem',
+              color: isOverdue ? theme.palette.error.main : 'inherit',
+              fontWeight: isOverdue ? 'bold' : 'normal',
+            }}
+          >
+            {formatDeadline(deadline)}
+          </Typography>
+        );
+      },
     },
     {
       field: 'instances',
       headerName: 'Instances',
-      width: 100,
+      flex: 0.5,
+      minWidth: 90,
       valueGetter: (params: any) => params.row.instances.length,
     },
     {
       field: 'actions',
       type: 'actions' as const,
       headerName: 'Actions',
-      width: 100,
+      flex: 0.5,
+      minWidth: 80,
       getActions: (params: any) => [
         <GridActionsCellItem
           label="View Details"
@@ -233,7 +563,14 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsT
   ];
 
   return (
-    <Paper elevation={1} sx={{ height: 600, width: '100%' }}>
+    <Paper 
+      elevation={1} 
+      sx={{ 
+        height: { xs: 500, sm: 600, md: 700 }, 
+        width: '100%',
+        overflow: 'auto',
+      }}
+    >
       <DataGrid
         rows={findings}
         columns={columns}
@@ -251,8 +588,15 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsT
         }}
         sx={{
           '& .MuiDataGrid-toolbarContainer': {
-            padding: 2,
+            padding: { xs: 1, sm: 2 },
             backgroundColor: theme.palette.background.paper,
+            flexWrap: 'wrap',
+          },
+          '& .MuiDataGrid-columnHeaders': {
+            fontSize: { xs: '0.75rem', sm: '0.875rem' },
+          },
+          '& .MuiDataGrid-cell': {
+            fontSize: { xs: '0.75rem', sm: '0.875rem' },
           },
         }}
       />
@@ -261,6 +605,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange }: FindingsT
         finding={selectedFinding}
         open={!!selectedFinding}
         onClose={() => setSelectedFinding(null)}
+        onRefresh={onRefresh}
       />
     </Paper>
   );

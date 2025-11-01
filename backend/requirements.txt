@@ -9,3 +9,5 @@ defusedxml==0.7.1  # added for secure XML parsing in parsers
 alembic==1.13.1  # database migrations
 cryptography==42.0.2  # for encrypting sensitive data (Jira tokens, etc.)
 httpx==0.26.0  # for Jira API calls
+pytest==7.4.3  # testing framework
+pytest-cov==4.1.0  # coverage reporting

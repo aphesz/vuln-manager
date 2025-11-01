@@ -6,6 +6,103 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [0.3.1] - November 2, 2025
+
+### ✨ Added
+
+#### Interactive Risk Rating Cards
+- **Click-to-filter functionality** - Click risk cards (Critical/High/Medium/Low/Informational) to filter findings
+- **Enhanced color palette** - 30% darker colors for better contrast and readability
+  - Critical: #b71c1c / #ffcdd2 (dark/light backgrounds)
+  - High: #e65100 / #ffccbc
+  - Medium: #f57f17 / #fff9c4
+  - Low: #2e7d32 / #c8e6c9
+  - Informational: #1565c0 / #bbdefb
+- **Standardized design** - Consistent card styling across Dashboard and SLA Dashboard
+- **Real-time updates** - Cards update counts when findings change
+
+#### Peer Review Enhancements
+- **Reviewer Name Field** - Added dedicated field between review status and comments
+  - `reviewer_name VARCHAR(100)` column in database
+  - Full frontend-to-backend integration
+  - Persists across sessions
+  - Displayed in audit log
+- **Renamed Tab** - "Review & Comments" → "Peer Review" for clarity
+- **Backend API Support**:
+  - Updated `PATCH /findings/{id}/review` to accept `reviewer_name`
+  - Enhanced audit log to track reviewer name changes
+  - Returns reviewer name in API responses
+
+#### Issue Status Tracking
+- **Finding-level status** - Track resolution progress (Open/Partially Closed/Closed)
+- **Status comments** - Optional notes explaining status changes
+- **Dedicated tab** - New "Issue Status" tab in finding details
+- **Database fields**:
+  - `issue_status` ENUM column
+  - `issue_status_comment` TEXT column
+- **Status guide** - Inline help text explaining each status level
+
+### 🐛 Fixed
+- **Status update refresh bug** - Fixed UI not updating after status changes
+  - Root cause: Filtered FindingsTable missing `onRefresh` prop
+  - Solution: Added `onRefresh={fetchProject}` to filtered findings table
+  - Affected: Status changes when risk cards are clicked
+- **Audit log update delay** - Fixed audit log not showing latest changes immediately
+  - Backend: Changed sort order from ascending to descending (newest first)
+  - Frontend: Added 100ms delay before reloading audit log
+  - Ensures database commit visibility before subsequent queries
+- **Header visibility in light mode** - Fixed white text on light background
+  - Changed header text to white (#ffffff) for both light and dark modes
+  - Ensures readable text on dark header background
+
+### 📝 Changed
+- **Audit log ordering** - Now displays newest entries first (reverse chronological)
+- **Color consistency** - Risk rating colors standardized across all components
+- **Review status workflow** - Improved with dedicated reviewer attribution
+- **Tab organization** - Clearer naming: "Peer Review" instead of "Review & Comments"
+
+### 🗃️ Database Changes
+- **Migration 004**: Added `reviewer_name` column to `finding` table
+  - Type: VARCHAR(100)
+  - Nullable: Yes
+  - Indexed: No
+- **Migration 003**: Added issue status columns (completed previously)
+  - `issue_status` ENUM
+  - `issue_status_comment` TEXT
+
+### 🔧 Technical Improvements
+- **Database migrations**: Alembic migration chain extended (001 → 002 → 003 → 004)
+- **API enhancements**:
+  - Review status endpoint now handles reviewer name
+  - Audit log endpoint returns newest entries first
+  - Better change tracking in audit logs
+- **Frontend TypeScript**: Updated types for `reviewer_name` field
+- **Service layer**: Updated PeerReviewService to send reviewer name
+
+### 📊 Implementation Stats
+- **Files Modified**: 8 files
+  - Backend: `models.py`, `main.py`, `004_add_reviewer_name.py`
+  - Frontend: `FindingReviewPanel.tsx`, `FindingsTable.tsx`, `Dashboard.tsx`, `AppHeader.tsx`, `types.ts`, `PeerReviewService.ts`
+- **Lines Added**: ~300 lines
+- **Bug Fixes**: 3 critical UI bugs resolved
+- **Database Migrations**: 1 new migration applied
+
+### 📚 Testing Status
+- ✅ Interactive risk cards tested and deployed
+- ✅ Reviewer name field persistence verified
+- ✅ Audit log ordering confirmed working
+- ✅ Status update refresh bug fixed and tested
+- 🔄 Manual peer review workflow testing in progress
+
+### 🚀 Deployment
+- All services rebuilt and restarted
+- Migration 004 applied successfully
+- Frontend build: ~12 seconds
+- Backend build: ~8 seconds
+- Status: ✅ Ready for testing
+
+---
+
 ## [0.3.0] - November 1, 2025 (Previously v1.3.0)
 
 ### 🎯 Tier 1 Features - Major Release

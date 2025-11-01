@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -48,6 +48,7 @@ const ProjectsLists: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState(0);
   const theme = useTheme();
+  const navigate = useNavigate();
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -334,15 +335,14 @@ const ProjectsLists: React.FC = () => {
                   </Box>
                 </Box>
               ) : (
-                // Display Mode
+                // Display Mode - Click to navigate to dashboard
                 <>
                   <Typography
                     variant="h6"
-                    onClick={() => handleStartEdit(project)}
+                    onClick={() => !project.is_archived && navigate(`/projects/${project.id}`)}
                     sx={{
-                      cursor: 'pointer',
-                      '&:hover': {
-                        textDecoration: 'underline',
+                      cursor: project.is_archived ? 'default' : 'pointer',
+                      '&:hover': project.is_archived ? {} : {
                         color: 'primary.main',
                       },
                     }}
@@ -352,10 +352,10 @@ const ProjectsLists: React.FC = () => {
                   <Typography
                     variant="body2"
                     color="textSecondary"
-                    onClick={() => handleStartEdit(project)}
+                    onClick={() => !project.is_archived && navigate(`/projects/${project.id}`)}
                     sx={{
-                      cursor: 'pointer',
-                      '&:hover': {
+                      cursor: project.is_archived ? 'default' : 'pointer',
+                      '&:hover': project.is_archived ? {} : {
                         color: 'primary.main',
                       },
                     }}

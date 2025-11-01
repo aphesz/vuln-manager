@@ -1,6 +1,6 @@
 """SLA and remediation tracking logic for VulnManager."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from sqlmodel import Session, select
 from app.models import Finding, FindingBase
@@ -59,11 +59,21 @@ def calculate_sla_status(
     """
     if deadline is None:
         return None
-        
-    now = current_time or datetime.utcnow()
+    
+    # Make sure we're working with timezone-aware datetimes
+    now = current_time or datetime.now(timezone.utc)
+    
+    # If deadline is naive, make it UTC-aware
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    
+    # If now is naive, make it UTC-aware
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     
     # If past deadline, it's overdue
     if now > deadline:
+        return FindingBase.SLAStatus.Overdue
         return FindingBase.SLAStatus.Overdue
     
     # Calculate time remaining vs. total time

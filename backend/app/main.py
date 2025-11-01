@@ -1,12 +1,13 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text
 from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
 import os
 import sys
 import logging
@@ -73,6 +74,60 @@ def get_session():
     with Session(engine) as session:
         yield session
 
+# --- Request Models (for API endpoints) ---
+from pydantic import BaseModel
+
+class ReviewStatusUpdate(BaseModel):
+    """Request model for updating finding review status."""
+    status: str
+    reviewer_name: Optional[str] = None
+
+class JiraSettingsCreate(BaseModel):
+    """Request model for creating/updating Jira settings."""
+    project_id: int
+    jira_url: str
+    project_key: str
+    api_token: str
+    is_active: bool = True
+
+class JiraConnectionTest(BaseModel):
+    """Request model for testing Jira connection."""
+    jira_url: str
+    email: str  # Jira user email for authentication
+    api_token: str
+
+class JiraIssueCreate(BaseModel):
+    """Request model for creating Jira issue from finding."""
+    user: str = "system"
+
+class RemediationUpdate(BaseModel):
+    """Request model for updating remediation deadline and owner."""
+    remediation_deadline: Optional[str] = None
+    remediation_owner: Optional[str] = None
+    user: str = "system"
+
+class IssueStatusUpdate(BaseModel):
+    """Request model for updating finding issue status."""
+    issue_status: str  # "Open", "Partially Closed", or "Closed"
+    issue_status_comment: Optional[str] = None
+    user: str = "system"
+
+# --- Application Lifespan ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application startup and shutdown."""
+    # Startup
+    create_db_and_tables()
+    
+    # Fix the database using direct connection first
+    from app.db import fix_risk_ratings_direct
+    fix_risk_ratings_direct()
+    
+    yield
+    
+    # Shutdown (if needed in future)
+
 # --- FastAPI App Initialization ---
 
 from app.websocket import WebSocketManager
@@ -80,7 +135,8 @@ from app.websocket import WebSocketManager
 app = FastAPI(
     title="VulnManager API",
     description="API for managing vulnerability assessment projects and reports.",
-    version="0.3.0"
+    version="0.3.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware to allow frontend requests
@@ -113,14 +169,15 @@ async def add_security_headers(request: Request, call_next):
     # Permissions policy - disable sensitive features not in use
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     
-    # Content Security Policy - restrict resource loading (adjust as needed)
-    # Allow: same-origin scripts/styles, unsafe-inline for Material-UI (evaluate later)
+    # Content Security Policy - restrict resource loading
+    # Allow Swagger UI CDN resources (cdn.jsdelivr.net) for API documentation
+    # Allow: same-origin scripts/styles, unsafe-inline for Material-UI and Swagger UI
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' data: https:; "
-        "font-src 'self'; "
+        "font-src 'self' https://cdn.jsdelivr.net; "
         "connect-src 'self' ws: wss:; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
@@ -318,16 +375,7 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
     
     return True
 
-# --- Application Startup and Health Check ---
-
-@app.on_event("startup")
-def on_startup():
-    """Runs when the FastAPI application starts."""
-    create_db_and_tables()
-    
-    # Fix the database using direct connection first
-    from app.db import fix_risk_ratings_direct
-    fix_risk_ratings_direct()
+# --- Health Check ---
 
 @app.get("/health")
 def health_check(session: Session = Depends(get_session)):
@@ -675,8 +723,7 @@ def get_pdf_report(project_id: int, session: Session = Depends(get_session)):
 @app.patch("/findings/{finding_id}/review")
 def update_finding_review_status(
     finding_id: int,
-    review_status: str,
-    user: str = "system",  # TODO: Replace with actual auth user
+    data: ReviewStatusUpdate,
     session: Session = Depends(get_session)
 ):
     """
@@ -684,12 +731,16 @@ def update_finding_review_status(
     
     Args:
         finding_id: ID of the finding
-        review_status: New review status (Pending, In Review, Approved, Rejected)
-        user: User making the change (from auth token in production)
+        data: Review status update data (status, reviewer_name)
     """
     finding = session.get(Finding, finding_id)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Map 'status' from request to 'review_status' for validation
+    review_status = data.status
+    reviewer_name = data.reviewer_name
+    user = reviewer_name if reviewer_name else "system"
     
     # Validate review status
     valid_statuses = ['Pending', 'In Review', 'Approved', 'Rejected']
@@ -700,20 +751,31 @@ def update_finding_review_status(
         )
     
     old_status = finding.review_status.value if finding.review_status else None
+    old_reviewer = finding.reviewer_name
+    
     finding.review_status = FindingBase.ReviewStatus(review_status)
+    finding.reviewer_name = reviewer_name
     
     # Create audit log entry
+    changes = {
+        "review_status": {
+            "old_value": old_status,
+            "new_value": review_status
+        }
+    }
+    if old_reviewer != reviewer_name:
+        changes["reviewer_name"] = {
+            "old_value": old_reviewer,
+            "new_value": reviewer_name
+        }
+    
     audit_entry = AuditLog(
         entity_type="finding",
         entity_id=finding_id,
-        action="status_changed",
+        action="review_status_changed",
         user=user,
         timestamp=datetime.utcnow(),
-        changes_json=json.dumps({
-            "field": "review_status",
-            "old_value": old_status,
-            "new_value": review_status
-        })
+        changes_json=json.dumps(changes)
     )
     
     session.add(finding)
@@ -726,6 +788,7 @@ def update_finding_review_status(
     return {
         "id": finding.id,
         "review_status": finding.review_status.value,
+        "reviewer_name": finding.reviewer_name,
         "updated_by": user
     }
 
@@ -799,7 +862,7 @@ def get_finding_comments(
     comments = session.exec(
         select(Comment)
         .where(Comment.finding_id == finding_id)
-        .order_by(Comment.created_at.desc())
+        .order_by(Comment.created_at)  # Chronological order (oldest first)
     ).all()
     
     return comments
@@ -833,7 +896,7 @@ def get_audit_log(
     if user:
         query = query.where(AuditLog.user == user)
     
-    query = query.order_by(AuditLog.timestamp.desc()).limit(limit)
+    query = query.order_by(AuditLog.timestamp.desc()).limit(limit)  # Newest first for better UX
     
     entries = session.exec(query).all()
     return entries
@@ -842,9 +905,7 @@ def get_audit_log(
 
 @app.post("/jira/settings", response_model=JiraSettingsRead)
 def create_jira_settings(
-    settings_data: JiraSettingsBase,
-    api_token: str,  # Separate from model for security
-    project_id: Optional[int] = None,
+    data: JiraSettingsCreate,
     session: Session = Depends(get_session)
 ):
     """
@@ -853,45 +914,63 @@ def create_jira_settings(
     Security: API token is encrypted before storage.
     """
     # Encrypt the API token
-    encrypted_token = encrypt_token(api_token)
+    encrypted_token = encrypt_token(data.api_token)
     
     settings = JiraSettings(
-        jira_url=settings_data.jira_url,
-        project_key=settings_data.project_key,
+        jira_url=data.jira_url,
+        project_key=data.project_key,
         api_token_encrypted=encrypted_token,
-        is_active=settings_data.is_active,
-        project_id=project_id
+        is_active=data.is_active,
+        project_id=data.project_id
     )
     
     session.add(settings)
     session.commit()
     session.refresh(settings)
     
-    logger.info(f"Jira settings created for project {project_id}")
+    logger.info(f"Jira settings created for project {data.project_id}")
+    
+    return settings
+
+@app.get("/jira/settings/{project_id}", response_model=JiraSettingsRead)
+def get_jira_settings(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Retrieve Jira integration settings for a specific project.
+    Returns 404 if settings not found.
+    """
+    statement = select(JiraSettings).where(JiraSettings.project_id == project_id)
+    settings = session.exec(statement).first()
+    
+    if not settings:
+        raise HTTPException(status_code=404, detail=f"Jira settings not found for project {project_id}")
     
     return settings
 
 @app.post("/jira/test-connection")
 async def test_jira_connection(
-    jira_url: str,
-    email: str,
-    api_token: str
+    data: JiraConnectionTest
 ):
     """Test Jira connection without saving settings."""
     from app.jira import JiraClient
     
-    client = JiraClient(jira_url, email, api_token)
-    result = await client.test_connection()
-    
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["message"])
-    
-    return result
+    try:
+        client = JiraClient(data.jira_url, data.email, data.api_token)
+        result = await client.test_connection()
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("message", "Connection failed"))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
 
 @app.post("/findings/{finding_id}/create-jira-issue")
 async def create_jira_issue_for_finding(
     finding_id: int,
-    project_key: Optional[str] = None,
+    data: JiraIssueCreate,
     session: Session = Depends(get_session)
 ):
     """
@@ -899,7 +978,7 @@ async def create_jira_issue_for_finding(
     
     Args:
         finding_id: ID of the finding
-        project_key: Jira project key (optional, uses settings if not provided)
+        data: Request data containing user information
     """
     finding = session.get(Finding, finding_id)
     if not finding:
@@ -919,16 +998,16 @@ async def create_jira_issue_for_finding(
             detail="Jira integration not configured for this project"
         )
     
-    # Get project key from settings if not provided
-    if not project_key:
-        settings_query = select(JiraSettings).where(
-            JiraSettings.project_id == finding.project_id,
-            JiraSettings.is_active == True
-        )
-        settings = session.exec(settings_query).first()
-        if not settings:
-            raise HTTPException(status_code=400, detail="No active Jira settings found")
-        project_key = settings.project_key
+    # Get project key from settings
+    settings_query = select(JiraSettings).where(
+        JiraSettings.project_id == finding.project_id,
+        JiraSettings.is_active == True
+    )
+    settings = session.exec(settings_query).first()
+    if not settings:
+        raise HTTPException(status_code=400, detail="No active Jira settings found")
+    
+    project_key = settings.project_key
     
     # Create the issue
     issue_data = await client.create_issue(project_key, finding)
@@ -945,11 +1024,11 @@ async def create_jira_issue_for_finding(
         entity_type="finding",
         entity_id=finding_id,
         action="jira_issue_created",
-        user="system",
+        user=data.user,
         timestamp=datetime.utcnow(),
         changes_json=json.dumps({
             "jira_issue_key": issue_data["key"],
-            "jira_issue_id": issue_data["id"]
+            "jira_url": issue_data.get("self", "")
         })
     )
     
@@ -958,14 +1037,16 @@ async def create_jira_issue_for_finding(
     session.commit()
     session.refresh(finding)
     
-    logger.info(f"Created Jira issue {issue_data['key']} for finding {finding_id}")
+    
+    logger.info(f"Jira issue {issue_data['key']} created for finding {finding_id} by {data.user}")
     
     return {
-        "finding_id": finding_id,
-        "jira_issue_key": issue_data["key"],
-        "jira_url": f"{client.jira_url}/browse/{issue_data['key']}"
+        "jira_issue_key": finding.jira_issue_key,
+        "jira_url": issue_data.get("self", ""),
+        "finding_id": finding.id
     }
 
+# ===============================
 @app.post("/webhooks/jira")
 async def jira_webhook(
     request: Request,
@@ -1035,18 +1116,23 @@ async def jira_webhook(
 
 # --- SLA & Remediation Tracking Endpoints ---
 
+@app.get("/findings/sla")
+def get_all_findings_with_sla(session: Session = Depends(get_session)):
+    """Get all findings with SLA tracking information."""
+    statement = select(Finding)
+    findings = session.exec(statement).all()
+    return [FindingReadWithInstances.model_validate(f) for f in findings]
+
 @app.get("/findings/overdue")
 def get_overdue_findings_endpoint(session: Session = Depends(get_session)):
     """Get all findings that are past their SLA deadline."""
     findings = get_overdue_findings(session)
-    return [FindingReadWithInstances.from_orm(f) for f in findings]
+    return [FindingReadWithInstances.model_validate(f) for f in findings]
 
 @app.patch("/findings/{finding_id}/remediation")
 def update_finding_remediation(
     finding_id: int,
-    remediation_deadline: Optional[str] = None,  # ISO format datetime string
-    remediation_owner: Optional[str] = None,
-    user: str = "system",
+    data: RemediationUpdate,
     session: Session = Depends(get_session)
 ):
     """
@@ -1054,8 +1140,7 @@ def update_finding_remediation(
     
     Args:
         finding_id: ID of the finding
-        remediation_deadline: New deadline (ISO format)
-        remediation_owner: Person responsible for remediation
+        data: Remediation update data (deadline, owner, user)
     """
     finding = session.get(Finding, finding_id)
     if not finding:
@@ -1063,9 +1148,9 @@ def update_finding_remediation(
     
     changes = {}
     
-    if remediation_deadline:
+    if data.remediation_deadline:
         try:
-            new_deadline = datetime.fromisoformat(remediation_deadline.replace('Z', '+00:00'))
+            new_deadline = datetime.fromisoformat(data.remediation_deadline.replace('Z', '+00:00'))
             old_deadline = finding.remediation_deadline
             finding.remediation_deadline = new_deadline
             changes["remediation_deadline"] = {
@@ -1075,12 +1160,12 @@ def update_finding_remediation(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid datetime format. Use ISO format.")
     
-    if remediation_owner is not None:
+    if data.remediation_owner is not None:
         old_owner = finding.remediation_owner
-        finding.remediation_owner = remediation_owner
+        finding.remediation_owner = data.remediation_owner
         changes["remediation_owner"] = {
             "old": old_owner,
-            "new": remediation_owner
+            "new": data.remediation_owner
         }
     
     # Recalculate SLA status
@@ -1092,20 +1177,87 @@ def update_finding_remediation(
             entity_type="finding",
             entity_id=finding_id,
             action="remediation_updated",
-            user=user,
+            user=data.user,
             timestamp=datetime.utcnow(),
             changes_json=json.dumps(changes)
         )
         session.add(audit_entry)
         session.commit()
     
-    logger.info(f"Finding {finding_id} remediation updated by {user}")
+    logger.info(f"Finding {finding_id} remediation updated by {data.user}")
     
     return {
         "id": finding.id,
         "remediation_deadline": finding.remediation_deadline.isoformat() if finding.remediation_deadline else None,
         "remediation_owner": finding.remediation_owner,
         "sla_status": finding.sla_status.value if finding.sla_status else None
+    }
+
+@app.patch("/findings/{finding_id}/issue-status")
+def update_finding_issue_status(
+    finding_id: int,
+    data: IssueStatusUpdate,
+    session: Session = Depends(get_session)
+):
+    """
+    Update issue status for a finding.
+    
+    Args:
+        finding_id: ID of the finding
+        data: Issue status update data (status, comment, user)
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Validate issue status
+    valid_statuses = ["Open", "Partially Closed", "Closed"]
+    if data.issue_status not in valid_statuses:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid issue status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    changes = {}
+    old_status = finding.issue_status.value if finding.issue_status else None
+    old_comment = finding.issue_status_comment
+    
+    # Update status
+    finding.issue_status = FindingBase.IssueStatus(data.issue_status)
+    changes["issue_status"] = {
+        "old": old_status,
+        "new": data.issue_status
+    }
+    
+    # Update comment if provided
+    if data.issue_status_comment is not None:
+        finding.issue_status_comment = data.issue_status_comment
+        changes["issue_status_comment"] = {
+            "old": old_comment,
+            "new": data.issue_status_comment
+        }
+    
+    session.add(finding)
+    
+    # Create audit log entry
+    audit_entry = AuditLog(
+        entity_type="finding",
+        entity_id=finding_id,
+        action="issue_status_updated",
+        user=data.user,
+        timestamp=datetime.utcnow(),
+        changes_json=json.dumps(changes)
+    )
+    session.add(audit_entry)
+    session.commit()
+    session.refresh(finding)
+    
+    logger.info(f"Finding {finding_id} issue status updated to {data.issue_status} by {data.user}")
+    
+    return {
+        "id": finding.id,
+        "issue_status": finding.issue_status.value,
+        "issue_status_comment": finding.issue_status_comment
     }
 
 @app.get("/sla-summary")
