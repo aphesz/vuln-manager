@@ -1,8 +1,9 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text
 from typing import Optional, List, Dict, Any
@@ -73,6 +74,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add security headers middleware (strict HTTP security)
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    
+    # Prevent clickjacking attacks
+    response.headers["X-Frame-Options"] = "DENY"
+    
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    
+    # Enable XSS protection (legacy, but good for older browsers)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    # Referrer policy - only send referrer for same-origin requests
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # Permissions policy - disable sensitive features not in use
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    
+    # Content Security Policy - restrict resource loading (adjust as needed)
+    # Allow: same-origin scripts/styles, unsafe-inline for Material-UI (evaluate later)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self'; "
+        "connect-src 'self' ws: wss:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    
+    return response
 
 # Initialize WebSocket manager
 ws_manager = WebSocketManager()
@@ -275,9 +313,57 @@ def on_startup():
     fix_risk_ratings_direct()
 
 @app.get("/health")
-def health_check():
-    """Simple health check endpoint."""
-    return {"status": "ok", "database": "connected"}
+def health_check(session: Session = Depends(get_session)):
+    """
+    Health check endpoint for monitoring and orchestrators.
+    Returns 200 if service and database are healthy.
+    """
+    try:
+        # Test database connection with a simple query
+        session.exec(text("SELECT 1")).first()
+        return {
+            "status": "healthy",
+            "service": "vuln-manager-api",
+            "database": "connected",
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "service": "vuln-manager-api",
+                "database": "disconnected",
+                "error": str(e)
+            }
+        )
+
+@app.get("/ready")
+def readiness_check(session: Session = Depends(get_session)):
+    """
+    Readiness check for Kubernetes/orchestrators.
+    Returns 200 only if service is ready to accept requests.
+    """
+    try:
+        # Test database connectivity
+        session.exec(text("SELECT 1")).first()
+        # Check that at least tables exist
+        session.exec(select(Project)).first()
+        return {
+            "ready": True,
+            "service": "vuln-manager-api"
+        }
+    except Exception as e:
+        logger.warning(f"Readiness check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ready": False,
+                "service": "vuln-manager-api",
+                "reason": "Database not initialized"
+            }
+        )
 
 # --- Endpoint: Project Management ---
 
@@ -395,8 +481,6 @@ async def _process_upload(
         "new_instances_count": new_instances_count
     }
 
-# NOTE: The /auto endpoint must be defined FIRST, before the generic /{scanner_type} endpoint,
-# otherwise FastAPI will match /auto against /{scanner_type} and pass "auto" as the scanner_type
 @app.post("/projects/{project_id}/upload/auto", status_code=201)
 async def upload_report_auto(
     project_id: int,
@@ -406,7 +490,26 @@ async def upload_report_auto(
     """
     Auto-detects scanner type from XML content and processes accordingly.
     Supports: Burp Suite XML, Nessus v2 XML
+    
+    Security:
+    - File size limit: 10 MiB (enforced in parsers.py)
+    - Content-type validation: XML only
+    - XXE protection: defusedxml parsing
     """
+    # Validate content type
+    if file.content_type and not file.content_type.startswith('application/xml') and not file.content_type.startswith('text/xml'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type: {file.content_type}. Expected XML file."
+        )
+    
+    # Validate filename
+    if not file.filename or not file.filename.lower().endswith(('.xml', '.nessus')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid filename. Must be .xml or .nessus file."
+        )
+    
     xml_content = await file.read()
     
     # Auto-detect scanner type
@@ -435,9 +538,38 @@ async def upload_report(
     """
     Uploads an XML report, parses it, and saves findings/instances to the database.
     Supported types: 'burp', 'nessus'.
+    
+    Security:
+    - Scanner type whitelist validation
+    - Content-type validation: XML only
+    - File size limit: 10 MiB (enforced in parsers.py)
     """
+    # Whitelist valid scanner types
+    valid_scanners = {'burp', 'nessus'}
+    scanner_type_lower = scanner_type.lower().strip()
+    
+    if scanner_type_lower not in valid_scanners:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scanner type: {scanner_type}. Supported: {', '.join(valid_scanners)}"
+        )
+    
+    # Validate content type
+    if file.content_type and not file.content_type.startswith('application/xml') and not file.content_type.startswith('text/xml'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type: {file.content_type}. Expected XML file."
+        )
+    
+    # Validate filename
+    if not file.filename or not file.filename.lower().endswith(('.xml', '.nessus')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid filename. Must be .xml or .nessus file."
+        )
+    
     xml_content = await file.read()
-    return await _process_upload(project_id, scanner_type, xml_content, session)
+    return await _process_upload(project_id, scanner_type_lower, xml_content, session)
 
 @app.get("/projects/{project_id}/risk_summary")
 def get_risk_summary(project_id: int, session: Session = Depends(get_session)):

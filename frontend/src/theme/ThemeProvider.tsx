@@ -177,12 +177,27 @@ export const useThemeContext = () => useContext(ThemeContext);
 // Theme provider component
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }: { children: React.ReactNode }) => {
   // Get initial theme preference from localStorage or system preference
+  // Security: Only allow 'light' or 'dark' values, default to system preference
   const getInitialMode = (): PaletteMode => {
-    const savedMode = localStorage.getItem('themeMode');
-    if (savedMode && (savedMode === 'light' || savedMode === 'dark')) {
-      return savedMode;
+    try {
+      const savedMode = localStorage.getItem('themeMode');
+      // Whitelist validation - only accept valid theme modes
+      if (savedMode && (savedMode === 'light' || savedMode === 'dark')) {
+        return savedMode;
+      }
+    } catch (e) {
+      // localStorage might be disabled or restricted (private browsing)
+      console.warn('Cannot access localStorage for theme preference:', e);
     }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    
+    // Fallback to system preference if available
+    try {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {
+      // Fallback to light mode if matchMedia fails
+      console.warn('Cannot detect system color scheme preference:', e);
+      return 'light';
+    }
   };
 
   const [mode, setMode] = useState<PaletteMode>(getInitialMode);
@@ -190,17 +205,52 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Create theme instance
   const theme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
 
-  // Toggle theme function
+  // Toggle theme function (securely validates new mode)
   const toggleTheme = () => {
-    setMode((prevMode: PaletteMode) => (prevMode === 'light' ? 'dark' : 'light'));
+    setMode((prevMode: PaletteMode) => {
+      const newMode: PaletteMode = prevMode === 'light' ? 'dark' : 'light';
+      return newMode;
+    });
   };
 
-  // Save theme preference to localStorage
+  // Save theme preference to localStorage with security validation
   useEffect(() => {
-    localStorage.setItem('themeMode', mode);
-    // Update HTML data attribute for additional styling if needed
-    document.documentElement.setAttribute('data-theme', mode);
+    try {
+      // Only save valid theme modes
+      if (mode === 'light' || mode === 'dark') {
+        localStorage.setItem('themeMode', mode);
+      }
+      // Update HTML data attribute for additional styling and system compatibility
+      document.documentElement.setAttribute('data-theme', mode);
+      // Update system color scheme preference
+      document.documentElement.style.colorScheme = mode;
+    } catch (e) {
+      // localStorage might be disabled or restricted (private browsing)
+      console.warn('Cannot persist theme preference:', e);
+    }
   }, [mode]);
+
+  // Listen to system theme changes (when user changes OS dark mode setting)
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const handleChange = (e: MediaQueryListEvent) => {
+      // Only update if user hasn't manually set a preference
+      const hasUserPreference = localStorage.getItem('themeMode');
+      if (!hasUserPreference) {
+        setMode(e.matches ? 'dark' : 'light');
+      }
+    };
+
+    // Use addEventListener for better browser compatibility
+    try {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    } catch (e) {
+      // Older browsers don't support addEventListener on MediaQueryList
+      console.warn('Cannot listen to system theme changes:', e);
+    }
+  }, []);
 
   return (
     <ThemeContext.Provider value={{ toggleTheme, mode }}>

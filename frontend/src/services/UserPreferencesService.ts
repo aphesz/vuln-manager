@@ -1,4 +1,9 @@
 interface UserPreferences {
+  // Theme preferences
+  themeMode?: 'light' | 'dark'; // Explicitly set theme (null = use system preference)
+  systemPreferenceTracking?: boolean; // Whether to follow system theme changes
+  
+  // Table preferences
   tableColumns: {
     [key: string]: {
       visible: boolean;
@@ -19,6 +24,8 @@ interface UserPreferences {
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
+  themeMode: undefined, // Use system preference by default
+  systemPreferenceTracking: true, // Track system theme changes
   tableColumns: {
     title: { visible: true, width: 300, order: 0 },
     risk_rating: { visible: true, width: 120, order: 1 },
@@ -37,10 +44,10 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 class UserPreferencesService {
   private static instance: UserPreferencesService;
   private preferences: UserPreferences;
+  private storageKey = 'userPreferences';
 
   private constructor() {
-    const savedPrefs = localStorage.getItem('userPreferences');
-    this.preferences = savedPrefs ? { ...DEFAULT_PREFERENCES, ...JSON.parse(savedPrefs) } : DEFAULT_PREFERENCES;
+    this.preferences = this.loadPreferencesSecurely();
   }
 
   static getInstance(): UserPreferencesService {
@@ -50,21 +57,82 @@ class UserPreferencesService {
     return UserPreferencesService.instance;
   }
 
+  /**
+   * Securely load preferences from localStorage with validation.
+   * Returns defaults if storage is unavailable or corrupted.
+   */
+  private loadPreferencesSecurely(): UserPreferences {
+    try {
+      const saved = localStorage.getItem(this.storageKey);
+      if (!saved) {
+        return { ...DEFAULT_PREFERENCES };
+      }
+
+      // Parse and validate structure
+      const parsed = JSON.parse(saved);
+      
+      // Security: Validate themeMode is one of allowed values
+      if (parsed.themeMode && !['light', 'dark'].includes(parsed.themeMode)) {
+        console.warn('Invalid theme mode in storage, using default');
+        parsed.themeMode = DEFAULT_PREFERENCES.themeMode;
+      }
+
+      // Merge with defaults to ensure all required fields exist
+      return {
+        ...DEFAULT_PREFERENCES,
+        ...parsed,
+        // Recursively merge nested objects
+        tableColumns: { ...DEFAULT_PREFERENCES.tableColumns, ...parsed.tableColumns },
+        dashboardLayout: { ...DEFAULT_PREFERENCES.dashboardLayout, ...parsed.dashboardLayout },
+      };
+    } catch (e) {
+      console.warn('Failed to load preferences from storage:', e);
+      return { ...DEFAULT_PREFERENCES };
+    }
+  }
+
   getPreferences(): UserPreferences {
     return { ...this.preferences };
   }
 
   updatePreferences(updates: Partial<UserPreferences>): void {
+    // Security: Validate theme mode if provided
+    if (updates.themeMode && !['light', 'dark'].includes(updates.themeMode)) {
+      console.error('Invalid theme mode, ignoring update');
+      return;
+    }
+
     this.preferences = {
       ...this.preferences,
       ...updates,
     };
-    localStorage.setItem('userPreferences', JSON.stringify(this.preferences));
+    this.savePreferences();
   }
 
   resetPreferences(): void {
     this.preferences = { ...DEFAULT_PREFERENCES };
-    localStorage.setItem('userPreferences', JSON.stringify(DEFAULT_PREFERENCES));
+    this.savePreferences();
+  }
+
+  // Theme preference methods
+  getThemeMode(): 'light' | 'dark' | undefined {
+    return this.preferences.themeMode;
+  }
+
+  setThemeMode(mode: 'light' | 'dark'): void {
+    if (!['light', 'dark'].includes(mode)) {
+      console.error('Invalid theme mode:', mode);
+      return;
+    }
+    this.updatePreferences({ themeMode: mode });
+  }
+
+  getSystemPreferenceTracking(): boolean {
+    return this.preferences.systemPreferenceTracking ?? DEFAULT_PREFERENCES.systemPreferenceTracking!;
+  }
+
+  setSystemPreferenceTracking(enabled: boolean): void {
+    this.updatePreferences({ systemPreferenceTracking: enabled });
   }
 
   // Column-specific methods
@@ -96,7 +164,11 @@ class UserPreferencesService {
   }
 
   private savePreferences(): void {
-    localStorage.setItem('userPreferences', JSON.stringify(this.preferences));
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.preferences));
+    } catch (e) {
+      console.error('Failed to save preferences to storage:', e);
+    }
   }
 }
 

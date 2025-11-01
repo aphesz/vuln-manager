@@ -14,6 +14,8 @@ const AppHeader = () => {
   return (
     <Box
       component="header"
+      role="banner"
+      aria-label="Application header"
       sx={{
         backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#343a40',
         color: theme.palette.text.primary,
@@ -25,8 +27,9 @@ const AppHeader = () => {
         alignItems: 'center',
       }}
     >
-      <Link to="/" style={{ textDecoration: 'none' }}>
+      <Link to="/" style={{ textDecoration: 'none' }} aria-label="Go to dashboard home">
         <Box
+          component="h1"
           sx={{
             fontSize: '1.2em',
             fontWeight: 500,
@@ -35,6 +38,7 @@ const AppHeader = () => {
               color: theme.palette.primary.main,
             },
             cursor: 'pointer',
+            margin: 0,
           }}
         >
           🛡️ VulnManager Dashboard
@@ -43,6 +47,8 @@ const AppHeader = () => {
       <IconButton 
         onClick={toggleTheme}
         size="large"
+        aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode (current: ${mode} mode)`}
+        aria-pressed={mode === 'dark'}
         sx={{
           color: theme.palette.text.primary,
           '&:hover': {
@@ -50,10 +56,14 @@ const AppHeader = () => {
               ? 'rgba(255, 255, 255, 0.1)' 
               : 'rgba(0, 0, 0, 0.05)',
           },
+          '&:focus-visible': {
+            outline: `2px solid ${theme.palette.primary.main}`,
+            outlineOffset: '2px',
+          },
         }}
         title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
       >
-        {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+        {mode === 'dark' ? <LightModeIcon aria-hidden="true" /> : <DarkModeIcon aria-hidden="true" />}
       </IconButton>
     </Box>
   )
