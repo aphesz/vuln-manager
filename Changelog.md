@@ -4,7 +4,35 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
-## [Unreleased]
+## [1.2.0] - November 1, 2025
+
+### 🔒 Security Enhancements
+- **HTTP Security Headers** - X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy
+- **Input Validation** - Content-type, filename, scanner type whitelist for upload endpoints
+- **Secure Theme Storage** - Whitelist validation for theme mode with safe JSON parsing
+- **Defense in Depth** - Multiple validation layers prevent injection and malformed inputs
+
+### ✨ Features
+- **Enhanced Health Endpoint** - `/health` checks database connectivity and returns detailed status
+- **Readiness Probe** - New `/ready` endpoint for Kubernetes/orchestrator checks
+- **Theme Persistence** - Remember light/dark mode preference in localStorage
+- **System Color Scheme Detection** - Respect OS `prefers-color-scheme` preference automatically
+- **Graceful Fallbacks** - Handle localStorage unavailability (private browsing) without crashing
+
+### ♿ Accessibility
+- **ARIA Labels** - Semantic labels for header, navigation, theme toggle
+- **Keyboard Navigation** - Focus rings for keyboard users (focus-visible styling)
+- **Screen Reader Support** - Proper roles, aria-hidden for decorative elements
+- **Semantic HTML** - Header title now uses `<h1>` element
+
+### 📚 Documentation
+- Created `notes/QUICK_WINS_VERIFICATION.md` - Verification guide for all v1.2.0 improvements
+- Comprehensive security review and testing checklist
+
+### 📊 Build & Deploy
+- Build hash: `bb0387802fb661ea05d85fc55de500bcf0932d8552e757f15bfc3e2d651aac88`
+- Status: ✅ Production ready - backward compatible with v1.1.0
+- All containers healthy, no schema changes required
 
 ---
 
