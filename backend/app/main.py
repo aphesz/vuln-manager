@@ -31,12 +31,29 @@ from app.models import (
     FindingBase,  # Import FindingBase instead of top-level RiskRating
     ProjectReadWithFindings,
     FindingReadWithInstances,
+    Comment,
+    CommentRead,
+    CommentBase,
+    AuditLog,
+    AuditLogRead,
+    JiraSettings,
+    JiraSettingsRead,
+    JiraSettingsBase,
 )
 
 # Use the RiskRating from FindingBase
 RiskRating = FindingBase.RiskRating
 from app.parsers import parse_xml_content
 from app.reports import generate_report_docx, generate_report_pdf
+from app.sla import (
+    calculate_sla_deadline,
+    update_finding_sla,
+    get_overdue_findings,
+    get_sla_summary,
+)
+from app.jira import get_jira_client, encrypt_token
+import json
+from datetime import datetime
 
 # --- Database Setup ---
 
@@ -63,7 +80,7 @@ from app.websocket import WebSocketManager
 app = FastAPI(
     title="VulnManager API",
     description="API for managing vulnerability assessment projects and reports.",
-    version="1.0.0"
+    version="0.3.0"
 )
 
 # Add CORS middleware to allow frontend requests
@@ -325,7 +342,7 @@ def health_check(session: Session = Depends(get_session)):
             "status": "healthy",
             "service": "vuln-manager-api",
             "database": "connected",
-            "version": "1.0.0"
+            "version": "0.3.0"
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -652,3 +669,446 @@ def get_pdf_report(project_id: int, session: Session = Depends(get_session)):
         media_type="application/pdf",
         filename=f"{project.name.replace(' ', '_')}_Report.pdf",
     )
+
+# --- Peer Review Workflow Endpoints ---
+
+@app.patch("/findings/{finding_id}/review")
+def update_finding_review_status(
+    finding_id: int,
+    review_status: str,
+    user: str = "system",  # TODO: Replace with actual auth user
+    session: Session = Depends(get_session)
+):
+    """
+    Update the review status of a finding.
+    
+    Args:
+        finding_id: ID of the finding
+        review_status: New review status (Pending, In Review, Approved, Rejected)
+        user: User making the change (from auth token in production)
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Validate review status
+    valid_statuses = ['Pending', 'In Review', 'Approved', 'Rejected']
+    if review_status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid review status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    old_status = finding.review_status.value if finding.review_status else None
+    finding.review_status = FindingBase.ReviewStatus(review_status)
+    
+    # Create audit log entry
+    audit_entry = AuditLog(
+        entity_type="finding",
+        entity_id=finding_id,
+        action="status_changed",
+        user=user,
+        timestamp=datetime.utcnow(),
+        changes_json=json.dumps({
+            "field": "review_status",
+            "old_value": old_status,
+            "new_value": review_status
+        })
+    )
+    
+    session.add(finding)
+    session.add(audit_entry)
+    session.commit()
+    session.refresh(finding)
+    
+    logger.info(f"Finding {finding_id} review status updated: {old_status} -> {review_status} by {user}")
+    
+    return {
+        "id": finding.id,
+        "review_status": finding.review_status.value,
+        "updated_by": user
+    }
+
+@app.post("/findings/{finding_id}/comments", response_model=CommentRead)
+def create_comment(
+    finding_id: int,
+    comment_data: CommentBase,
+    session: Session = Depends(get_session)
+):
+    """
+    Add a comment to a finding.
+    
+    Args:
+        finding_id: ID of the finding
+        comment_data: Comment data (text, user)
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Validate comment length
+    if len(comment_data.text) > 5000:
+        raise HTTPException(status_code=400, detail="Comment text exceeds maximum length of 5000 characters")
+    
+    if not comment_data.text.strip():
+        raise HTTPException(status_code=400, detail="Comment text cannot be empty")
+    
+    comment = Comment(
+        text=comment_data.text,
+        user=comment_data.user,
+        created_at=datetime.utcnow(),
+        finding_id=finding_id
+    )
+    
+    # Create audit log entry
+    audit_entry = AuditLog(
+        entity_type="comment",
+        entity_id=0,  # Will be updated after commit
+        action="created",
+        user=comment_data.user,
+        timestamp=datetime.utcnow(),
+        changes_json=json.dumps({
+            "finding_id": finding_id,
+            "text_preview": comment_data.text[:100] + "..." if len(comment_data.text) > 100 else comment_data.text
+        })
+    )
+    
+    session.add(comment)
+    session.commit()
+    session.refresh(comment)
+    
+    # Update audit entry with comment ID
+    audit_entry.entity_id = comment.id
+    session.add(audit_entry)
+    session.commit()
+    
+    logger.info(f"Comment {comment.id} added to finding {finding_id} by {comment_data.user}")
+    
+    return comment
+
+@app.get("/findings/{finding_id}/comments", response_model=List[CommentRead])
+def get_finding_comments(
+    finding_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get all comments for a finding."""
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    comments = session.exec(
+        select(Comment)
+        .where(Comment.finding_id == finding_id)
+        .order_by(Comment.created_at.desc())
+    ).all()
+    
+    return comments
+
+@app.get("/audit-log", response_model=List[AuditLogRead])
+def get_audit_log(
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    user: Optional[str] = None,
+    limit: int = 100,
+    session: Session = Depends(get_session)
+):
+    """
+    Get audit log entries with optional filtering.
+    
+    Args:
+        entity_type: Filter by entity type (finding, project, comment, etc.)
+        entity_id: Filter by entity ID
+        user: Filter by user
+        limit: Maximum number of entries to return (default 100, max 1000)
+    """
+    if limit > 1000:
+        limit = 1000
+    
+    query = select(AuditLog)
+    
+    if entity_type:
+        query = query.where(AuditLog.entity_type == entity_type)
+    if entity_id:
+        query = query.where(AuditLog.entity_id == entity_id)
+    if user:
+        query = query.where(AuditLog.user == user)
+    
+    query = query.order_by(AuditLog.timestamp.desc()).limit(limit)
+    
+    entries = session.exec(query).all()
+    return entries
+
+# --- Jira Integration Endpoints ---
+
+@app.post("/jira/settings", response_model=JiraSettingsRead)
+def create_jira_settings(
+    settings_data: JiraSettingsBase,
+    api_token: str,  # Separate from model for security
+    project_id: Optional[int] = None,
+    session: Session = Depends(get_session)
+):
+    """
+    Create or update Jira integration settings.
+    
+    Security: API token is encrypted before storage.
+    """
+    # Encrypt the API token
+    encrypted_token = encrypt_token(api_token)
+    
+    settings = JiraSettings(
+        jira_url=settings_data.jira_url,
+        project_key=settings_data.project_key,
+        api_token_encrypted=encrypted_token,
+        is_active=settings_data.is_active,
+        project_id=project_id
+    )
+    
+    session.add(settings)
+    session.commit()
+    session.refresh(settings)
+    
+    logger.info(f"Jira settings created for project {project_id}")
+    
+    return settings
+
+@app.post("/jira/test-connection")
+async def test_jira_connection(
+    jira_url: str,
+    email: str,
+    api_token: str
+):
+    """Test Jira connection without saving settings."""
+    from app.jira import JiraClient
+    
+    client = JiraClient(jira_url, email, api_token)
+    result = await client.test_connection()
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/findings/{finding_id}/create-jira-issue")
+async def create_jira_issue_for_finding(
+    finding_id: int,
+    project_key: Optional[str] = None,
+    session: Session = Depends(get_session)
+):
+    """
+    Create a Jira issue from a finding.
+    
+    Args:
+        finding_id: ID of the finding
+        project_key: Jira project key (optional, uses settings if not provided)
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    if finding.jira_issue_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Finding already has Jira issue: {finding.jira_issue_key}"
+        )
+    
+    # Get Jira client for the project
+    client = get_jira_client(session, finding.project_id)
+    if not client:
+        raise HTTPException(
+            status_code=400,
+            detail="Jira integration not configured for this project"
+        )
+    
+    # Get project key from settings if not provided
+    if not project_key:
+        settings_query = select(JiraSettings).where(
+            JiraSettings.project_id == finding.project_id,
+            JiraSettings.is_active == True
+        )
+        settings = session.exec(settings_query).first()
+        if not settings:
+            raise HTTPException(status_code=400, detail="No active Jira settings found")
+        project_key = settings.project_key
+    
+    # Create the issue
+    issue_data = await client.create_issue(project_key, finding)
+    
+    if not issue_data:
+        raise HTTPException(status_code=500, detail="Failed to create Jira issue")
+    
+    # Update finding with Jira issue key
+    finding.jira_issue_key = issue_data["key"]
+    finding.jira_status = "Open"  # Default status
+    
+    # Create audit log entry
+    audit_entry = AuditLog(
+        entity_type="finding",
+        entity_id=finding_id,
+        action="jira_issue_created",
+        user="system",
+        timestamp=datetime.utcnow(),
+        changes_json=json.dumps({
+            "jira_issue_key": issue_data["key"],
+            "jira_issue_id": issue_data["id"]
+        })
+    )
+    
+    session.add(finding)
+    session.add(audit_entry)
+    session.commit()
+    session.refresh(finding)
+    
+    logger.info(f"Created Jira issue {issue_data['key']} for finding {finding_id}")
+    
+    return {
+        "finding_id": finding_id,
+        "jira_issue_key": issue_data["key"],
+        "jira_url": f"{client.jira_url}/browse/{issue_data['key']}"
+    }
+
+@app.post("/webhooks/jira")
+async def jira_webhook(
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    """
+    Webhook endpoint for receiving Jira updates.
+    
+    Security: In production, verify webhook signature/token.
+    """
+    try:
+        payload = await request.json()
+        
+        # Extract relevant data from Jira webhook
+        webhook_event = payload.get("webhookEvent")
+        issue_key = payload.get("issue", {}).get("key")
+        new_status = payload.get("issue", {}).get("fields", {}).get("status", {}).get("name")
+        
+        logger.info(f"Received Jira webhook: {webhook_event} for {issue_key}")
+        
+        if not issue_key:
+            return {"status": "ignored", "reason": "No issue key in payload"}
+        
+        # Find finding with this Jira issue key
+        finding = session.exec(
+            select(Finding).where(Finding.jira_issue_key == issue_key)
+        ).first()
+        
+        if not finding:
+            return {"status": "ignored", "reason": f"No finding found for issue {issue_key}"}
+        
+        # Update finding's Jira status
+        old_status = finding.jira_status
+        finding.jira_status = new_status
+        
+        # Create audit log entry
+        audit_entry = AuditLog(
+            entity_type="finding",
+            entity_id=finding.id,
+            action="jira_status_updated",
+            user="jira_webhook",
+            timestamp=datetime.utcnow(),
+            changes_json=json.dumps({
+                "jira_issue_key": issue_key,
+                "old_status": old_status,
+                "new_status": new_status,
+                "webhook_event": webhook_event
+            })
+        )
+        
+        session.add(finding)
+        session.add(audit_entry)
+        session.commit()
+        
+        logger.info(f"Updated finding {finding.id} Jira status: {old_status} -> {new_status}")
+        
+        return {
+            "status": "success",
+            "finding_id": finding.id,
+            "old_status": old_status,
+            "new_status": new_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Error processing Jira webhook: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error processing webhook")
+
+# --- SLA & Remediation Tracking Endpoints ---
+
+@app.get("/findings/overdue")
+def get_overdue_findings_endpoint(session: Session = Depends(get_session)):
+    """Get all findings that are past their SLA deadline."""
+    findings = get_overdue_findings(session)
+    return [FindingReadWithInstances.from_orm(f) for f in findings]
+
+@app.patch("/findings/{finding_id}/remediation")
+def update_finding_remediation(
+    finding_id: int,
+    remediation_deadline: Optional[str] = None,  # ISO format datetime string
+    remediation_owner: Optional[str] = None,
+    user: str = "system",
+    session: Session = Depends(get_session)
+):
+    """
+    Update remediation tracking for a finding.
+    
+    Args:
+        finding_id: ID of the finding
+        remediation_deadline: New deadline (ISO format)
+        remediation_owner: Person responsible for remediation
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    changes = {}
+    
+    if remediation_deadline:
+        try:
+            new_deadline = datetime.fromisoformat(remediation_deadline.replace('Z', '+00:00'))
+            old_deadline = finding.remediation_deadline
+            finding.remediation_deadline = new_deadline
+            changes["remediation_deadline"] = {
+                "old": old_deadline.isoformat() if old_deadline else None,
+                "new": new_deadline.isoformat()
+            }
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid datetime format. Use ISO format.")
+    
+    if remediation_owner is not None:
+        old_owner = finding.remediation_owner
+        finding.remediation_owner = remediation_owner
+        changes["remediation_owner"] = {
+            "old": old_owner,
+            "new": remediation_owner
+        }
+    
+    # Recalculate SLA status
+    finding = update_finding_sla(finding, session)
+    
+    # Create audit log entry
+    if changes:
+        audit_entry = AuditLog(
+            entity_type="finding",
+            entity_id=finding_id,
+            action="remediation_updated",
+            user=user,
+            timestamp=datetime.utcnow(),
+            changes_json=json.dumps(changes)
+        )
+        session.add(audit_entry)
+        session.commit()
+    
+    logger.info(f"Finding {finding_id} remediation updated by {user}")
+    
+    return {
+        "id": finding.id,
+        "remediation_deadline": finding.remediation_deadline.isoformat() if finding.remediation_deadline else None,
+        "remediation_owner": finding.remediation_owner,
+        "sla_status": finding.sla_status.value if finding.sla_status else None
+    }
+
+@app.get("/sla-summary")
+def get_sla_summary_endpoint(session: Session = Depends(get_session)):
+    """Get a summary of findings by SLA status."""
+    return get_sla_summary(session)

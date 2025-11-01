@@ -29,9 +29,34 @@ class FindingBase(SQLModel):
         Low = "Low"
         Informational = "Informational"
 
+    class ReviewStatus(str, Enum):
+        """Enum for peer review workflow statuses."""
+        Pending = "Pending"
+        InReview = "In Review"
+        Approved = "Approved"
+        Rejected = "Rejected"
+
+    class SLAStatus(str, Enum):
+        """Enum for SLA tracking statuses."""
+        OnTrack = "On Track"
+        AtRisk = "At Risk"
+        Overdue = "Overdue"
+
     risk_rating: RiskRating = Field(..., index=True)  # Normalized risk
     description: str = Field(...)
     remediation: str = Field(...)
+    
+    # Peer Review fields
+    review_status: ReviewStatus = Field(default=ReviewStatus.Pending, index=True)
+    
+    # Jira Integration fields
+    jira_issue_key: Optional[str] = Field(default=None, index=True)
+    jira_status: Optional[str] = None
+    
+    # SLA & Remediation Tracking fields
+    remediation_deadline: Optional[datetime] = Field(default=None, index=True)
+    sla_status: Optional[SLAStatus] = Field(default=None, index=True)
+    remediation_owner: Optional[str] = None
 
 class InstanceBase(SQLModel):
     """Base model for a single instance (or occurrence) of a finding."""
@@ -56,6 +81,7 @@ class Finding(FindingBase, table=True):
     # Relationships
     project: Optional[Project] = Relationship(back_populates="findings")
     instances: List["Instance"] = Relationship(back_populates="finding")
+    comments: List["Comment"] = Relationship(back_populates="finding")
 
 class Instance(InstanceBase, table=True):
     """Database model for an Instance."""
@@ -65,6 +91,49 @@ class Instance(InstanceBase, table=True):
     # Relationships
     finding: Optional[Finding] = Relationship(back_populates="instances")
 
+# --- Peer Review & Audit Models ---
+
+class CommentBase(SQLModel):
+    """Base model for comments on findings."""
+    text: str = Field(..., max_length=5000)
+    user: str = Field(..., max_length=255)  # TODO: Replace with proper user auth later
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Comment(CommentBase, table=True):
+    """Database model for Comment."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    finding_id: int = Field(..., foreign_key="finding.id", index=True)
+    
+    # Relationships
+    finding: Optional[Finding] = Relationship(back_populates="comments")
+
+class AuditLogBase(SQLModel):
+    """Base model for audit log entries."""
+    entity_type: str = Field(..., max_length=50, index=True)  # 'finding', 'project', 'comment', etc.
+    entity_id: int = Field(..., index=True)
+    action: str = Field(..., max_length=50, index=True)  # 'created', 'updated', 'deleted', 'status_changed'
+    user: str = Field(..., max_length=255)
+    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
+    changes_json: Optional[str] = None  # JSON string of before/after changes
+
+class AuditLog(AuditLogBase, table=True):
+    """Database model for AuditLog."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class JiraSettingsBase(SQLModel):
+    """Base model for Jira integration settings (per-project or global)."""
+    jira_url: str = Field(..., max_length=500)
+    project_key: str = Field(..., max_length=50)
+    # Note: API token should be stored encrypted or in env vars, not plain text
+    # This is a placeholder - implement proper secret management
+    api_token_encrypted: Optional[str] = None
+    is_active: bool = Field(default=True)
+
+class JiraSettings(JiraSettingsBase, table=True):
+    """Database model for Jira settings."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: Optional[int] = Field(default=None, foreign_key="project.id", index=True)
+
 # --- Read Models (For FastAPI Responses) ---
 
 # 1. Instance Read Model
@@ -72,13 +141,28 @@ class InstanceRead(InstanceBase):
     id: int
     finding_id: int
 
-# 2. Finding Read Model 
+# 2. Comment Read Model
+class CommentRead(CommentBase):
+    id: int
+    finding_id: int
+
+# 3. AuditLog Read Model
+class AuditLogRead(AuditLogBase):
+    id: int
+
+# 4. JiraSettings Read Model
+class JiraSettingsRead(JiraSettingsBase):
+    id: int
+    project_id: Optional[int]
+
+# 5. Finding Read Model 
 class FindingReadWithInstances(FindingBase):
     id: int
     project_id: int
     instances: List[InstanceRead] = []
+    comments: List[CommentRead] = []
 
-# 3. Project Read Model
+# 6. Project Read Model
 class ProjectReadWithFindings(ProjectBase):
     """Used to read a Project including all its Findings (and their Instances)."""
     id: int

@@ -2,9 +2,96 @@
 
 All notable changes to VulnManager are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+**Note:** VulnManager is in pre-release. Versions follow 0.x.x format until official public release.
+
 ---
 
-## [1.2.0] - November 1, 2025
+## [0.3.0] - November 1, 2025 (Previously v1.3.0)
+
+### 🎯 Tier 1 Features - Major Release
+
+### 🔍 Peer Review Workflow
+- **Review Status Tracking** - Multi-stage review process (Pending, In Review, Approved, Rejected)
+- **Comment System** - Collaborative discussion on findings with user attribution
+- **Audit Trail** - Complete change history for all Tier 1 operations
+- **API Endpoints**:
+  - `PATCH /findings/{id}/review` - Update review status with validation
+  - `POST /findings/{id}/comments` - Add comments to findings
+  - `GET /findings/{id}/comments` - List all comments for a finding
+  - `GET /audit-log` - Searchable audit trail (filterable by entity_type, entity_id, user)
+
+### 🔗 Jira Integration
+- **Bi-directional Sync** - Connect VulnManager with Jira Cloud/Server
+- **Encrypted Credentials** - Fernet encryption for API tokens
+- **Auto Issue Creation** - Create Jira issues from findings with risk-based priorities
+- **Webhook Support** - Real-time status updates from Jira
+- **API Endpoints**:
+  - `POST /jira/settings` - Configure Jira integration with encrypted token storage
+  - `POST /jira/test-connection` - Validate Jira credentials before saving
+  - `POST /findings/{id}/create-jira-issue` - Create Jira issues from findings
+  - `POST /webhooks/jira` - Receive Jira status updates
+
+### ⏰ SLA & Remediation Tracking
+- **Risk-based SLA Deadlines** - Automatic deadline calculation
+  - Critical: 7 days
+  - High: 14 days
+  - Medium: 30 days
+  - Low: 90 days
+  - Informational: No SLA
+- **Status Calculation** - Automatic tracking (On Track, At Risk, Overdue)
+- **Ownership Assignment** - Track remediation responsibility
+- **Dashboard Metrics** - Management visibility into SLA performance
+- **API Endpoints**:
+  - `GET /findings/overdue` - List all overdue findings
+  - `PATCH /findings/{id}/remediation` - Update deadline and owner
+  - `GET /sla-summary` - Dashboard metrics by SLA status
+
+### 🗃️ Database Changes
+- **New Tables** (3):
+  - `comment` - Finding discussions
+  - `auditlog` - Change tracking
+  - `jirasettings` - Jira configuration
+- **Extended Finding Table** (6 new columns):
+  - `review_status` - ENUM (Pending, In Review, Approved, Rejected)
+  - `jira_issue_key` - VARCHAR(255) indexed
+  - `jira_status` - VARCHAR(255)
+  - `remediation_deadline` - TIMESTAMP indexed
+  - `sla_status` - ENUM (On Track, At Risk, Overdue)
+  - `remediation_owner` - VARCHAR(255)
+- **Indexes** - 4 new indexes for performance
+- **Enum Types** - 2 new types (reviewstatus, slastatus)
+
+### 🔧 Infrastructure
+- **Alembic Migrations** - Database schema versioning
+  - `001_tier1_features.py` - Table creation
+  - `002_add_finding_columns.py` - Column additions
+- **New Dependencies**:
+  - `alembic==1.13.1` - Database migrations
+  - `cryptography==42.0.2` - Token encryption
+  - `httpx==0.26.0` - Async HTTP client for Jira
+- **Updated Dockerfile** - Include Alembic files in `/code` structure
+
+### 🔒 Security Enhancements
+- **Token Encryption** - Fernet encryption for Jira API tokens
+- **Input Validation** - Whitelists, length limits, ISO datetime validation
+- **Audit Logging** - All Tier 1 operations tracked
+- **Secure Defaults** - Pending review status, encrypted storage
+
+### 📊 Implementation Stats
+- **Commits**: 1 commit (31270ab)
+- **Files Modified**: 15 files
+- **Lines Added**: 1,490+ lines
+- **New Endpoints**: +9 API endpoints
+- **New Modules**: `jira.py` (10,668 bytes), `sla.py` (5,469 bytes)
+
+### 📚 Build & Deploy
+- Build hash: `f22c366e185ba016209d430fd7d989569676652839`
+- Status: ✅ Production ready - backward compatible with 0.2.0
+- All migrations applied successfully
+
+---
+
+## [0.2.0] - November 1, 2025 (Previously v1.2.0)
 
 ### 🔒 Security Enhancements
 - **HTTP Security Headers** - X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy
@@ -36,7 +123,39 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
-## [1.1.0] - October 30, 2025
+## [0.2.0] - November 1, 2025 (Previously v1.2.0)
+
+### 🔒 Security Enhancements
+- **HTTP Security Headers** - X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy
+- **Input Validation** - Content-type, filename, scanner type whitelist for upload endpoints
+- **Secure Theme Storage** - Whitelist validation for theme mode with safe JSON parsing
+- **Defense in Depth** - Multiple validation layers prevent injection and malformed inputs
+
+### ✨ Features
+- **Enhanced Health Endpoint** - `/health` checks database connectivity and returns detailed status
+- **Readiness Probe** - New `/ready` endpoint for Kubernetes/orchestrator checks
+- **Theme Persistence** - Remember light/dark mode preference in localStorage
+- **System Color Scheme Detection** - Respect OS `prefers-color-scheme` preference automatically
+- **Graceful Fallbacks** - Handle localStorage unavailability (private browsing) without crashing
+
+### ♿ Accessibility
+- **ARIA Labels** - Semantic labels for header, navigation, theme toggle
+- **Keyboard Navigation** - Focus rings for keyboard users (focus-visible styling)
+- **Screen Reader Support** - Proper roles, aria-hidden for decorative elements
+- **Semantic HTML** - Header title now uses `<h1>` element
+
+### 📚 Documentation
+- Created `notes/QUICK_WINS_VERIFICATION.md` - Verification guide for all 0.2.0 improvements
+- Comprehensive security review and testing checklist
+
+### 📊 Build & Deploy
+- Build hash: `bb0387802fb661ea05d85fc55de500bcf0932d8552e757f15bfc3e2d651aac88`
+- Status: ✅ Production ready - backward compatible with 0.1.0
+- All containers healthy, no schema changes required
+
+---
+
+## [0.1.0] - October 30, 2025 (Previously v1.1.0)
 
 ### ✨ Added
 
@@ -73,7 +192,7 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
-## [1.0.0] - October 30, 2025
+## [Unreleased] - October 30, 2025 (Initial Development)
 
 ### ✨ Added
 

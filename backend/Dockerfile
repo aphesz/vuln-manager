@@ -2,7 +2,7 @@
 FROM python:3.10-slim
 
 # Set the working directory inside the container
-WORKDIR /app
+WORKDIR /code
 
 # Copy the requirements file and install dependencies
 COPY requirements.txt .
@@ -15,7 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of our application code
-COPY ./app /app
+COPY ./app /code/app
+
+# Copy Alembic migration files
+COPY ./alembic.ini /code/alembic.ini
+COPY ./alembic /code/alembic
 
 # Install debugging tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
