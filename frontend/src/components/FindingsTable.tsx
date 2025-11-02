@@ -387,6 +387,7 @@ const stripHtmlTags = (html: string): string => {
 // Main FindingsTable component
 const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }: FindingsTableProps) => {
   const [selectedFinding, setSelectedFinding] = useState(null);
+  const [apiRef, setApiRef] = useState<any>(null);
   const theme = useTheme();
 
   // Update selectedFinding when findings array changes (after refresh)
@@ -468,7 +469,21 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
             {params.value}
           </Typography>
           <Tooltip title="Click to edit">
-            <EditIcon sx={{ fontSize: 16, color: 'action.disabled', opacity: 0.5 }} />
+            <IconButton
+              size="small"
+              onClick={(e: any) => {
+                e.stopPropagation();
+                if (apiRef) {
+                  apiRef.startCellEditMode({ id: params.id, field: params.field });
+                }
+              }}
+              sx={{ 
+                p: 0.5,
+                '&:hover': { color: 'primary.main' }
+              }}
+            >
+              <EditIcon sx={{ fontSize: 16, opacity: 0.6 }} />
+            </IconButton>
           </Tooltip>
         </Box>
       ),
@@ -550,7 +565,21 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <RiskChip level={params.value} />
           <Tooltip title="Click to edit">
-            <EditIcon sx={{ fontSize: 14, color: 'action.disabled', opacity: 0.5 }} />
+            <IconButton
+              size="small"
+              onClick={(e: any) => {
+                e.stopPropagation();
+                if (apiRef) {
+                  apiRef.startCellEditMode({ id: params.id, field: params.field });
+                }
+              }}
+              sx={{ 
+                p: 0.5,
+                '&:hover': { color: 'primary.main' }
+              }}
+            >
+              <EditIcon sx={{ fontSize: 14, opacity: 0.6 }} />
+            </IconButton>
           </Tooltip>
         </Box>
       ),
@@ -648,6 +677,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       minWidth: 130,
       editable: true,
       renderCell: (params: GridRenderCellParams) => {
+        const apiRef = useGridApiContext();
         const status = params.value as string | undefined;
         
         const getChip = () => {
@@ -687,7 +717,21 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {getChip()}
             <Tooltip title="Click to edit">
-              <EditIcon sx={{ fontSize: 14, color: 'action.disabled', opacity: 0.5 }} />
+              <IconButton
+                size="small"
+                onClick={(e: any) => {
+                  e.stopPropagation();
+                  if (apiRef) {
+                    apiRef.startCellEditMode({ id: params.id, field: params.field });
+                  }
+                }}
+                sx={{ 
+                  p: 0.5,
+                  '&:hover': { color: 'primary.main' }
+                }}
+              >
+                <EditIcon sx={{ fontSize: 14, opacity: 0.6 }} />
+              </IconButton>
             </Tooltip>
           </Box>
         );
@@ -769,6 +813,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         checkboxSelection
         disableRowSelectionOnClick
         autoHeight
+        apiRef={setApiRef}
         initialState={{
           pagination: {
             paginationModel: { pageSize: 10, page: 0 },
