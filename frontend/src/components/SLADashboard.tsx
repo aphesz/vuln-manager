@@ -434,13 +434,19 @@ const SLADashboard = () => {
                   Clear Filter
                 </Button>
               </Box>
-              <Paper elevation={0} sx={{ height: 400, width: '100%' }}>
+              <Paper elevation={0} sx={{ width: '100%', overflow: 'hidden' }}>
                 <DataGrid
                   rows={getFilteredFindings()}
                   columns={columns}
                   pageSizeOptions={[5, 10, 25]}
                   checkboxSelection={false}
                   disableRowSelectionOnClick
+                  autoHeight
+                  initialState={{
+                    pagination: {
+                      paginationModel: { pageSize: 10, page: 0 },
+                    },
+                  }}
                   slots={{
                     toolbar: GridToolbar,
                   }}
@@ -458,6 +464,8 @@ const SLADashboard = () => {
                     '& .MuiDataGrid-row': {
                       cursor: 'pointer',
                     },
+                    minHeight: 300,
+                    maxHeight: { xs: '60vh', sm: '70vh', md: '80vh' },
                   }}
                 />
               </Paper>
@@ -473,13 +481,19 @@ const SLADashboard = () => {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               All Findings with SLA Tracking
             </Typography>
-            <Paper elevation={0} sx={{ height: 600, width: '100%' }}>
+            <Paper elevation={0} sx={{ width: '100%', overflow: 'hidden' }}>
               <DataGrid
                 rows={allFindings}
                 columns={columns}
                 pageSizeOptions={[10, 25, 50]}
                 checkboxSelection={false}
                 disableRowSelectionOnClick
+                autoHeight
+                initialState={{
+                  pagination: {
+                    paginationModel: { pageSize: 10, page: 0 },
+                  },
+                }}
                 slots={{
                   toolbar: GridToolbar,
                 }}
@@ -497,6 +511,8 @@ const SLADashboard = () => {
                   '& .MuiDataGrid-row': {
                     cursor: 'pointer',
                   },
+                  minHeight: 300,
+                  maxHeight: { xs: '60vh', sm: '70vh', md: '80vh' },
                 }}
               />
             </Paper>

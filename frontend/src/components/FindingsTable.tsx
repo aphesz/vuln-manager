@@ -596,9 +596,8 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
     <Paper 
       elevation={1} 
       sx={{ 
-        height: { xs: 500, sm: 600, md: 700 }, 
         width: '100%',
-        overflow: 'auto',
+        overflow: 'hidden',
       }}
     >
       <DataGrid
@@ -607,6 +606,12 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         pageSizeOptions={[10, 25, 50]}
         checkboxSelection
         disableRowSelectionOnClick
+        autoHeight
+        initialState={{
+          pagination: {
+            paginationModel: { pageSize: 10, page: 0 },
+          },
+        }}
         slotProps={{
           toolbar: {
             showQuickFilter: true,
@@ -628,6 +633,10 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
           '& .MuiDataGrid-cell': {
             fontSize: { xs: '0.75rem', sm: '0.875rem' },
           },
+          // Set minimum height to avoid too small tables with few rows
+          minHeight: 300,
+          // Set maximum height to prevent excessive scrolling with many rows
+          maxHeight: { xs: '60vh', sm: '70vh', md: '80vh' },
         }}
       />
       
