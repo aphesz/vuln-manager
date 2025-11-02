@@ -53,6 +53,14 @@ from app.sla import (
     get_sla_summary,
 )
 from app.jira import get_jira_client, encrypt_token
+from app.timezone_utils import (
+    get_utc_now,
+    convert_to_user_timezone,
+    parse_iso_datetime,
+    DEFAULT_TIMEZONE,
+    TIMEZONE_CHOICES,
+    is_valid_timezone,
+)
 import json
 from datetime import datetime
 
@@ -446,6 +454,45 @@ def read_projects(session: Session = Depends(get_session)):
     projects = session.exec(select(Project)).all()
     return projects
 
+@app.get("/projects/stats/all")
+def get_all_projects_with_stats(session: Session = Depends(get_session)):
+    """Returns all projects with their statistics (findings count, risk summary)."""
+    projects = session.exec(select(Project)).all()
+    
+    projects_with_stats = []
+    for project in projects:
+        # Get findings count
+        findings = session.exec(
+            select(Finding).where(Finding.project_id == project.id)
+        ).all()
+        
+        # Calculate risk summary
+        risk_summary = {
+            'Critical': 0,
+            'High': 0,
+            'Medium': 0,
+            'Low': 0,
+            'Informational': 0
+        }
+        
+        for finding in findings:
+            risk_level = finding.risk_rating
+            if risk_level in risk_summary:
+                risk_summary[risk_level] += 1
+        
+        projects_with_stats.append({
+            'id': project.id,
+            'name': project.name,
+            'consultant_name': project.consultant_name,
+            'is_archived': project.is_archived,
+            'archived_at': project.archived_at,
+            'total_findings': len(findings),
+            'risk_summary': risk_summary,
+            'critical_high_count': risk_summary['Critical'] + risk_summary['High']
+        })
+    
+    return projects_with_stats
+
 @app.get("/projects/{project_id}", response_model=ProjectReadWithFindings) # Using the corrected model name
 def read_project(project_id: int, session: Session = Depends(get_session)):
     """Returns details for a specific project, including all findings and instances."""
@@ -774,7 +821,7 @@ def update_finding_review_status(
         entity_id=finding_id,
         action="review_status_changed",
         user=user,
-        timestamp=datetime.utcnow(),
+        timestamp=get_utc_now(),
         changes_json=json.dumps(changes)
     )
     
@@ -819,7 +866,7 @@ def create_comment(
     comment = Comment(
         text=comment_data.text,
         user=comment_data.user,
-        created_at=datetime.utcnow(),
+        created_at=get_utc_now(),
         finding_id=finding_id
     )
     
@@ -829,7 +876,7 @@ def create_comment(
         entity_id=0,  # Will be updated after commit
         action="created",
         user=comment_data.user,
-        timestamp=datetime.utcnow(),
+        timestamp=get_utc_now(),
         changes_json=json.dumps({
             "finding_id": finding_id,
             "text_preview": comment_data.text[:100] + "..." if len(comment_data.text) > 100 else comment_data.text
@@ -1025,7 +1072,7 @@ async def create_jira_issue_for_finding(
         entity_id=finding_id,
         action="jira_issue_created",
         user=data.user,
-        timestamp=datetime.utcnow(),
+        timestamp=get_utc_now(),
         changes_json=json.dumps({
             "jira_issue_key": issue_data["key"],
             "jira_url": issue_data.get("self", "")
@@ -1088,7 +1135,7 @@ async def jira_webhook(
             entity_id=finding.id,
             action="jira_status_updated",
             user="jira_webhook",
-            timestamp=datetime.utcnow(),
+            timestamp=get_utc_now(),
             changes_json=json.dumps({
                 "jira_issue_key": issue_key,
                 "old_status": old_status,
@@ -1178,7 +1225,7 @@ def update_finding_remediation(
             entity_id=finding_id,
             action="remediation_updated",
             user=data.user,
-            timestamp=datetime.utcnow(),
+            timestamp=get_utc_now(),
             changes_json=json.dumps(changes)
         )
         session.add(audit_entry)
@@ -1245,7 +1292,7 @@ def update_finding_issue_status(
         entity_id=finding_id,
         action="issue_status_updated",
         user=data.user,
-        timestamp=datetime.utcnow(),
+        timestamp=get_utc_now(),
         changes_json=json.dumps(changes)
     )
     session.add(audit_entry)
@@ -1264,3 +1311,104 @@ def update_finding_issue_status(
 def get_sla_summary_endpoint(session: Session = Depends(get_session)):
     """Get a summary of findings by SLA status."""
     return get_sla_summary(session)
+
+# --- User Preferences & Timezone Endpoints ---
+
+@app.get("/timezones")
+def get_available_timezones():
+    """Get list of available timezones for user selection."""
+    return {
+        "default": DEFAULT_TIMEZONE,
+        "timezones": TIMEZONE_CHOICES
+    }
+
+@app.get("/user-preferences/{user_email}", response_model=Optional[Dict[str, Any]])
+def get_user_preferences(
+    user_email: str,
+    session: Session = Depends(get_session)
+):
+    """
+    Get user preferences including timezone settings.
+    
+    Args:
+        user_email: User's email address
+    """
+    from app.models import UserPreferences
+    
+    statement = select(UserPreferences).where(UserPreferences.user_email == user_email)
+    prefs = session.exec(statement).first()
+    
+    if not prefs:
+        # Return defaults if no preferences exist
+        return {
+            "user_email": user_email,
+            "timezone": DEFAULT_TIMEZONE,
+            "date_format": "%Y-%m-%d %H:%M:%S %Z",
+            "locale": "en_MY"
+        }
+    
+    return {
+        "id": prefs.id,
+        "user_email": prefs.user_email,
+        "timezone": prefs.timezone,
+        "date_format": prefs.date_format,
+        "locale": prefs.locale
+    }
+
+@app.post("/user-preferences")
+def create_or_update_user_preferences(
+    user_email: str = Body(...),
+    timezone: str = Body(DEFAULT_TIMEZONE),
+    date_format: str = Body("%Y-%m-%d %H:%M:%S %Z"),
+    locale: str = Body("en_MY"),
+    session: Session = Depends(get_session)
+):
+    """
+    Create or update user preferences.
+    
+    Args:
+        user_email: User's email address
+        timezone: User's preferred timezone (IANA format)
+        date_format: Preferred date format string
+        locale: User's locale preference
+    """
+    from app.models import UserPreferences
+    
+    # Validate timezone
+    if not is_valid_timezone(timezone):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timezone: {timezone}. Use IANA timezone names (e.g., 'Asia/Kuala_Lumpur')"
+        )
+    
+    # Check if preferences exist
+    statement = select(UserPreferences).where(UserPreferences.user_email == user_email)
+    prefs = session.exec(statement).first()
+    
+    if prefs:
+        # Update existing preferences
+        prefs.timezone = timezone
+        prefs.date_format = date_format
+        prefs.locale = locale
+    else:
+        # Create new preferences
+        prefs = UserPreferences(
+            user_email=user_email,
+            timezone=timezone,
+            date_format=date_format,
+            locale=locale
+        )
+        session.add(prefs)
+    
+    session.commit()
+    session.refresh(prefs)
+    
+    logger.info(f"User preferences updated for {user_email}: timezone={timezone}")
+    
+    return {
+        "id": prefs.id,
+        "user_email": prefs.user_email,
+        "timezone": prefs.timezone,
+        "date_format": prefs.date_format,
+        "locale": prefs.locale
+    }

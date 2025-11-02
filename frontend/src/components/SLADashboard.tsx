@@ -39,9 +39,13 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import type { Finding, SLAStatus, SLASummary } from '../types';
 import SLAService from '../services/SLAService';
+import UserPreferencesService from '../services/UserPreferencesService';
+import { formatDateWithTime } from '../utils/timezoneUtils';
+import { useNotification } from '../contexts/NotificationContext';
 
 const SLADashboard = () => {
   const theme = useTheme();
+  const { showSuccess, showError } = useNotification();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allFindings, setAllFindings] = useState<Finding[]>([]);
@@ -100,10 +104,13 @@ const SLADashboard = () => {
         remediation_owner: editOwner || undefined,
         user: currentUser,
       });
+      showSuccess('Remediation tracking updated');
       handleCloseEditDialog();
       loadData(); // Refresh data
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to update remediation tracking');
+      const errorMsg = err.response?.data?.detail || 'Failed to update remediation tracking';
+      setError(errorMsg);
+      showError(errorMsg);
     }
   };
 
@@ -186,13 +193,9 @@ const SLADashboard = () => {
 
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'Not set';
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const prefsService = UserPreferencesService.getInstance();
+    const userTimezone = prefsService.getTimezone();
+    return formatDateWithTime(dateString, userTimezone);
   };
 
   const columns: GridColDef[] = [

@@ -45,6 +45,8 @@ import {
 import { useTheme } from '@mui/material/styles';
 import FindingReviewPanel from './FindingReviewPanel';
 import IssueStatusService from '../services/IssueStatusService';
+import UserPreferencesService from '../services/UserPreferencesService';
+import { formatDateShort, isOverdue } from '../utils/timezoneUtils';
 
 interface RiskChipProps {
   level: RiskRating;
@@ -353,14 +355,13 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
     }
   };
 
+  // Get user's timezone preference
+  const prefsService = UserPreferencesService.getInstance();
+  const userTimezone = prefsService.getTimezone();
+
   const formatDeadline = (deadline: string | undefined) => {
     if (!deadline) return 'Not set';
-    const date = new Date(deadline);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    return formatDateShort(deadline, userTimezone);
   };
 
   const columns: GridColDef[] = [
@@ -376,6 +377,26 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
           onClick={() => setSelectedFinding(params.row)}
         >
           {params.value}
+        </Typography>
+      ),
+    },
+    {
+      field: 'description',
+      headerName: 'Description',
+      flex: 3,
+      minWidth: 200,
+      renderCell: (params: GridRenderCellParams) => (
+        <Typography 
+          variant="body2"
+          sx={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+          }}
+        >
+          {params.value ? params.value.replace(/<[^>]*>/g, '').substring(0, 100) : ''}
         </Typography>
       ),
     },
@@ -518,15 +539,15 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       minWidth: 120,
       renderCell: (params: GridRenderCellParams) => {
         const deadline = params.value as string | undefined;
-        const isOverdue = deadline && new Date(deadline) < new Date();
+        const overdue = deadline ? isOverdue(deadline) : false;
         
         return (
           <Typography
             variant="body2"
             sx={{
               fontSize: '0.875rem',
-              color: isOverdue ? theme.palette.error.main : 'inherit',
-              fontWeight: isOverdue ? 'bold' : 'normal',
+              color: overdue ? theme.palette.error.main : 'inherit',
+              fontWeight: overdue ? 'bold' : 'normal',
             }}
           >
             {formatDeadline(deadline)}
@@ -562,6 +583,15 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
     },
   ];
 
+  // Filter columns based on user preferences
+  const visibleColumns = columns.filter(col => {
+    const columnId = col.field;
+    // Always show actions column
+    if (columnId === 'actions') return true;
+    // Check preferences for other columns
+    return preferences?.tableColumns?.[columnId]?.visible ?? true;
+  });
+
   return (
     <Paper 
       elevation={1} 
@@ -573,7 +603,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
     >
       <DataGrid
         rows={findings}
-        columns={columns}
+        columns={visibleColumns}
         pageSizeOptions={[10, 25, 50]}
         checkboxSelection
         disableRowSelectionOnClick

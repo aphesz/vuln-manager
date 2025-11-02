@@ -21,6 +21,8 @@ import {
   Menu,
   MenuItem,
   Tooltip,
+  Chip,
+  Grid,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -30,9 +32,21 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import UnarchiveIcon from '@mui/icons-material/Unarchive';
+import AssessmentIcon from '@mui/icons-material/Assessment';
+import { useNotification } from '../contexts/NotificationContext';
+import { getErrorMessage, retryWithBackoff } from '../utils/errorHandler';
+import { ProjectCardSkeleton } from './LoadingSkeletons';
 
 // Use relative path for API calls - proxied through Nginx in Docker
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
+
+interface RiskSummary {
+  Critical: number;
+  High: number;
+  Medium: number;
+  Low: number;
+  Informational: number;
+}
 
 interface Project {
   id: string | number;
@@ -40,6 +54,9 @@ interface Project {
   consultant_name?: string;
   is_archived?: boolean;
   archived_at?: string;
+  total_findings?: number;
+  risk_summary?: RiskSummary;
+  critical_high_count?: number;
 }
 
 const ProjectsLists: React.FC = () => {
@@ -49,6 +66,7 @@ const ProjectsLists: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const theme = useTheme();
   const navigate = useNavigate();
+  const { showSuccess, showError } = useNotification();
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -73,11 +91,16 @@ const ProjectsLists: React.FC = () => {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_BASE_URL}/projects/`);
+      setError(null);
+      const response = await retryWithBackoff(async () => {
+        return await axios.get(`${API_BASE_URL}/projects/stats/all`);
+      }, 3);
       setProjects(response.data);
-    } catch (err) {
+    } catch (err: any) {
+      const errorMessage = getErrorMessage(err);
       console.error('Failed to fetch projects:', err);
-      setError('Failed to load projects. Ensure the backend API is running.');
+      setError(errorMessage);
+      showError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -86,7 +109,7 @@ const ProjectsLists: React.FC = () => {
   // Create Project
   const handleCreateProject = async () => {
     if (!createFormData.name.trim()) {
-      alert('Project name is required');
+      showError('Project name is required');
       return;
     }
     try {
@@ -96,10 +119,11 @@ const ProjectsLists: React.FC = () => {
       });
       setCreateDialogOpen(false);
       setCreateFormData({ name: '', consultant_name: '' });
+      showSuccess(`Project "${createFormData.name}" created successfully`);
       fetchProjects();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create project:', err);
-      alert('Failed to create project');
+      showError(getErrorMessage(err));
     }
   };
 
@@ -115,7 +139,7 @@ const ProjectsLists: React.FC = () => {
 
   const handleRenameProject = async () => {
     if (!renameFormData.name.trim()) {
-      alert('Project name is required');
+      showError('Project name is required');
       return;
     }
     try {
@@ -126,10 +150,11 @@ const ProjectsLists: React.FC = () => {
         archived_at: null,
       });
       setRenameDialogOpen(false);
+      showSuccess('Project renamed successfully');
       fetchProjects();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to rename project:', err);
-      alert('Failed to rename project');
+      showError(getErrorMessage(err));
     }
   };
 
@@ -144,26 +169,29 @@ const ProjectsLists: React.FC = () => {
     try {
       await axios.delete(`${API_BASE_URL}/projects/${deleteProjectId}`);
       setDeleteConfirmOpen(false);
+      showSuccess(`Project "${deleteProjectName}" deleted successfully`);
       fetchProjects();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to delete project:', err);
-      alert('Failed to delete project');
+      showError(getErrorMessage(err));
     }
   };
 
   // Archive/Unarchive Project
   const handleToggleArchive = async (project: Project) => {
     try {
+      const action = !project.is_archived ? 'archived' : 'unarchived';
       await axios.put(`${API_BASE_URL}/projects/${project.id}`, {
         name: project.name,
         consultant_name: project.consultant_name || null,
         is_archived: !project.is_archived,
         archived_at: !project.is_archived ? new Date().toISOString() : null,
       });
+      showSuccess(`Project "${project.name}" ${action} successfully`);
       fetchProjects();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to update archive status:', err);
-      alert('Failed to update project');
+      showError(getErrorMessage(err));
     }
   };
 
@@ -211,7 +239,7 @@ const ProjectsLists: React.FC = () => {
 
   const handleSaveEdit = async () => {
     if (!editFormData.name.trim()) {
-      alert('Project name is required');
+      showError('Project name is required');
       return;
     }
     try {
@@ -222,10 +250,11 @@ const ProjectsLists: React.FC = () => {
         archived_at: null,
       });
       setEditingProjectId(null);
+      showSuccess('Project updated successfully');
       fetchProjects();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save project:', err);
-      alert('Failed to save project');
+      showError(getErrorMessage(err));
     }
   };
 
@@ -248,8 +277,36 @@ const ProjectsLists: React.FC = () => {
 
   const displayProjects = tabValue === 0 ? activeProjects : archivedProjects;
 
-  if (loading) return <CircularProgress />;
-  if (error) return <Alert severity="error">{error}</Alert>;
+  if (loading) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4">Assessment Projects</Typography>
+          <Button variant="contained" color="primary" startIcon={<AddIcon />} disabled>
+            Create Project
+          </Button>
+        </Box>
+        <Grid container spacing={2}>
+          {[1, 2, 3].map((i) => (
+            <Grid item xs={12} key={i}>
+              <ProjectCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
+    );
+  }
+  
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+        <Button variant="contained" onClick={fetchProjects}>
+          Retry
+        </Button>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -352,18 +409,68 @@ const ProjectsLists: React.FC = () => {
                   <Typography
                     variant="body2"
                     color="textSecondary"
-                    onClick={() => !project.is_archived && navigate(`/projects/${project.id}`)}
-                    sx={{
-                      cursor: project.is_archived ? 'default' : 'pointer',
-                      '&:hover': project.is_archived ? {} : {
-                        color: 'primary.main',
-                      },
-                    }}
+                    sx={{ mb: 1 }}
                   >
                     Consultant: {project.consultant_name || 'N/A'}
                   </Typography>
+                  
+                  {/* Statistics Section */}
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', mt: 1 }}>
+                    {/* Total Findings */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <AssessmentIcon fontSize="small" color="action" />
+                      <Typography variant="body2" color="textSecondary">
+                        {project.total_findings || 0} findings
+                      </Typography>
+                    </Box>
+                    
+                    {/* Critical/High Count */}
+                    {project.critical_high_count! > 0 && (
+                      <Chip
+                        label={`${project.critical_high_count} Critical/High`}
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                      />
+                    )}
+                    
+                    {/* Risk Summary Chips */}
+                    {project.risk_summary && (
+                      <>
+                        {project.risk_summary.Critical > 0 && (
+                          <Chip
+                            label={`${project.risk_summary.Critical} Critical`}
+                            size="small"
+                            sx={{ bgcolor: '#d32f2f', color: 'white' }}
+                          />
+                        )}
+                        {project.risk_summary.High > 0 && (
+                          <Chip
+                            label={`${project.risk_summary.High} High`}
+                            size="small"
+                            sx={{ bgcolor: '#f57c00', color: 'white' }}
+                          />
+                        )}
+                        {project.risk_summary.Medium > 0 && (
+                          <Chip
+                            label={`${project.risk_summary.Medium} Medium`}
+                            size="small"
+                            sx={{ bgcolor: '#fbc02d', color: 'black' }}
+                          />
+                        )}
+                        {project.risk_summary.Low > 0 && (
+                          <Chip
+                            label={`${project.risk_summary.Low} Low`}
+                            size="small"
+                            sx={{ bgcolor: '#689f38', color: 'white' }}
+                          />
+                        )}
+                      </>
+                    )}
+                  </Box>
+                  
                   {project.is_archived && (
-                    <Typography variant="caption" color="textSecondary">
+                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
                       Archived: {new Date(project.archived_at!).toLocaleDateString()}
                     </Typography>
                   )}

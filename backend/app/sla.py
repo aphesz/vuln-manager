@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from sqlmodel import Session, select
 from app.models import Finding, FindingBase
+from app.timezone_utils import get_utc_now
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def calculate_sla_deadline(
     if days is None:
         return None
         
-    start_date = created_at or datetime.utcnow()
+    start_date = created_at or get_utc_now()
     return start_date + timedelta(days=days)
 
 

@@ -108,7 +108,7 @@ class CommentBase(SQLModel):
     """Base model for comments on findings."""
     text: str = Field(..., max_length=5000)
     user: str = Field(..., max_length=255)  # TODO: Replace with proper user auth later
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default=None)  # Will be set by timezone_utils.get_utc_now()
 
 class Comment(CommentBase, table=True):
     """Database model for Comment."""
@@ -124,7 +124,7 @@ class AuditLogBase(SQLModel):
     entity_id: int = Field(..., index=True)
     action: str = Field(..., max_length=50, index=True)  # 'created', 'updated', 'deleted', 'status_changed'
     user: str = Field(..., max_length=255)
-    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
+    timestamp: datetime = Field(default=None, index=True)  # Will be set by timezone_utils.get_utc_now()
     changes_json: Optional[str] = None  # JSON string of before/after changes
 
 class AuditLog(AuditLogBase, table=True):
@@ -144,6 +144,17 @@ class JiraSettings(JiraSettingsBase, table=True):
     """Database model for Jira settings."""
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: Optional[int] = Field(default=None, foreign_key="project.id", index=True)
+
+class UserPreferencesBase(SQLModel):
+    """Base model for user preferences (timezone, locale, etc.)."""
+    user_email: str = Field(..., unique=True, index=True)
+    timezone: str = Field(default="Asia/Kuala_Lumpur")  # Default to GMT+8 (MYT)
+    date_format: str = Field(default="%Y-%m-%d %H:%M:%S %Z")
+    locale: str = Field(default="en_MY")  # Malaysian English
+
+class UserPreferences(UserPreferencesBase, table=True):
+    """Database model for user preferences."""
+    id: Optional[int] = Field(default=None, primary_key=True)
 
 # --- Read Models (For FastAPI Responses) ---
 
@@ -166,14 +177,18 @@ class JiraSettingsRead(JiraSettingsBase):
     id: int
     project_id: Optional[int]
 
-# 5. Finding Read Model 
+# 5. UserPreferences Read Model
+class UserPreferencesRead(UserPreferencesBase):
+    id: int
+
+# 7. Finding Read Model 
 class FindingReadWithInstances(FindingBase):
     id: int
     project_id: int
     instances: List[InstanceRead] = []
     comments: List[CommentRead] = []
 
-# 6. Project Read Model
+# 8. Project Read Model
 class ProjectReadWithFindings(ProjectBase):
     """Used to read a Project including all its Findings (and their Instances)."""
     id: int

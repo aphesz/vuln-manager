@@ -3,6 +3,11 @@ interface UserPreferences {
   themeMode?: 'light' | 'dark'; // Explicitly set theme (null = use system preference)
   systemPreferenceTracking?: boolean; // Whether to follow system theme changes
   
+  // Timezone & Locale preferences
+  timezone?: string; // IANA timezone (e.g., 'Asia/Kuala_Lumpur')
+  dateFormat?: string; // Date format string
+  locale?: string; // Locale code (e.g., 'en_MY')
+  
   // Table preferences
   tableColumns: {
     [key: string]: {
@@ -26,6 +31,9 @@ interface UserPreferences {
 const DEFAULT_PREFERENCES: UserPreferences = {
   themeMode: undefined, // Use system preference by default
   systemPreferenceTracking: true, // Track system theme changes
+  timezone: 'Asia/Kuala_Lumpur', // Default to GMT+8 (Malaysia Time)
+  dateFormat: 'YYYY-MM-DD HH:mm:ss z', // Default date format
+  locale: 'en-MY', // Malaysian English
   tableColumns: {
     title: { visible: true, width: 300, order: 0 },
     risk_rating: { visible: true, width: 120, order: 1 },
@@ -133,6 +141,31 @@ class UserPreferencesService {
 
   setSystemPreferenceTracking(enabled: boolean): void {
     this.updatePreferences({ systemPreferenceTracking: enabled });
+  }
+
+  // Timezone & Locale methods
+  getTimezone(): string {
+    return this.preferences.timezone || DEFAULT_PREFERENCES.timezone!;
+  }
+
+  setTimezone(timezone: string): void {
+    this.updatePreferences({ timezone });
+  }
+
+  getDateFormat(): string {
+    return this.preferences.dateFormat || DEFAULT_PREFERENCES.dateFormat!;
+  }
+
+  setDateFormat(format: string): void {
+    this.updatePreferences({ dateFormat: format });
+  }
+
+  getLocale(): string {
+    return this.preferences.locale || DEFAULT_PREFERENCES.locale!;
+  }
+
+  setLocale(locale: string): void {
+    this.updatePreferences({ locale });
   }
 
   // Column-specific methods

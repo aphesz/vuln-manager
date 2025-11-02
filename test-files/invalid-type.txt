@@ -1,0 +1,9 @@
+This is a plain text file, not an XML file.
+It should be rejected by the file upload validation.
+
+The application only accepts XML files from security scanners like:
+- Burp Suite (.xml)
+- Nessus (.nessus or .xml)
+
+This .txt file will trigger the error:
+"Invalid file type. Please upload an XML file (.xml)"

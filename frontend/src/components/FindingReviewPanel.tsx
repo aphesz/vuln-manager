@@ -29,6 +29,9 @@ import {
 import { useTheme } from '@mui/material/styles';
 import type { ReviewStatus, Comment, AuditLog } from '../types';
 import PeerReviewService from '../services/PeerReviewService';
+import UserPreferencesService from '../services/UserPreferencesService';
+import { formatDateWithTime } from '../utils/timezoneUtils';
+import { useNotification } from '../contexts/NotificationContext';
 
 interface FindingReviewPanelProps {
   findingId: number;
@@ -44,6 +47,7 @@ const FindingReviewPanel = ({
   onStatusChange,
 }: FindingReviewPanelProps) => {
   const theme = useTheme();
+  const { showSuccess, showError } = useNotification();
   const [status, setStatus] = useState<ReviewStatus>(currentStatus);
   const [reviewerName, setReviewerName] = useState(currentReviewerName || '');
   const [comments, setComments] = useState<Comment[]>([]);
@@ -100,18 +104,19 @@ const FindingReviewPanel = ({
         reviewerName || undefined
       );
       setStatus(newStatus);
-      setSuccess(`Review status updated to "${newStatus}"`);
+      showSuccess(`Review status updated to "${newStatus}"`);
       
-      // Small delay to ensure database commit is visible
+      // Small delay to ensure database commit is visible before refreshing
       setTimeout(() => {
         loadAuditLog();
-      }, 100);
-      
-      if (onStatusChange) {
-        onStatusChange();
-      }
+        if (onStatusChange) {
+          onStatusChange();
+        }
+      }, 150);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to update review status');
+      const errorMsg = err.response?.data?.detail || 'Failed to update review status';
+      setError(errorMsg);
+      showError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -178,13 +183,9 @@ const FindingReviewPanel = ({
   };
 
   const formatTimestamp = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const prefsService = UserPreferencesService.getInstance();
+    const userTimezone = prefsService.getTimezone();
+    return formatDateWithTime(timestamp, userTimezone);
   };
 
   return (
@@ -247,12 +248,31 @@ const FindingReviewPanel = ({
             placeholder="Enter reviewer's name (optional)"
             value={reviewerName}
             onChange={(e) => setReviewerName(e.target.value)}
+            onBlur={async () => {
+              // Auto-save reviewer name when field loses focus
+              if (reviewerName !== currentReviewerName) {
+                try {
+                  await PeerReviewService.updateReviewStatus(
+                    findingId,
+                    status,
+                    reviewerName || undefined
+                  );
+                  showSuccess('Reviewer name saved');
+                  // No need to refresh - the data is already saved and displayed in the TextField
+                  // The parent will refresh when the dialog is closed or status changes
+                } catch (err: any) {
+                  const errorMsg = err.response?.data?.detail || 'Failed to save reviewer name';
+                  showError(errorMsg);
+                  console.error('Failed to save reviewer name:', err);
+                }
+              }
+            }}
             disabled={loading}
             inputProps={{
               'aria-label': 'Reviewer name',
               maxLength: 100,
             }}
-            helperText="Name of the person conducting the review"
+            helperText="Name of the person conducting the review (auto-saves when you leave this field)"
           />
         </CardContent>
       </Card>
