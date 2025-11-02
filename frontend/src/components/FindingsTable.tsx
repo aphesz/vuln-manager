@@ -48,6 +48,9 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   Close as CancelIcon,
+  Delete as DeleteIcon,
+  FileDownload as ExportIcon,
+  SwapVert as BulkEditIcon,
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import FindingReviewPanel from './FindingReviewPanel';
@@ -400,6 +403,9 @@ const stripHtmlTags = (html: string): string => {
 // Main FindingsTable component
 const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }: FindingsTableProps) => {
   const [selectedFinding, setSelectedFinding] = useState(null);
+  const [selectedRows, setSelectedRows] = useState<any[]>([]);
+  const [bulkAction, setBulkAction] = useState<string>('');
+  const [bulkValue, setBulkValue] = useState<string>('');
   const apiRef = useGridApiRef();
   const theme = useTheme();
 
@@ -459,6 +465,61 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
   const formatDeadline = (deadline: string | undefined) => {
     if (!deadline) return 'Not set';
     return formatDateShort(deadline, userTimezone);
+  };
+
+  // Bulk action handlers
+  const handleBulkRiskRatingChange = async (newRating: RiskRating) => {
+    try {
+      await Promise.all(
+        selectedRows.map(id =>
+          axios.patch(`${API_BASE_URL}/findings/${id}`, { risk_rating: newRating })
+        )
+      );
+      if (onRefresh) onRefresh();
+      setSelectedRows([]);
+      setBulkAction('');
+    } catch (error) {
+      console.error('Bulk risk rating update failed:', error);
+    }
+  };
+
+  const handleBulkStatusChange = async (newStatus: IssueStatus) => {
+    try {
+      await Promise.all(
+        selectedRows.map(id =>
+          IssueStatusService.updateIssueStatus(id as number, newStatus, undefined, 'analyst@example.com')
+        )
+      );
+      if (onRefresh) onRefresh();
+      setSelectedRows([]);
+      setBulkAction('');
+    } catch (error) {
+      console.error('Bulk status update failed:', error);
+    }
+  };
+
+  const handleBulkExport = () => {
+    const selectedFindings = findings.filter((f: Finding) => selectedRows.includes(f.id));
+    const csv = [
+      ['ID', 'Title', 'Risk Rating', 'Status', 'Instances', 'SLA Deadline'],
+      ...selectedFindings.map((f: Finding) => [
+        f.id,
+        f.title,
+        f.risk_rating,
+        f.issue_status || 'Open',
+        f.instance_count || 0,
+        formatDeadline(f.remediation_deadline)
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `findings-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setSelectedRows([]);
   };
 
   const columns: GridColDef[] = [
@@ -837,6 +898,115 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         overflow: 'hidden',
       }}
     >
+      {/* Bulk Actions Toolbar */}
+      {selectedRows.length > 0 && (
+        <Box
+          sx={{
+            p: 2,
+            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(144, 202, 249, 0.16)' : 'rgba(25, 118, 210, 0.08)',
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+            {selectedRows.length} finding{selectedRows.length > 1 ? 's' : ''} selected
+          </Typography>
+
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Bulk Action</InputLabel>
+            <Select
+              value={bulkAction}
+              label="Bulk Action"
+              onChange={(e) => setBulkAction(e.target.value)}
+            >
+              <MenuItem value="risk_rating">Change Risk Rating</MenuItem>
+              <MenuItem value="status">Change Status</MenuItem>
+              <MenuItem value="export">Export Selected</MenuItem>
+            </Select>
+          </FormControl>
+
+          {bulkAction === 'risk_rating' && (
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <InputLabel>New Risk Rating</InputLabel>
+              <Select
+                value={bulkValue}
+                label="New Risk Rating"
+                onChange={(e) => setBulkValue(e.target.value)}
+              >
+                <MenuItem value="Critical">Critical</MenuItem>
+                <MenuItem value="High">High</MenuItem>
+                <MenuItem value="Medium">Medium</MenuItem>
+                <MenuItem value="Low">Low</MenuItem>
+                <MenuItem value="Informational">Informational</MenuItem>
+              </Select>
+            </FormControl>
+          )}
+
+          {bulkAction === 'status' && (
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <InputLabel>New Status</InputLabel>
+              <Select
+                value={bulkValue}
+                label="New Status"
+                onChange={(e) => setBulkValue(e.target.value)}
+              >
+                <MenuItem value="Open">Open</MenuItem>
+                <MenuItem value="Partially Closed">Partially Closed</MenuItem>
+                <MenuItem value="Closed">Closed</MenuItem>
+              </Select>
+            </FormControl>
+          )}
+
+          {bulkAction === 'risk_rating' && bulkValue && (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<BulkEditIcon />}
+              onClick={() => handleBulkRiskRatingChange(bulkValue as RiskRating)}
+            >
+              Apply to {selectedRows.length}
+            </Button>
+          )}
+
+          {bulkAction === 'status' && bulkValue && (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<BulkEditIcon />}
+              onClick={() => handleBulkStatusChange(bulkValue as IssueStatus)}
+            >
+              Apply to {selectedRows.length}
+            </Button>
+          )}
+
+          {bulkAction === 'export' && (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<ExportIcon />}
+              onClick={handleBulkExport}
+            >
+              Export {selectedRows.length} as CSV
+            </Button>
+          )}
+
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              setSelectedRows([]);
+              setBulkAction('');
+              setBulkValue('');
+            }}
+          >
+            Cancel
+          </Button>
+        </Box>
+      )}
+
       <DataGrid
         rows={findings}
         columns={visibleColumns}
@@ -845,6 +1015,9 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         disableRowSelectionOnClick
         autoHeight
         apiRef={apiRef}
+        onRowSelectionModelChange={(newSelection) => {
+          setSelectedRows(newSelection as any[]);
+        }}
         initialState={{
           pagination: {
             paginationModel: { pageSize: 10, page: 0 },
