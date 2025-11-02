@@ -17,10 +17,13 @@ import {
   FormControlLabel,
   Select,
   MenuItem,
+  ButtonGroup,
+  Tooltip,
 } from '@mui/material';
 import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
+  Contrast as ContrastIcon,
   Upload as UploadIcon,
   Download as DownloadIcon,
   Settings as SettingsIcon,
@@ -54,7 +57,7 @@ const Dashboard = () => {
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<RiskRating | null>(null);
   const theme = useTheme();
-  const { mode, toggleTheme } = useThemeContext();
+  const { mode, setThemeMode } = useThemeContext();
   const prefsService = UserPreferencesService.getInstance();
   const [preferences, setPreferences] = useState(prefsService.getPreferences());
 
@@ -258,22 +261,76 @@ const Dashboard = () => {
           {project.name}
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <IconButton 
-            onClick={toggleTheme} 
-            size="large"
+          {/* Theme Selector Button Group */}
+          <ButtonGroup 
+            variant="outlined" 
+            size="small"
+            aria-label="Theme selection"
             sx={{
-              color: theme.palette.text.primary,
-              '&:hover': {
-                backgroundColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.1)' 
-                  : 'rgba(0, 0, 0, 0.05)',
+              '& .MuiButtonGroup-grouped': {
+                minWidth: '40px',
+                borderColor: theme.palette.divider,
               },
             }}
-            title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-            aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
           >
-            {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
-          </IconButton>
+            <Tooltip title="Light theme">
+              <IconButton
+                onClick={() => setThemeMode('light')}
+                size="small"
+                sx={{
+                  color: mode === 'light' ? theme.palette.primary.main : theme.palette.text.secondary,
+                  backgroundColor: mode === 'light' ? theme.palette.action.selected : 'transparent',
+                  '&:hover': {
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'rgba(0, 0, 0, 0.05)',
+                  },
+                }}
+                aria-label="Switch to light theme"
+                aria-pressed={mode === 'light'}
+              >
+                <LightModeIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Dark theme">
+              <IconButton
+                onClick={() => setThemeMode('dark')}
+                size="small"
+                sx={{
+                  color: mode === 'dark' ? theme.palette.primary.main : theme.palette.text.secondary,
+                  backgroundColor: mode === 'dark' ? theme.palette.action.selected : 'transparent',
+                  '&:hover': {
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'rgba(0, 0, 0, 0.05)',
+                  },
+                }}
+                aria-label="Switch to dark theme"
+                aria-pressed={mode === 'dark'}
+              >
+                <DarkModeIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="High contrast theme">
+              <IconButton
+                onClick={() => setThemeMode('highContrast')}
+                size="small"
+                sx={{
+                  color: mode === 'highContrast' ? theme.palette.primary.main : theme.palette.text.secondary,
+                  backgroundColor: mode === 'highContrast' ? theme.palette.action.selected : 'transparent',
+                  '&:hover': {
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'rgba(0, 0, 0, 0.05)',
+                  },
+                }}
+                aria-label="Switch to high contrast theme"
+                aria-pressed={mode === 'highContrast'}
+              >
+                <ContrastIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </ButtonGroup>
           <IconButton 
             onClick={() => setSettingsDialogOpen(true)}
             size="large"

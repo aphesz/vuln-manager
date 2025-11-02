@@ -3,10 +3,13 @@ import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/st
 import { CssBaseline } from '@mui/material';
 import type { PaletteMode } from '@mui/material';
 
+// Extended theme mode type to include high contrast
+export type ThemeMode = 'light' | 'dark' | 'highContrast';
+
 // Define theme settings
-const getDesignTokens = (mode: PaletteMode) => ({
+const getDesignTokens = (mode: ThemeMode) => ({
   palette: {
-    mode,
+    mode: mode === 'highContrast' ? 'dark' : mode,
     ...(mode === 'light'
       ? {
           // Light mode
@@ -34,6 +37,36 @@ const getDesignTokens = (mode: PaletteMode) => ({
             medium: '#2196f3',
             low: '#4caf50',
             informational: '#757575',
+          },
+        }
+      : mode === 'highContrast'
+      ? {
+          // High Contrast mode - WCAG AAA compliant
+          primary: {
+            main: '#00e5ff', // Bright cyan for maximum visibility
+            light: '#6effff',
+            dark: '#00b2cc',
+          },
+          secondary: {
+            main: '#ff1744', // Bright red for contrast
+            light: '#ff6090',
+            dark: '#c4001d',
+          },
+          background: {
+            default: '#000000', // Pure black
+            paper: '#1a1a1a', // Very dark gray for cards
+          },
+          text: {
+            primary: '#ffffff', // Pure white for maximum contrast
+            secondary: '#e0e0e0', // Light gray for secondary text
+          },
+          divider: '#ffffff',
+          risk: {
+            critical: '#ff1744', // Bright red
+            high: '#ff9100', // Bright orange
+            medium: '#ffea00', // Bright yellow
+            low: '#00e676', // Bright green
+            informational: '#ffffff', // White
           },
         }
       : {
@@ -103,6 +136,10 @@ const getDesignTokens = (mode: PaletteMode) => ({
         root: {
           textTransform: 'none' as const,
           fontWeight: 500,
+          ...(mode === 'highContrast' && {
+            border: '2px solid currentColor',
+            fontWeight: 700,
+          }),
         } as any,
       },
     },
@@ -110,6 +147,10 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         root: {
           borderRadius: 8,
+          ...(mode === 'highContrast' && {
+            border: '3px solid #ffffff',
+            borderRadius: 4,
+          }),
         },
       },
     },
@@ -117,6 +158,39 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
+          ...(mode === 'highContrast' && {
+            border: '2px solid #ffffff',
+          }),
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          ...(mode === 'highContrast' && {
+            '& .MuiOutlinedInput-notchedOutline': {
+              borderWidth: '3px',
+              borderColor: '#ffffff',
+            },
+            '&:hover .MuiOutlinedInput-notchedOutline': {
+              borderColor: '#00e5ff',
+              borderWidth: '3px',
+            },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+              borderColor: '#00e5ff',
+              borderWidth: '4px',
+            },
+          }),
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          ...(mode === 'highContrast' && {
+            border: '2px solid currentColor',
+            fontWeight: 700,
+          }),
         },
       },
     },
@@ -130,6 +204,16 @@ const getDesignTokens = (mode: PaletteMode) => ({
           '& .MuiDataGrid-cell:focus-within': {
             outline: 'none',
           },
+          ...(mode === 'highContrast' && {
+            border: '3px solid #ffffff',
+            '& .MuiDataGrid-row': {
+              borderBottom: '2px solid #ffffff',
+            },
+            '& .MuiDataGrid-columnHeaders': {
+              borderBottom: '3px solid #ffffff',
+              fontWeight: 700,
+            },
+          }),
         },
       },
     },
@@ -137,6 +221,9 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
+          ...(mode === 'highContrast' && {
+            borderBottom: '3px solid #ffffff',
+          }),
         },
       },
     },
@@ -144,6 +231,9 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
+          ...(mode === 'highContrast' && {
+            border: '3px solid #ffffff',
+          }),
         },
       },
     },
@@ -151,6 +241,27 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
+          ...(mode === 'highContrast' && {
+            border: '4px solid #ffffff',
+            borderRadius: 0,
+          }),
+        },
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          ...(mode === 'highContrast' && {
+            border: '2px solid transparent',
+            '&:hover': {
+              border: '2px solid currentColor',
+              backgroundColor: 'transparent',
+            },
+            '&:focus-visible': {
+              outline: '4px solid #00e5ff',
+              outlineOffset: '2px',
+            },
+          }),
         },
       },
     },
@@ -163,11 +274,13 @@ const getDesignTokens = (mode: PaletteMode) => ({
 // Create context
 interface ThemeContextType {
   toggleTheme: () => void;
-  mode: PaletteMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  mode: ThemeMode;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   toggleTheme: () => {},
+  setThemeMode: () => {},
   mode: 'light',
 });
 
@@ -177,13 +290,13 @@ export const useThemeContext = () => useContext(ThemeContext);
 // Theme provider component
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }: { children: React.ReactNode }) => {
   // Get initial theme preference from localStorage or system preference
-  // Security: Only allow 'light' or 'dark' values, default to system preference
-  const getInitialMode = (): PaletteMode => {
+  // Security: Only allow 'light', 'dark', or 'highContrast' values
+  const getInitialMode = (): ThemeMode => {
     try {
       const savedMode = localStorage.getItem('themeMode');
       // Whitelist validation - only accept valid theme modes
-      if (savedMode && (savedMode === 'light' || savedMode === 'dark')) {
-        return savedMode;
+      if (savedMode && (savedMode === 'light' || savedMode === 'dark' || savedMode === 'highContrast')) {
+        return savedMode as ThemeMode;
       }
     } catch (e) {
       // localStorage might be disabled or restricted (private browsing)
@@ -200,30 +313,38 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const [mode, setMode] = useState<PaletteMode>(getInitialMode);
+  const [mode, setMode] = useState<ThemeMode>(getInitialMode);
 
   // Create theme instance
   const theme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
 
-  // Toggle theme function (securely validates new mode)
+  // Toggle theme function (cycles through light -> dark -> highContrast -> light)
   const toggleTheme = () => {
-    setMode((prevMode: PaletteMode) => {
-      const newMode: PaletteMode = prevMode === 'light' ? 'dark' : 'light';
-      return newMode;
+    setMode((prevMode: ThemeMode) => {
+      if (prevMode === 'light') return 'dark';
+      if (prevMode === 'dark') return 'highContrast';
+      return 'light';
     });
+  };
+
+  // Direct set theme mode function
+  const setThemeMode = (newMode: ThemeMode) => {
+    if (newMode === 'light' || newMode === 'dark' || newMode === 'highContrast') {
+      setMode(newMode);
+    }
   };
 
   // Save theme preference to localStorage with security validation
   useEffect(() => {
     try {
       // Only save valid theme modes
-      if (mode === 'light' || mode === 'dark') {
+      if (mode === 'light' || mode === 'dark' || mode === 'highContrast') {
         localStorage.setItem('themeMode', mode);
       }
       // Update HTML data attribute for additional styling and system compatibility
       document.documentElement.setAttribute('data-theme', mode);
-      // Update system color scheme preference
-      document.documentElement.style.colorScheme = mode;
+      // Update system color scheme preference (high contrast uses dark scheme)
+      document.documentElement.style.colorScheme = mode === 'highContrast' ? 'dark' : mode;
     } catch (e) {
       // localStorage might be disabled or restricted (private browsing)
       console.warn('Cannot persist theme preference:', e);
@@ -253,7 +374,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ toggleTheme, mode }}>
+    <ThemeContext.Provider value={{ toggleTheme, setThemeMode, mode }}>
       <MuiThemeProvider theme={theme}>
         <CssBaseline />
         {children}
