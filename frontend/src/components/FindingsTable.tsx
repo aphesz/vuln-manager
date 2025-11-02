@@ -54,6 +54,7 @@ import {
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import FindingReviewPanel from './FindingReviewPanel';
+import FindingsTableToolbar, { FilterState } from './FindingsTableToolbar';
 import IssueStatusService from '../services/IssueStatusService';
 import UserPreferencesService from '../services/UserPreferencesService';
 import { formatDateShort, isOverdue } from '../utils/timezoneUtils';
@@ -406,8 +407,14 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
   const [selectedRows, setSelectedRows] = useState<any[]>([]);
   const [bulkAction, setBulkAction] = useState<string>('');
   const [bulkValue, setBulkValue] = useState<string>('');
+  const [filteredFindings, setFilteredFindings] = useState(findings);
   const apiRef = useGridApiRef();
   const theme = useTheme();
+
+  // Update filtered findings when findings change
+  useEffect(() => {
+    setFilteredFindings(findings);
+  }, [findings]);
 
   // Update selectedFinding when findings array changes (after refresh)
   useEffect(() => {
@@ -465,6 +472,28 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
   const formatDeadline = (deadline: string | undefined) => {
     if (!deadline) return 'Not set';
     return formatDateShort(deadline, userTimezone);
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (filters: FilterState) => {
+    let filtered = [...findings];
+
+    // Apply risk rating filter
+    if (filters.riskRating !== 'All') {
+      filtered = filtered.filter((f: Finding) => f.risk_rating === filters.riskRating);
+    }
+
+    // Apply issue status filter
+    if (filters.issueStatus !== 'All') {
+      filtered = filtered.filter((f: Finding) => (f.issue_status || 'Open') === filters.issueStatus);
+    }
+
+    // Apply SLA status filter
+    if (filters.slaStatus !== 'All') {
+      filtered = filtered.filter((f: Finding) => (f.sla_status || 'On Track') === filters.slaStatus);
+    }
+
+    setFilteredFindings(filtered);
   };
 
   // Bulk action handlers
@@ -1008,7 +1037,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       )}
 
       <DataGrid
-        rows={findings}
+        rows={filteredFindings}
         columns={visibleColumns}
         pageSizeOptions={[10, 25, 50]}
         checkboxSelection
@@ -1025,12 +1054,11 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         }}
         slotProps={{
           toolbar: {
-            showQuickFilter: true,
-            quickFilterProps: { debounceMs: 500 },
+            onFilterChange: handleFilterChange,
           },
         }}
         slots={{
-          toolbar: GridToolbar,
+          toolbar: FindingsTableToolbar,
         }}
         sx={{
           '& .MuiDataGrid-toolbarContainer': {
