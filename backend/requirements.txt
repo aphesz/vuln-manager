@@ -7,10 +7,10 @@ sqlmodel==0.0.16
 psycopg2-binary==2.9.9  # PostgreSQL driver (required)
 python-docx==1.1.0
 reportlab==4.1.0
-python-multipart==0.0.9
+python-multipart>=0.0.18  # security: fix Dependabot vulnerabilities
 defusedxml==0.7.1  # added for secure XML parsing in parsers
 alembic==1.13.1  # database migrations
-cryptography==42.0.2  # for encrypting sensitive data (Jira tokens, etc.)
+cryptography>=44.0.1  # security: fix Dependabot vulnerabilities (for encrypting sensitive data)
 httpx==0.26.0  # for Jira API calls
 pytest==7.4.3  # testing framework
 pytest-cov==4.1.0  # coverage reporting
