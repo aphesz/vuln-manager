@@ -11,6 +11,7 @@ import {
   GridColDef,
   GridRenderEditCellParams,
   useGridApiContext,
+  useGridApiRef,
 } from '@mui/x-data-grid';
 import { Finding, Instance, RiskRating, ReviewStatus, SLAStatus, IssueStatus } from '../types';
 import {
@@ -90,7 +91,13 @@ const RiskRatingEditCell = (params: GridRenderEditCellParams) => {
       await axios.patch(`${API_BASE_URL}/findings/${id}`, {
         risk_rating: newValue,
       });
-      apiRef.current.stopCellEditMode({ id, field });
+      
+      // Try to stop edit mode, but don't fail if already stopped
+      try {
+        apiRef.current.stopCellEditMode({ id, field });
+      } catch (e) {
+        // Cell already exited edit mode, that's fine
+      }
     } catch (error) {
       console.error('Failed to update risk rating:', error);
     }
@@ -129,7 +136,13 @@ const IssueStatusEditCell = (params: GridRenderEditCellParams) => {
         undefined,
         'analyst@example.com'
       );
-      apiRef.current.stopCellEditMode({ id, field });
+      
+      // Try to stop edit mode, but don't fail if already stopped
+      try {
+        apiRef.current.stopCellEditMode({ id, field });
+      } catch (e) {
+        // Cell already exited edit mode, that's fine
+      }
     } catch (error) {
       console.error('Failed to update issue status:', error);
     }
@@ -387,7 +400,7 @@ const stripHtmlTags = (html: string): string => {
 // Main FindingsTable component
 const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }: FindingsTableProps) => {
   const [selectedFinding, setSelectedFinding] = useState(null);
-  const [apiRef, setApiRef] = useState<any>(null);
+  const apiRef = useGridApiRef();
   const theme = useTheme();
 
   // Update selectedFinding when findings array changes (after refresh)
@@ -473,8 +486,8 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
               size="small"
               onClick={(e: any) => {
                 e.stopPropagation();
-                if (apiRef) {
-                  apiRef.startCellEditMode({ id: params.id, field: params.field });
+                if (apiRef?.current) {
+                  apiRef.current.startCellEditMode({ id: params.id, field: params.field });
                 }
               }}
               sx={{ 
@@ -490,31 +503,52 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       renderEditCell: (params: GridRenderEditCellParams) => {
         const apiRef = useGridApiContext();
         const { id, value, field } = params;
-        const [editValue, setEditValue] = useState(value);
+        let currentValue = value;
 
         const handleSave = async () => {
           try {
             await axios.patch(`${API_BASE_URL}/findings/${id}`, {
-              title: editValue,
+              title: currentValue,
             });
-            apiRef.current.setEditCellValue({ id, field, value: editValue });
-            apiRef.current.stopCellEditMode({ id, field });
+            
+            // Try to stop edit mode, but don't fail if already stopped
+            try {
+              apiRef.current.stopCellEditMode({ id, field });
+            } catch (e) {
+              // Cell already exited edit mode, that's fine
+            }
+            
             if (onRefresh) onRefresh();
           } catch (error) {
             console.error('Failed to update title:', error);
           }
         };
 
+        const handleChange = (event: any) => {
+          currentValue = event.target.value;
+          apiRef.current.setEditCellValue({ id, field, value: currentValue });
+        };
+
+        const handleCancel = () => {
+          try {
+            apiRef.current.stopCellEditMode({ id, field, ignoreModifications: true });
+          } catch (e) {
+            // Cell already exited edit mode, that's fine
+          }
+        };
+
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', gap: 0.5 }}>
             <TextField
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onKeyDown={(e) => {
+              defaultValue={value}
+              onChange={handleChange}
+              onKeyDown={(e: any) => {
                 if (e.key === 'Enter') {
+                  e.preventDefault();
                   handleSave();
                 } else if (e.key === 'Escape') {
-                  apiRef.current.stopCellEditMode({ id, field, ignoreModifications: true });
+                  e.preventDefault();
+                  handleCancel();
                 }
               }}
               size="small"
@@ -525,10 +559,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
             <IconButton size="small" onClick={handleSave} color="primary">
               <SaveIcon fontSize="small" />
             </IconButton>
-            <IconButton 
-              size="small" 
-              onClick={() => apiRef.current.stopCellEditMode({ id, field, ignoreModifications: true })}
-            >
+            <IconButton size="small" onClick={handleCancel}>
               <CancelIcon fontSize="small" />
             </IconButton>
           </Box>
@@ -569,8 +600,8 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
               size="small"
               onClick={(e: any) => {
                 e.stopPropagation();
-                if (apiRef) {
-                  apiRef.startCellEditMode({ id: params.id, field: params.field });
+                if (apiRef?.current) {
+                  apiRef.current.startCellEditMode({ id: params.id, field: params.field });
                 }
               }}
               sx={{ 
@@ -721,8 +752,8 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
                 size="small"
                 onClick={(e: any) => {
                   e.stopPropagation();
-                  if (apiRef) {
-                    apiRef.startCellEditMode({ id: params.id, field: params.field });
+                  if (apiRef?.current) {
+                    apiRef.current.startCellEditMode({ id: params.id, field: params.field });
                   }
                 }}
                 sx={{ 
@@ -813,7 +844,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
         checkboxSelection
         disableRowSelectionOnClick
         autoHeight
-        apiRef={setApiRef}
+        apiRef={apiRef}
         initialState={{
           pagination: {
             paginationModel: { pageSize: 10, page: 0 },
