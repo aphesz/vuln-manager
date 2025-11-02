@@ -1307,6 +1307,94 @@ def update_finding_issue_status(
         "issue_status_comment": finding.issue_status_comment
     }
 
+@app.patch("/findings/{finding_id}")
+def update_finding(
+    finding_id: int,
+    data: dict,
+    session: Session = Depends(get_session)
+):
+    """
+    Update finding fields (title, risk_rating, etc.).
+    
+    Args:
+        finding_id: ID of the finding
+        data: Dictionary with fields to update (title, risk_rating, description, etc.)
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    changes = {}
+    
+    # Update title if provided
+    if "title" in data:
+        old_title = finding.title
+        finding.title = data["title"]
+        changes["title"] = {
+            "old": old_title,
+            "new": data["title"]
+        }
+    
+    # Update risk_rating if provided
+    if "risk_rating" in data:
+        old_risk = finding.risk_rating.value if finding.risk_rating else None
+        new_risk = data["risk_rating"]
+        
+        # Validate risk rating
+        valid_risks = ["Critical", "High", "Medium", "Low", "Informational"]
+        if new_risk not in valid_risks:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid risk rating. Must be one of: {', '.join(valid_risks)}"
+            )
+        
+        finding.risk_rating = RiskRating(new_risk)
+        
+        # Update SLA deadline when risk changes
+        from app.sla import calculate_sla_deadline
+        finding.remediation_deadline = calculate_sla_deadline(finding.risk_rating.value)
+        
+        changes["risk_rating"] = {
+            "old": old_risk,
+            "new": new_risk
+        }
+    
+    # Update description if provided
+    if "description" in data:
+        old_desc = finding.description
+        finding.description = data["description"]
+        changes["description"] = {
+            "old": old_desc[:100] if old_desc else None,  # Truncate for audit log
+            "new": data["description"][:100] if data["description"] else None
+        }
+    
+    session.add(finding)
+    
+    # Create audit log entry if changes were made
+    if changes:
+        audit_entry = AuditLog(
+            entity_type="finding",
+            entity_id=finding_id,
+            action="finding_updated",
+            user=data.get("user", "system"),
+            timestamp=get_utc_now(),
+            changes_json=json.dumps(changes)
+        )
+        session.add(audit_entry)
+    
+    session.commit()
+    session.refresh(finding)
+    
+    logger.info(f"Finding {finding_id} updated with changes: {list(changes.keys())}")
+    
+    return {
+        "id": finding.id,
+        "title": finding.title,
+        "risk_rating": finding.risk_rating.value,
+        "description": finding.description,
+        "remediation_deadline": finding.remediation_deadline.isoformat() if finding.remediation_deadline else None
+    }
+
 @app.get("/sla-summary")
 def get_sla_summary_endpoint(session: Session = Depends(get_session)):
     """Get a summary of findings by SLA status."""
