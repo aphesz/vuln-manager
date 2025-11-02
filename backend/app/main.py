@@ -480,6 +480,16 @@ def get_all_projects_with_stats(session: Session = Depends(get_session)):
             if risk_level in risk_summary:
                 risk_summary[risk_level] += 1
         
+        # Get last upload date from most recent instance
+        last_upload = None
+        for finding in findings:
+            instances = session.exec(
+                select(Instance).where(Instance.finding_id == finding.id)
+            ).all()
+            for instance in instances:
+                if instance.created_at and (not last_upload or instance.created_at > last_upload):
+                    last_upload = instance.created_at
+        
         projects_with_stats.append({
             'id': project.id,
             'name': project.name,
@@ -487,6 +497,11 @@ def get_all_projects_with_stats(session: Session = Depends(get_session)):
             'is_archived': project.is_archived,
             'archived_at': project.archived_at,
             'total_findings': len(findings),
+            'critical_count': risk_summary['Critical'],
+            'high_count': risk_summary['High'],
+            'medium_count': risk_summary['Medium'],
+            'low_count': risk_summary['Low'],
+            'last_upload_date': last_upload,
             'risk_summary': risk_summary,
             'critical_high_count': risk_summary['Critical'] + risk_summary['High']
         })

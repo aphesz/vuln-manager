@@ -55,6 +55,11 @@ interface Project {
   is_archived?: boolean;
   archived_at?: string;
   total_findings?: number;
+  critical_count?: number;
+  high_count?: number;
+  medium_count?: number;
+  low_count?: number;
+  last_upload_date?: string;
   risk_summary?: RiskSummary;
   critical_high_count?: number;
 }
@@ -447,6 +452,13 @@ const ProjectsLists: React.FC = () => {
                         {project.total_findings || 0} findings
                       </Typography>
                     </Box>
+                    
+                    {/* Last Upload Date */}
+                    {project.last_upload_date && (
+                      <Typography variant="caption" color="textSecondary">
+                        Last upload: {new Date(project.last_upload_date).toLocaleDateString()}
+                      </Typography>
+                    )}
                     
                     {/* Critical/High Count */}
                     {project.critical_high_count! > 0 && (

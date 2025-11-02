@@ -194,6 +194,17 @@ class ProjectReadWithFindings(ProjectBase):
     id: int
     findings: List[FindingReadWithInstances] = []
 
+# 9. Project Read Model with Statistics (for project listing)
+class ProjectReadWithStats(ProjectBase):
+    """Used to read a Project with aggregated statistics (for project list view)."""
+    id: int
+    total_findings: int = 0
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    last_upload_date: Optional[datetime] = None
+
 # --- Utility Models (The Fixes) ---
 
 class RiskMapping(SQLModel):

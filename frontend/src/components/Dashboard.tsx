@@ -49,6 +49,7 @@ import JiraIntegrationSettings from './JiraIntegrationSettings';
 import { DashboardSkeleton } from './LoadingSkeletons';
 import { useThemeContext } from '../theme/ThemeProvider';
 import WebSocketService from '../services/WebSocketService';
+import MetricsCards from './MetricsCards';
 import UserPreferencesService from '../services/UserPreferencesService';
 import { useNotification } from '../contexts/NotificationContext';
 import { getErrorMessage, retryWithBackoff, validateFileSize, formatFileSize } from '../utils/errorHandler';
@@ -554,6 +555,11 @@ const Dashboard = () => {
 
       {/* Dashboard Grid */}
       <Grid container spacing={3}>
+        {/* Metrics Cards */}
+        <Grid item xs={12}>
+          <MetricsCards findings={project?.findings || []} />
+        </Grid>
+
         {/* Risk Rating Summary Cards (Interactive) */}
         <Grid item xs={12}>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
