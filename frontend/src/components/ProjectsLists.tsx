@@ -279,10 +279,16 @@ const ProjectsLists: React.FC = () => {
 
   if (loading) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: 3 }} role="main" aria-busy="true" aria-label="Loading projects">
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h4">Assessment Projects</Typography>
-          <Button variant="contained" color="primary" startIcon={<AddIcon />} disabled>
+          <Typography variant="h4" component="h1">Assessment Projects</Typography>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            startIcon={<AddIcon />} 
+            disabled
+            aria-label="Create new project (loading)"
+          >
             Create Project
           </Button>
         </Box>
@@ -299,9 +305,13 @@ const ProjectsLists: React.FC = () => {
   
   if (error) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-        <Button variant="contained" onClick={fetchProjects}>
+      <Box sx={{ p: 3 }} role="main">
+        <Alert severity="error" sx={{ mb: 2 }} role="alert">{error}</Alert>
+        <Button 
+          variant="contained" 
+          onClick={fetchProjects}
+          aria-label="Retry loading projects"
+        >
           Retry
         </Button>
       </Box>
@@ -309,14 +319,15 @@ const ProjectsLists: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3 }} role="main">
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Assessment Projects</Typography>
+        <Typography variant="h4" component="h1">Assessment Projects</Typography>
         <Button
           variant="contained"
           color="primary"
           startIcon={<AddIcon />}
           onClick={() => setCreateDialogOpen(true)}
+          aria-label="Create new project"
         >
           Create Project
         </Button>
@@ -324,9 +335,22 @@ const ProjectsLists: React.FC = () => {
 
       {/* Tabs for Active/Archived */}
       {projects.length > 0 && (
-        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 2 }}>
-          <Tab label={`Active (${activeProjects.length})`} />
-          <Tab label={`Archived (${archivedProjects.length})`} />
+        <Tabs 
+          value={tabValue} 
+          onChange={(e, newValue) => setTabValue(newValue)} 
+          sx={{ mb: 2 }}
+          aria-label="Project status tabs"
+        >
+          <Tab 
+            label={`Active (${activeProjects.length})`} 
+            id="tab-active"
+            aria-controls="tabpanel-active"
+          />
+          <Tab 
+            label={`Archived (${archivedProjects.length})`}
+            id="tab-archived"
+            aria-controls="tabpanel-archived"
+          />
         </Tabs>
       )}
 
@@ -484,6 +508,7 @@ const ProjectsLists: React.FC = () => {
                 variant="contained"
                 color="primary"
                 disabled={project.is_archived}
+                aria-label={`View dashboard for ${project.name}`}
               >
                 View Dashboard
               </Button>
@@ -491,6 +516,8 @@ const ProjectsLists: React.FC = () => {
                 <IconButton
                   size="small"
                   onClick={(e) => handleMenuOpen(e, project.id)}
+                  aria-label={`More actions for ${project.name}`}
+                  aria-haspopup="true"
                 >
                   <MoreVertIcon />
                 </IconButton>
@@ -505,6 +532,7 @@ const ProjectsLists: React.FC = () => {
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
+        aria-label="Project actions menu"
       >
         {selectedProjectId && (
           <>
@@ -563,8 +591,13 @@ const ProjectsLists: React.FC = () => {
       </Menu>
 
       {/* Create Project Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)}>
-        <DialogTitle>Create New Project</DialogTitle>
+      <Dialog 
+        open={createDialogOpen} 
+        onClose={() => setCreateDialogOpen(false)}
+        aria-labelledby="create-project-dialog-title"
+        aria-describedby="create-project-dialog-description"
+      >
+        <DialogTitle id="create-project-dialog-title">Create New Project</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -576,6 +609,16 @@ const ProjectsLists: React.FC = () => {
             onChange={(e) =>
               setCreateFormData({ ...createFormData, name: e.target.value })
             }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleCreateProject();
+              }
+            }}
+            inputProps={{
+              'aria-label': 'Project name',
+              'aria-required': 'true',
+            }}
             sx={{ mt: 2 }}
           />
           <TextField
@@ -587,19 +630,39 @@ const ProjectsLists: React.FC = () => {
             onChange={(e) =>
               setCreateFormData({ ...createFormData, consultant_name: e.target.value })
             }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleCreateProject();
+              }
+            }}
+            inputProps={{
+              'aria-label': 'Consultant name (optional)',
+            }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateProject} variant="contained" color="primary">
+          <Button onClick={() => setCreateDialogOpen(false)} aria-label="Cancel project creation">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleCreateProject} 
+            variant="contained" 
+            color="primary"
+            aria-label="Create new project"
+          >
             Create
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Rename Project Dialog */}
-      <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)}>
-        <DialogTitle>Rename Project</DialogTitle>
+      <Dialog 
+        open={renameDialogOpen} 
+        onClose={() => setRenameDialogOpen(false)}
+        aria-labelledby="rename-project-dialog-title"
+      >
+        <DialogTitle id="rename-project-dialog-title">Rename Project</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -611,6 +674,16 @@ const ProjectsLists: React.FC = () => {
             onChange={(e) =>
               setRenameFormData({ ...renameFormData, name: e.target.value })
             }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleRenameProject();
+              }
+            }}
+            inputProps={{
+              'aria-label': 'Project name',
+              'aria-required': 'true',
+            }}
             sx={{ mt: 2 }}
           />
           <TextField
@@ -622,31 +695,58 @@ const ProjectsLists: React.FC = () => {
             onChange={(e) =>
               setRenameFormData({ ...renameFormData, consultant_name: e.target.value })
             }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleRenameProject();
+              }
+            }}
+            inputProps={{
+              'aria-label': 'Consultant name',
+            }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRenameDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleRenameProject} variant="contained" color="primary">
+          <Button onClick={() => setRenameDialogOpen(false)} aria-label="Cancel rename">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleRenameProject} 
+            variant="contained" 
+            color="primary"
+            aria-label="Save project changes"
+          >
             Save
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
-        <DialogTitle>Delete Project</DialogTitle>
+      <Dialog 
+        open={deleteConfirmOpen} 
+        onClose={() => setDeleteConfirmOpen(false)}
+        aria-labelledby="delete-project-dialog-title"
+        aria-describedby="delete-project-dialog-description"
+      >
+        <DialogTitle id="delete-project-dialog-title">Delete Project</DialogTitle>
         <DialogContent>
-          <DialogContentText>
+          <DialogContentText id="delete-project-dialog-description">
             Are you sure you want to delete "{deleteProjectName}"? This action cannot be
             undone. All findings and instances will be permanently deleted.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={() => setDeleteConfirmOpen(false)}
+            aria-label="Cancel deletion"
+          >
+            Cancel
+          </Button>
           <Button
             onClick={handleDeleteProject}
             variant="contained"
             color="error"
+            aria-label={`Delete project ${deleteProjectName}`}
           >
             Delete
           </Button>

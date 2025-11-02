@@ -236,7 +236,7 @@ const Dashboard = () => {
   if (!project) return <Typography>Project not found</Typography>;
 
   return (
-    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }} role="main">
       {/* Header */}
       <Box sx={{ 
         mb: 3, 
@@ -247,7 +247,8 @@ const Dashboard = () => {
         gap: 1,
       }}>
         <Typography 
-          variant="h4" 
+          variant="h4"
+          component="h1"
           sx={{ 
             color: theme.palette.text.primary, 
             fontWeight: 600,
@@ -269,6 +270,7 @@ const Dashboard = () => {
               },
             }}
             title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+            aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
           >
             {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
@@ -284,6 +286,7 @@ const Dashboard = () => {
               },
             }}
             title="Settings"
+            aria-label="Open settings"
           >
             <SettingsIcon />
           </IconButton>
@@ -503,33 +506,57 @@ const Dashboard = () => {
       </Grid>
 
       {/* Upload Dialog */}
-      <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)}>
-        <DialogTitle>Upload Scanner Report</DialogTitle>
+      <Dialog 
+        open={uploadDialogOpen} 
+        onClose={() => setUploadDialogOpen(false)}
+        aria-labelledby="upload-dialog-title"
+        aria-describedby="upload-dialog-description"
+      >
+        <DialogTitle id="upload-dialog-title">Upload Scanner Report</DialogTitle>
         <DialogContent>
-          <Box {...getRootProps()} sx={{
-            border: '2px dashed grey',
-            p: 3,
-            textAlign: 'center',
-            cursor: 'pointer'
-          }}>
-            <input {...getInputProps()} />
-            <Typography>
+          <Box 
+            {...getRootProps()} 
+            sx={{
+              border: '2px dashed grey',
+              p: 3,
+              textAlign: 'center',
+              cursor: 'pointer'
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Drag and drop file upload area. Click or press Enter to select a file"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+                input?.click();
+              }
+            }}
+          >
+            <input {...getInputProps()} aria-label="File input" />
+            <Typography id="upload-dialog-description">
               Drag and drop a report file here, or click to select
             </Typography>
             <Typography variant="caption" color="textSecondary">
-              Supported formats: Burp Suite XML, Nessus XML
+              Supported formats: Burp Suite XML, Nessus XML (max 10MB)
             </Typography>
           </Box>
         </DialogContent>
       </Dialog>
 
       {/* Settings Dialog */}
-      <Dialog open={settingsDialogOpen} onClose={() => setSettingsDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Dashboard Settings</DialogTitle>
+      <Dialog 
+        open={settingsDialogOpen} 
+        onClose={() => setSettingsDialogOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+        aria-labelledby="settings-dialog-title"
+      >
+        <DialogTitle id="settings-dialog-title">Dashboard Settings</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
             <Typography variant="h6" gutterBottom>Table Settings</Typography>
-            <Box sx={{ ml: 2, mb: 2 }}>
+            <Box sx={{ ml: 2, mb: 2 }} role="group" aria-label="Table column visibility settings">
               <FormControlLabel
                 control={
                   <Checkbox 
@@ -539,6 +566,7 @@ const Dashboard = () => {
                       setPreferences(prefsService.getPreferences());
                       showSuccess('Table settings saved');
                     }}
+                    inputProps={{ 'aria-label': 'Show title column' }}
                   />
                 }
                 label="Show Title Column"
@@ -552,6 +580,7 @@ const Dashboard = () => {
                       setPreferences(prefsService.getPreferences());
                       showSuccess('Table settings saved');
                     }}
+                    inputProps={{ 'aria-label': 'Show risk level column' }}
                   />
                 }
                 label="Show Risk Level Column"
@@ -565,6 +594,7 @@ const Dashboard = () => {
                       setPreferences(prefsService.getPreferences());
                       showSuccess('Table settings saved');
                     }}
+                    inputProps={{ 'aria-label': 'Show instances column' }}
                   />
                 }
                 label="Show Instances Column"
