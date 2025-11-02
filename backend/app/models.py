@@ -7,6 +7,8 @@ from datetime import datetime
 
 # --- Base Models ---
 
+from pydantic import field_serializer
+
 class ProjectBase(SQLModel):
     """Base model for project creation and updates."""
     # Required fields must use an explicit ellipsis default for Pydantic v2.
@@ -167,6 +169,13 @@ class InstanceRead(InstanceBase):
 class CommentRead(CommentBase):
     id: int
     finding_id: int
+    
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime, _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
 
 # 3. AuditLog Read Model
 class AuditLogRead(AuditLogBase):

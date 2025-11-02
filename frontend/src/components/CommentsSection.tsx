@@ -17,6 +17,8 @@ import {
   Person as PersonIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
+import UserPreferencesService from '../services/UserPreferencesService';
+import { formatRelativeTime, formatDateWithTime } from '../utils/timezoneUtils';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
@@ -39,6 +41,10 @@ const CommentsSection: React.FC<CommentsSectionProps> = ({ findingId }) => {
   const [error, setError] = useState<string | null>(null);
   const [newComment, setNewComment] = useState('');
   const [userName, setUserName] = useState('Analyst'); // TODO: Replace with actual user from auth
+
+  // Get user's timezone preference
+  const prefsService = UserPreferencesService.getInstance();
+  const userTimezone = prefsService.getTimezone();
 
   useEffect(() => {
     fetchComments();
@@ -86,26 +92,6 @@ const CommentsSection: React.FC<CommentsSectionProps> = ({ findingId }) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       handleSubmitComment();
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-    });
   };
 
   return (
@@ -179,8 +165,12 @@ const CommentsSection: React.FC<CommentsSectionProps> = ({ findingId }) => {
                         <Typography variant="subtitle2" fontWeight="600">
                           {comment.user}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDate(comment.created_at)}
+                        <Typography 
+                          variant="caption" 
+                          color="text.secondary"
+                          title={formatDateWithTime(comment.created_at, userTimezone)}
+                        >
+                          {formatRelativeTime(comment.created_at)}
                         </Typography>
                       </Box>
                       <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>

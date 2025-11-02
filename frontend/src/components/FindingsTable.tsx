@@ -57,7 +57,6 @@ import FindingReviewPanel from './FindingReviewPanel';
 import FindingsTableToolbar, { FilterState } from './FindingsTableToolbar';
 import IssueStatusService from '../services/IssueStatusService';
 import UserPreferencesService from '../services/UserPreferencesService';
-import CommentsSection from './CommentsSection';
 import { formatDateShort, isOverdue } from '../utils/timezoneUtils';
 import axios from 'axios';
 
@@ -215,7 +214,6 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
           <Tab label="Remediation" />
           <Tab label="Peer Review" />
           <Tab label="Issue Status" />
-          <Tab label="Comments" />
         </Tabs>
 
         {tabValue === 0 && (
@@ -354,12 +352,6 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
                 • <strong>Closed:</strong> All instances resolved and verified
               </Typography>
             </Box>
-          </Box>
-        )}
-
-        {tabValue === 5 && (
-          <Box>
-            <CommentsSection findingId={finding.id} />
           </Box>
         )}
       </DialogContent>

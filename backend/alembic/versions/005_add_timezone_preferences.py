@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic
-revision = '005'
-down_revision = '004'
+revision = '005_add_timezone_preferences'
+down_revision = '004_add_reviewer_name'
 branch_labels = None
 depends_on = None
 

@@ -79,6 +79,7 @@ export function formatDateWithTime(
 
 /**
  * Format a relative time (e.g., "2 hours ago")
+ * Note: Relative time is timezone-independent - it's always relative to "now"
  */
 export function formatRelativeTime(
   dateString: string | null | undefined
@@ -86,7 +87,10 @@ export function formatRelativeTime(
   if (!dateString) return '-';
   
   try {
+    // Parse as UTC timestamp
     const date = parseISO(dateString);
+    // formatDistanceToNow automatically compares to current time
+    // regardless of timezone, so the relative difference is correct
     return formatDistanceToNow(date, { addSuffix: true });
   } catch (error) {
     console.error('Error formatting relative time:', error);
