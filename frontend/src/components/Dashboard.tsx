@@ -7,6 +7,7 @@ import {
   Grid,
   Typography,
   useTheme,
+  useMediaQuery,
   IconButton,
   Button,
   Dialog,
@@ -19,6 +20,13 @@ import {
   MenuItem,
   ButtonGroup,
   Tooltip,
+  Drawer,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Divider,
+  Fab,
 } from '@mui/material';
 import {
   Brightness4 as DarkModeIcon,
@@ -27,6 +35,9 @@ import {
   Upload as UploadIcon,
   Download as DownloadIcon,
   Settings as SettingsIcon,
+  Menu as MenuIcon,
+  Close as CloseIcon,
+  Assessment as ReportIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -56,7 +67,10 @@ const Dashboard = () => {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<RiskRating | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
   const { mode, setThemeMode } = useThemeContext();
   const prefsService = UserPreferencesService.getInstance();
   const [preferences, setPreferences] = useState(prefsService.getPreferences());
@@ -260,6 +274,194 @@ const Dashboard = () => {
         >
           {project.name}
         </Typography>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          {/* Mobile Menu Button - shows on small screens */}
+          {isMobile ? (
+            <IconButton
+              onClick={() => setMobileMenuOpen(true)}
+              size="large"
+              aria-label="Open menu"
+              sx={{
+                color: theme.palette.text.primary,
+              }}
+            >
+              <MenuIcon />
+            </IconButton>
+          ) : (
+            <>
+              {/* Desktop Theme Selector Button Group */}
+              <ButtonGroup 
+                variant="outlined" 
+                size="small"
+                aria-label="Theme selection"
+                sx={{
+                  '& .MuiButtonGroup-grouped': {
+                    minWidth: '40px',
+                    borderColor: theme.palette.divider,
+                  },
+                  display: { xs: 'none', sm: 'flex' },
+                }}
+              >
+                <Tooltip title="Light theme">
+                  <IconButton
+                    onClick={() => setThemeMode('light')}
+                    size="small"
+                    sx={{
+                      color: mode === 'light' ? theme.palette.primary.main : theme.palette.text.secondary,
+                      backgroundColor: mode === 'light' ? theme.palette.action.selected : 'transparent',
+                    }}
+                    aria-label="Switch to light theme"
+                    aria-pressed={mode === 'light'}
+                  >
+                    <LightModeIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Dark theme">
+                  <IconButton
+                    onClick={() => setThemeMode('dark')}
+                    size="small"
+                    sx={{
+                      color: mode === 'dark' ? theme.palette.primary.main : theme.palette.text.secondary,
+                      backgroundColor: mode === 'dark' ? theme.palette.action.selected : 'transparent',
+                    }}
+                    aria-label="Switch to dark theme"
+                    aria-pressed={mode === 'dark'}
+                  >
+                    <DarkModeIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="High contrast theme">
+                  <IconButton
+                    onClick={() => setThemeMode('highContrast')}
+                    size="small"
+                    sx={{
+                      color: mode === 'highContrast' ? theme.palette.primary.main : theme.palette.text.secondary,
+                      backgroundColor: mode === 'highContrast' ? theme.palette.action.selected : 'transparent',
+                    }}
+                    aria-label="Switch to high contrast theme"
+                    aria-pressed={mode === 'highContrast'}
+                  >
+                    <ContrastIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </ButtonGroup>
+              <IconButton 
+                onClick={() => setSettingsDialogOpen(true)}
+                size="large"
+                sx={{
+                  color: theme.palette.text.primary,
+                }}
+                title="Settings"
+                aria-label="Open settings"
+              >
+                <SettingsIcon />
+              </IconButton>
+            </>
+          )}
+        </Box>
+      </Box>
+
+      {/* Mobile Drawer Menu */}
+      <Drawer
+        anchor="right"
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        sx={{
+          '& .MuiDrawer-paper': {
+            width: { xs: '80%', sm: 300 },
+            maxWidth: 300,
+          },
+        }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">Menu</Typography>
+            <IconButton onClick={() => setMobileMenuOpen(false)} aria-label="Close menu">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          <Divider sx={{ mb: 2 }} />
+          
+          <List>
+            <ListItem button onClick={() => { setUploadDialogOpen(true); setMobileMenuOpen(false); }}>
+              <ListItemIcon><UploadIcon /></ListItemIcon>
+              <ListItemText primary="Upload Scan" />
+            </ListItem>
+            
+            <ListItem button onClick={() => { exportToExcel(); setMobileMenuOpen(false); }}>
+              <ListItemIcon><DownloadIcon /></ListItemIcon>
+              <ListItemText primary="Export Excel" />
+            </ListItem>
+            
+            <ListItem button onClick={async () => { 
+              try {
+                const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/report.docx`, {
+                  responseType: 'blob',
+                });
+                const url = window.URL.createObjectURL(new Blob([response.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `${project.name}_report.docx`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                showSuccess('Report generated successfully');
+              } catch (err) {
+                showError('Failed to generate report');
+              }
+              setMobileMenuOpen(false); 
+            }}>
+              <ListItemIcon><ReportIcon /></ListItemIcon>
+              <ListItemText primary="Generate Report" />
+            </ListItem>
+            
+            <Divider sx={{ my: 1 }} />
+            
+            <ListItem>
+              <ListItemText primary="Theme" />
+            </ListItem>
+            <ListItem button onClick={() => setThemeMode('light')}>
+              <ListItemIcon><LightModeIcon /></ListItemIcon>
+              <ListItemText primary="Light" secondary={mode === 'light' ? 'Active' : ''} />
+            </ListItem>
+            <ListItem button onClick={() => setThemeMode('dark')}>
+              <ListItemIcon><DarkModeIcon /></ListItemIcon>
+              <ListItemText primary="Dark" secondary={mode === 'dark' ? 'Active' : ''} />
+            </ListItem>
+            <ListItem button onClick={() => setThemeMode('highContrast')}>
+              <ListItemIcon><ContrastIcon /></ListItemIcon>
+              <ListItemText primary="High Contrast" secondary={mode === 'highContrast' ? 'Active' : ''} />
+            </ListItem>
+            
+            <Divider sx={{ my: 1 }} />
+            
+            <ListItem button onClick={() => { setSettingsDialogOpen(true); setMobileMenuOpen(false); }}>
+              <ListItemIcon><SettingsIcon /></ListItemIcon>
+              <ListItemText primary="Settings" />
+            </ListItem>
+          </List>
+        </Box>
+      </Drawer>
+
+      {/* Floating Action Button for Mobile Upload */}
+      {isMobile && (
+        <Fab
+          color="primary"
+          aria-label="upload"
+          onClick={() => setUploadDialogOpen(true)}
+          sx={{
+            position: 'fixed',
+            bottom: 16,
+            right: 16,
+            zIndex: 1000,
+          }}
+        >
+          <UploadIcon />
+        </Fab>
+      )}
+
+      {/* Original Theme Selector (hidden on mobile, kept for reference) */}
+      <Box sx={{ display: { xs: 'none', sm: 'none' } }}>
         <Box sx={{ display: 'flex', gap: 1 }}>
           {/* Theme Selector Button Group */}
           <ButtonGroup 

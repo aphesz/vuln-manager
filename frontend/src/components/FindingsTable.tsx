@@ -9,6 +9,8 @@ import {
   GridActionsCellItem,
   GridRenderCellParams,
   GridColDef,
+  GridRenderEditCellParams,
+  useGridApiContext,
 } from '@mui/x-data-grid';
 import { Finding, Instance, RiskRating, ReviewStatus, SLAStatus, IssueStatus } from '../types';
 import {
@@ -31,6 +33,7 @@ import {
   TextField,
   FormControl,
   InputLabel,
+  IconButton,
 } from '@mui/material';
 import {
   CheckCircle as ApprovedIcon,
@@ -41,12 +44,18 @@ import {
   Warning as WarningIcon,
   Error as ErrorIcon,
   CheckCircle as SuccessIcon,
+  Edit as EditIcon,
+  Save as SaveIcon,
+  Close as CancelIcon,
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import FindingReviewPanel from './FindingReviewPanel';
 import IssueStatusService from '../services/IssueStatusService';
 import UserPreferencesService from '../services/UserPreferencesService';
 import { formatDateShort, isOverdue } from '../utils/timezoneUtils';
+import axios from 'axios';
+
+const API_BASE_URL = '/api';
 
 interface RiskChipProps {
   level: RiskRating;
@@ -64,6 +73,80 @@ const RiskChip = ({ level }: RiskChipProps) => {
         fontWeight: 'bold',
       }}
     />
+  );
+};
+
+// Custom edit components for inline editing
+const RiskRatingEditCell = (params: GridRenderEditCellParams) => {
+  const apiRef = useGridApiContext();
+  const { id, value, field } = params;
+
+  const handleChange = async (event: any) => {
+    const newValue = event.target.value as RiskRating;
+    apiRef.current.setEditCellValue({ id, field, value: newValue });
+    
+    // Auto-save on change
+    try {
+      await axios.patch(`${API_BASE_URL}/findings/${id}`, {
+        risk_rating: newValue,
+      });
+      apiRef.current.stopCellEditMode({ id, field });
+    } catch (error) {
+      console.error('Failed to update risk rating:', error);
+    }
+  };
+
+  return (
+    <Select
+      value={value}
+      onChange={handleChange}
+      size="small"
+      fullWidth
+      autoFocus
+    >
+      <MenuItem value="Critical">Critical</MenuItem>
+      <MenuItem value="High">High</MenuItem>
+      <MenuItem value="Medium">Medium</MenuItem>
+      <MenuItem value="Low">Low</MenuItem>
+      <MenuItem value="Informational">Informational</MenuItem>
+    </Select>
+  );
+};
+
+const IssueStatusEditCell = (params: GridRenderEditCellParams) => {
+  const apiRef = useGridApiContext();
+  const { id, value, field, row } = params;
+
+  const handleChange = async (event: any) => {
+    const newValue = event.target.value as IssueStatus;
+    apiRef.current.setEditCellValue({ id, field, value: newValue });
+    
+    // Auto-save on change
+    try {
+      await IssueStatusService.updateIssueStatus(
+        id as number,
+        newValue,
+        undefined,
+        'analyst@example.com'
+      );
+      apiRef.current.stopCellEditMode({ id, field });
+    } catch (error) {
+      console.error('Failed to update issue status:', error);
+    }
+  };
+
+  return (
+    <Select
+      value={value || 'Open'}
+      onChange={handleChange}
+      size="small"
+      fullWidth
+      autoFocus
+    >
+      <MenuItem value="Open">Open</MenuItem>
+      <MenuItem value="Partially Closed">Partially Closed</MenuItem>
+      <MenuItem value="Closed">Closed</MenuItem>
+    </Select>
   );
 };
 
@@ -370,15 +453,72 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       headerName: 'Title',
       flex: 2,
       minWidth: 150,
+      editable: true,
       renderCell: (params: GridRenderCellParams) => (
-        <Typography 
-          variant="body2" 
-          sx={{ cursor: 'pointer' }}
-          onClick={() => setSelectedFinding(params.row)}
-        >
-          {params.value}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', gap: 1 }}>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              cursor: 'pointer', 
+              flex: 1,
+              '&:hover': { textDecoration: 'underline' }
+            }}
+            onClick={() => setSelectedFinding(params.row)}
+          >
+            {params.value}
+          </Typography>
+          <Tooltip title="Click to edit">
+            <EditIcon sx={{ fontSize: 16, color: 'action.disabled', opacity: 0.5 }} />
+          </Tooltip>
+        </Box>
       ),
+      renderEditCell: (params: GridRenderEditCellParams) => {
+        const apiRef = useGridApiContext();
+        const { id, value, field } = params;
+        const [editValue, setEditValue] = useState(value);
+
+        const handleSave = async () => {
+          try {
+            await axios.patch(`${API_BASE_URL}/findings/${id}`, {
+              title: editValue,
+            });
+            apiRef.current.setEditCellValue({ id, field, value: editValue });
+            apiRef.current.stopCellEditMode({ id, field });
+            if (onRefresh) onRefresh();
+          } catch (error) {
+            console.error('Failed to update title:', error);
+          }
+        };
+
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', gap: 0.5 }}>
+            <TextField
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSave();
+                } else if (e.key === 'Escape') {
+                  apiRef.current.stopCellEditMode({ id, field, ignoreModifications: true });
+                }
+              }}
+              size="small"
+              fullWidth
+              autoFocus
+              sx={{ '& .MuiInputBase-input': { fontSize: '0.875rem' } }}
+            />
+            <IconButton size="small" onClick={handleSave} color="primary">
+              <SaveIcon fontSize="small" />
+            </IconButton>
+            <IconButton 
+              size="small" 
+              onClick={() => apiRef.current.stopCellEditMode({ id, field, ignoreModifications: true })}
+            >
+              <CancelIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        );
+      },
     },
     {
       field: 'description',
@@ -405,7 +545,16 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       headerName: 'Risk Level',
       flex: 1,
       minWidth: 120,
-      renderCell: (params: GridRenderCellParams) => <RiskChip level={params.value} />,
+      editable: true,
+      renderCell: (params: GridRenderCellParams) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <RiskChip level={params.value} />
+          <Tooltip title="Click to edit">
+            <EditIcon sx={{ fontSize: 14, color: 'action.disabled', opacity: 0.5 }} />
+          </Tooltip>
+        </Box>
+      ),
+      renderEditCell: RiskRatingEditCell,
     },
     {
       field: 'review_status',
@@ -497,40 +646,53 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
       headerName: 'Issue Status',
       flex: 1,
       minWidth: 130,
+      editable: true,
       renderCell: (params: GridRenderCellParams) => {
         const status = params.value as string | undefined;
         
-        if (!status || status === 'Open') {
+        const getChip = () => {
+          if (!status || status === 'Open') {
+            return (
+              <Chip
+                label="Open"
+                size="small"
+                color="error"
+                sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+              />
+            );
+          }
+          
+          if (status === 'Partially Closed') {
+            return (
+              <Chip
+                label="Partially Closed"
+                size="small"
+                color="warning"
+                sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}
+              />
+            );
+          }
+          
           return (
             <Chip
-              label="Open"
+              label="Closed"
               size="small"
-              color="error"
+              color="success"
               sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
             />
           );
-        }
-        
-        if (status === 'Partially Closed') {
-          return (
-            <Chip
-              label="Partially Closed"
-              size="small"
-              color="warning"
-              sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}
-            />
-          );
-        }
-        
+        };
+
         return (
-          <Chip
-            label="Closed"
-            size="small"
-            color="success"
-            sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {getChip()}
+            <Tooltip title="Click to edit">
+              <EditIcon sx={{ fontSize: 14, color: 'action.disabled', opacity: 0.5 }} />
+            </Tooltip>
+          </Box>
         );
       },
+      renderEditCell: IssueStatusEditCell,
     },
     {
       field: 'remediation_deadline',
