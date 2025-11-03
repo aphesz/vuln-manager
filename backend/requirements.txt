@@ -14,5 +14,6 @@ defusedxml==0.7.1  # added for secure XML parsing in parsers
 alembic==1.13.1  # database migrations
 cryptography>=44.0.1  # security: fix Dependabot vulnerabilities (for encrypting sensitive data)
 httpx==0.26.0  # for Jira API calls
+slowapi==0.1.9  # rate limiting for API endpoints
 pytest==7.4.3  # testing framework
 pytest-cov==4.1.0  # coverage reporting

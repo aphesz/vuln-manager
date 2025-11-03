@@ -8,9 +8,13 @@ from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text, case, func
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import os
 import sys
 import logging
+import re
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -93,6 +97,51 @@ def get_session():
     with Session(engine) as session:
         yield session
 
+# --- Input Validation Utilities ---
+
+def validate_string_length(value: str, field_name: str, max_length: int = 500, allow_empty: bool = False) -> str:
+    """Validate string length and basic content."""
+    if not value and not allow_empty:
+        raise HTTPException(status_code=400, detail=f"{field_name} cannot be empty")
+    if len(value) > max_length:
+        raise HTTPException(status_code=400, detail=f"{field_name} exceeds maximum length of {max_length} characters")
+    return value.strip()
+
+def validate_url(url: str, field_name: str = "URL") -> str:
+    """Validate URL format."""
+    url_pattern = re.compile(
+        r'^https?://'  # http:// or https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
+        r'(?::\d+)?'  # optional port
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+    if url and not url_pattern.match(url):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} format")
+    return url
+
+def sanitize_html_input(value: str) -> str:
+    """Remove potentially dangerous HTML/script tags from user input."""
+    if not value:
+        return value
+    # Remove script tags and their content
+    value = re.sub(r'<script[^>]*>.*?</script>', '', value, flags=re.DOTALL | re.IGNORECASE)
+    # Remove common XSS vectors
+    dangerous_patterns = [
+        r'javascript:',
+        r'on\w+\s*=',  # onclick=, onerror=, etc.
+        r'<iframe',
+        r'<embed',
+        r'<object',
+    ]
+    for pattern in dangerous_patterns:
+        value = re.sub(pattern, '', value, flags=re.IGNORECASE)
+    return value
+
+# --- Rate Limiting Setup ---
+
+limiter = Limiter(key_func=get_remote_address)
+
 # --- Request Models (for API endpoints) ---
 from pydantic import BaseModel
 
@@ -153,10 +202,51 @@ from app.websocket import WebSocketManager
 
 app = FastAPI(
     title="VulnManager API",
-    description="API for managing vulnerability assessment projects and reports.",
-    version="0.3.0",
-    lifespan=lifespan
+    description="""
+## VulnManager - Vulnerability Assessment Management Platform
+
+A comprehensive API for managing security vulnerability assessments, findings, and reports.
+
+### Key Features
+
+- **Project Management**: Create and manage vulnerability assessment projects
+- **Finding Tracking**: Track findings with risk ratings, instances, and remediation status
+- **Quick Add**: Rapidly create findings from vulnerability templates
+- **Vulnerability Repository**: Searchable template library with 100+ common vulnerabilities
+- **Report Generation**: Export findings to DOCX, PDF, Excel, CSV
+- **CVSS & OWASP Scoring**: Built-in risk calculators
+- **SLA Tracking**: Monitor remediation deadlines and compliance
+- **Peer Review**: Comment system and review workflow
+- **Jira Integration**: Sync findings to Jira issues
+
+### Security
+
+- Rate limiting on all write endpoints
+- Input validation and sanitization
+- XSS protection
+- XXE-safe XML parsing
+- Security headers (CSP, X-Frame-Options, etc.)
+
+### Version
+
+Current version: 0.7.2
+    """,
+    version="0.7.2",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    contact={
+        "name": "VulnManager Support",
+        "url": "https://github.com/aphesz/vuln-manager",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware to allow frontend requests
 app.add_middleware(
@@ -578,8 +668,23 @@ def readiness_check(session: Session = Depends(get_session)):
 # --- Endpoint: Project Management ---
 
 @app.post("/projects/", response_model=Project)
-def create_project(project: Project, session: Session = Depends(get_session)):
+@limiter.limit("30/hour")  # Max 30 projects per hour per IP
+def create_project(
+    request: Request,
+    project: Project,
+    session: Session = Depends(get_session)
+):
     """Creates a new project entry."""
+    # Validate and sanitize inputs
+    project.name = validate_string_length(sanitize_html_input(project.name), "project name", max_length=200)
+    if project.consultant_name:
+        project.consultant_name = validate_string_length(
+            sanitize_html_input(project.consultant_name),
+            "consultant name",
+            max_length=100,
+            allow_empty=True
+        )
+    
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -748,7 +853,9 @@ async def _process_upload(
     }
 
 @app.post("/projects/{project_id}/upload/auto", status_code=201)
+@limiter.limit("10/minute")  # Max 10 uploads per minute per IP
 async def upload_report_auto(
+    request: Request,
     project_id: int,
     file: UploadFile = File(...),
     session: Session = Depends(get_session)
@@ -795,7 +902,9 @@ async def upload_report_auto(
     return await _process_upload(project_id, scanner_type, xml_content, session)
 
 @app.post("/projects/{project_id}/upload/{scanner_type}", status_code=201)
+@limiter.limit("10/minute")  # Max 10 uploads per minute per IP
 async def upload_report(
+    request: Request,
     project_id: int,
     scanner_type: str,
     file: UploadFile = File(...),
@@ -1298,7 +1407,9 @@ def update_finding_review_status(
 
 
 @app.post("/projects/{project_id}/findings", response_model=FindingReadWithInstances, status_code=201)
+@limiter.limit("20/minute")  # Max 20 manual findings per minute per IP
 async def create_finding_manually(
+    request: Request,
     project_id: int,
     title: str = Body(...),
     description: str = Body(...),
@@ -1325,6 +1436,11 @@ async def create_finding_manually(
     - issue_status: One of: Open, Partially Closed, Closed (default: Open)
     """
     from app.models import VulnerabilityTemplate
+    
+    # Input validation
+    title = validate_string_length(sanitize_html_input(title), "title", max_length=200)
+    description = validate_string_length(sanitize_html_input(description), "description", max_length=5000)
+    remediation = validate_string_length(sanitize_html_input(remediation), "remediation", max_length=5000)
     
     # Validate project exists
     project = session.get(Project, project_id)
@@ -1358,12 +1474,21 @@ async def create_finding_manually(
             detail="At least one instance is required"
         )
     
+    if len(instances) > 100:  # Limit to prevent abuse
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 100 instances allowed per request"
+        )
+    
     for idx, inst in enumerate(instances):
         if 'location' not in inst or 'details' not in inst:
             raise HTTPException(
                 status_code=400,
                 detail=f"Instance {idx} must have 'location' and 'details' fields"
             )
+        # Validate and sanitize instance data
+        inst['location'] = validate_string_length(sanitize_html_input(inst['location']), f"Instance {idx} location", max_length=500)
+        inst['details'] = validate_string_length(sanitize_html_input(inst['details']), f"Instance {idx} details", max_length=2000)
     
     # If template_id provided, validate it exists and update usage
     template = None
@@ -1434,7 +1559,9 @@ async def create_finding_manually(
 
 
 @app.post("/findings/{finding_id}/comments", response_model=CommentRead)
+@limiter.limit("60/minute")  # Max 60 comments per minute per IP
 def create_comment(
+    request: Request,
     finding_id: int,
     comment_data: CommentCreate,
     session: Session = Depends(get_session)
@@ -1450,15 +1577,11 @@ def create_comment(
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
     
-    # Validate comment length
-    if len(comment_data.text) > 5000:
-        raise HTTPException(status_code=400, detail="Comment text exceeds maximum length of 5000 characters")
-    
-    if not comment_data.text.strip():
-        raise HTTPException(status_code=400, detail="Comment text cannot be empty")
+    # Validate and sanitize comment
+    comment_text = validate_string_length(sanitize_html_input(comment_data.text), "comment text", max_length=5000)
     
     comment = Comment(
-        text=comment_data.text,
+        text=comment_text,
         user=comment_data.user,
         created_at=get_utc_now(),
         finding_id=finding_id
@@ -2161,7 +2284,9 @@ def get_vulnerability_templates(
 
 
 @app.post("/vulnerability-templates", response_model=VulnerabilityTemplateRead, status_code=201)
+@limiter.limit("30/hour")  # Max 30 templates per hour per IP
 async def create_vulnerability_template(
+    request: Request,
     title: str = Body(...),
     description: str = Body(...),
     cwe_id: Optional[str] = Body(None),
@@ -2185,6 +2310,14 @@ async def create_vulnerability_template(
     All templates created manually are marked with source='manual' and is_verified=True by default.
     """
     from app.models import VulnerabilityTemplate
+    
+    # Validate and sanitize inputs
+    title = validate_string_length(sanitize_html_input(title), "title", max_length=200)
+    description = validate_string_length(sanitize_html_input(description), "description", max_length=5000)
+    if remediation_summary:
+        remediation_summary = validate_string_length(sanitize_html_input(remediation_summary), "remediation summary", max_length=2000, allow_empty=True)
+    if remediation_steps:
+        remediation_steps = validate_string_length(sanitize_html_input(remediation_steps), "remediation steps", max_length=5000, allow_empty=True)
     
     # Validate CVSS score range
     if cvss_score is not None and (cvss_score < 0.0 or cvss_score > 10.0):
