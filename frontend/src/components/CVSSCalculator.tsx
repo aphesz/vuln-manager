@@ -2,7 +2,7 @@
 /** @jsx React.createElement */
 /** @jsxFrag React.Fragment */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -17,11 +17,13 @@ import {
   Button,
   Tooltip,
   IconButton,
+  CircularProgress,
 } from '@mui/material';
 import {
   Info as InfoIcon,
   ContentCopy as CopyIcon,
 } from '@mui/icons-material';
+import axios from 'axios';
 
 interface CVSSCalculatorProps {
   onScoreCalculated?: (score: number, vector: string) => void;
@@ -42,63 +44,59 @@ const CVSSCalculator: React.FC<CVSSCalculatorProps> = ({
   const [integrity, setIntegrity] = useState('N');
   const [availability, setAvailability] = useState('N');
 
-  // Calculate CVSS score (simplified - real implementation would use official formula)
-  const calculateScore = () => {
-    // Simplified scoring logic (placeholder for now)
-    // TODO: Implement official CVSS 3.1 calculation in backend
-    let baseScore = 0;
-
-    // Attack Vector scoring
-    const avScore = attackVector === 'N' ? 0.85 : attackVector === 'A' ? 0.62 : attackVector === 'L' ? 0.55 : 0.2;
-    
-    // Attack Complexity
-    const acScore = attackComplexity === 'L' ? 0.77 : 0.44;
-    
-    // Privileges Required
-    let prScore = privilegesRequired === 'N' ? 0.85 : privilegesRequired === 'L' ? 0.62 : 0.27;
-    if (scope === 'C' && privilegesRequired === 'L') prScore = 0.68;
-    if (scope === 'C' && privilegesRequired === 'H') prScore = 0.50;
-    
-    // User Interaction
-    const uiScore = userInteraction === 'N' ? 0.85 : 0.62;
-    
-    // Impact scores
-    const cScore = confidentiality === 'H' ? 0.56 : confidentiality === 'L' ? 0.22 : 0;
-    const iScore = integrity === 'H' ? 0.56 : integrity === 'L' ? 0.22 : 0;
-    const aScore = availability === 'H' ? 0.56 : availability === 'L' ? 0.22 : 0;
-    
-    // Simplified calculation (not official CVSS formula)
-    const impact = 1 - ((1 - cScore) * (1 - iScore) * (1 - aScore));
-    const exploitability = 8.22 * avScore * acScore * prScore * uiScore;
-    
-    if (impact <= 0) {
-      baseScore = 0;
-    } else if (scope === 'U') {
-      baseScore = Math.min(exploitability * impact, 10);
-    } else {
-      baseScore = Math.min(1.08 * exploitability * impact, 10);
-    }
-    
-    return Math.round(baseScore * 10) / 10;
-  };
-
-  const score = calculateScore();
-  
-  const getSeverity = (score: number) => {
-    if (score === 0) return { label: 'None', color: 'default' as const };
-    if (score < 4.0) return { label: 'Low', color: 'success' as const };
-    if (score < 7.0) return { label: 'Medium', color: 'info' as const };
-    if (score < 9.0) return { label: 'High', color: 'warning' as const };
-    return { label: 'Critical', color: 'error' as const };
-  };
-
-  const severity = getSeverity(score);
+  // Score state
+  const [score, setScore] = useState(0);
+  const [severity, setSeverity] = useState('None');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const generateVector = () => {
     return `CVSS:3.1/AV:${attackVector}/AC:${attackComplexity}/PR:${privilegesRequired}/UI:${userInteraction}/S:${scope}/C:${confidentiality}/I:${integrity}/A:${availability}`;
   };
 
   const vector = generateVector();
+
+  // Calculate score from backend whenever metrics change
+  useEffect(() => {
+    const calculateScore = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await axios.post('/api/cvss/calculate', {
+          vector: vector,
+        });
+
+        if (response.data.is_valid) {
+          setScore(response.data.base_score);
+          setSeverity(response.data.severity);
+        } else {
+          setError(response.data.error || 'Invalid CVSS vector');
+          setScore(0);
+          setSeverity('None');
+        }
+      } catch (err) {
+        console.error('CVSS calculation error:', err);
+        setError('Failed to calculate CVSS score');
+        setScore(0);
+        setSeverity('None');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    calculateScore();
+  }, [attackVector, attackComplexity, privilegesRequired, userInteraction, scope, confidentiality, integrity, availability]);
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'Critical': return 'error' as const;
+      case 'High': return 'warning' as const;
+      case 'Medium': return 'info' as const;
+      case 'Low': return 'success' as const;
+      default: return 'default' as const;
+    }
+  };
 
   const handleCopyVector = () => {
     navigator.clipboard.writeText(vector);
@@ -124,9 +122,15 @@ const CVSSCalculator: React.FC<CVSSCalculatorProps> = ({
 
         <Alert severity="info" icon={<InfoIcon />}>
           <Typography variant="body2">
-            <strong>Note:</strong> This is a simplified calculator. For production use, implement the official CVSS 3.1 formula in the backend.
+            <strong>Official CVSS 3.1 Calculator</strong> - Real-time score calculation using the official CVSS v3.1 specification formula.
           </Typography>
         </Alert>
+
+        {error && (
+          <Alert severity="error">
+            {error}
+          </Alert>
+        )}
 
         <Stack spacing={2}>
           <FormControl fullWidth>
@@ -242,33 +246,41 @@ const CVSSCalculator: React.FC<CVSSCalculatorProps> = ({
           }}
         >
           <Stack spacing={2}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="h4" fontWeight="bold">
-                Score: {score.toFixed(1)}
-              </Typography>
-              <Chip
-                label={severity.label}
-                color={severity.color}
-                size="large"
-                sx={{ fontSize: '1.1rem', fontWeight: 'bold', px: 2 }}
-              />
-            </Stack>
+            {loading ? (
+              <Box display="flex" justifyContent="center" alignItems="center" minHeight={100}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="h4" fontWeight="bold">
+                    Score: {score.toFixed(1)}
+                  </Typography>
+                  <Chip
+                    label={severity}
+                    color={getSeverityColor(severity)}
+                    size="large"
+                    sx={{ fontSize: '1.1rem', fontWeight: 'bold', px: 2 }}
+                  />
+                </Stack>
 
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', flex: 1 }}>
-                {vector}
-              </Typography>
-              <Tooltip title="Copy vector">
-                <IconButton size="small" onClick={handleCopyVector}>
-                  <CopyIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Stack>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', flex: 1 }}>
+                    {vector}
+                  </Typography>
+                  <Tooltip title="Copy vector">
+                    <IconButton size="small" onClick={handleCopyVector}>
+                      <CopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
 
-            {onScoreCalculated && (
-              <Button variant="contained" onClick={handleApply} fullWidth>
-                Apply Score
-              </Button>
+                {onScoreCalculated && (
+                  <Button variant="contained" onClick={handleApply} fullWidth>
+                    Apply Score
+                  </Button>
+                )}
+              </>
             )}
           </Stack>
         </Box>
