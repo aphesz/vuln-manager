@@ -6,6 +6,142 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [0.5.0] - November 3, 2025
+
+### ✨ New Features
+
+#### Export Enhancements
+- **Export Dialog** - New Material-UI modal for customizable exports
+  - Format selection: Excel (.xlsx) or CSV (.csv)
+  - Column selection: Choose from 13 available fields
+  - Select All / Deselect All shortcuts
+  - Visual filter chips for risk, status, and review filters
+  - Reset button to restore defaults
+- **CSV Export** - Lightweight alternative to Excel format
+  - Memory-efficient plain text export
+  - Full UTF-8 support
+  - Compatible with spreadsheet applications
+- **Advanced Filtering** - Export only what you need
+  - **Risk Rating**: Filter by Critical, High, Medium, Low, Informational
+  - **Issue Status**: Filter by Open, Partially Closed, Closed
+  - **Review Status**: Filter by Pending, In Review, Approved, Rejected
+  - Combine multiple filters for precise exports
+- **Customizable Columns** - 13 available fields:
+  - Core: Title, Risk Rating, Description, Remediation, Instance Count
+  - Review: Review Status, Reviewer Name
+  - Jira: Jira Issue Key, Jira Status
+  - Tracking: Remediation Deadline, SLA Status, Remediation Owner, Issue Status
+
+### 🔧 Backend Changes
+
+#### New Export Endpoint
+- **Route**: `GET /projects/{project_id}/export`
+- **Query Parameters**:
+  - `format`: `excel` or `csv` (default: `excel`)
+  - `columns`: Comma-separated list of columns to include (default: all)
+  - `risk_filter`: Comma-separated risk levels (optional)
+  - `status_filter`: Comma-separated issue statuses (optional)
+  - `review_filter`: Comma-separated review statuses (optional)
+- **Dependencies**: Added `openpyxl==3.1.2` for server-side Excel generation
+- **Response**: `StreamingResponse` for memory-efficient file downloads
+- **Error Handling**:
+  - HTTP 400: Invalid format or column names
+  - HTTP 404: Project not found
+  - Proper validation with descriptive error messages
+
+#### Export Features
+- **Excel Generation**: Uses openpyxl for server-side .xlsx creation
+  - Bold header row with gray background
+  - Auto-adjusted column widths
+  - Proper cell formatting
+- **CSV Generation**: Standard RFC 4180 format
+  - UTF-8 encoding with BOM
+  - Quoted fields for safety
+  - Compatible with Excel, Google Sheets, LibreOffice
+- **Instance Counting**: Accurate count of instances per finding
+- **Dynamic Columns**: Only requested columns included in output
+- **Multi-Filter Logic**: Combines filters with AND logic for precision
+
+### 🎨 Frontend Changes
+
+#### ExportDialog Component
+- **New File**: `frontend/src/components/ExportDialog.tsx` (300+ lines)
+- **Technology**: Material-UI with TypeScript
+- **Features**:
+  - Format selection with radio buttons
+  - Column checkboxes in 2-column grid layout
+  - Filter chips with visual feedback (filled when selected)
+  - Column count indicator
+  - Disabled export button when no columns selected
+  - Success/error notifications via NotificationContext
+- **Integration**: Opens from Dashboard export button
+- **Backward Compatibility**: Legacy `exportToExcel` function preserved
+
+#### Dashboard Updates
+- Export button now opens ExportDialog instead of direct download
+- New `handleExport` function calls backend API with selected options
+- Legacy `handleLegacyExport` kept for compatibility
+- Proper error handling with user-friendly messages
+
+### ✅ Testing
+
+#### Backend Tests (13 new tests)
+- **File**: `backend/tests/test_export.py`
+- **Coverage**:
+  - ✅ Default Excel export (all columns, no filters)
+  - ✅ Default CSV export
+  - ✅ Column selection (specific columns only)
+  - ✅ Risk filter (single and multiple values)
+  - ✅ Issue status filter
+  - ✅ Review status filter
+  - ✅ Multiple filters combined
+  - ✅ Column selection + filters
+  - ✅ Invalid format handling
+  - ✅ Invalid column names
+  - ✅ Non-existent project
+  - ✅ Empty project (no findings)
+  - ✅ Filters with no matches
+- **Results**: 88/88 tests passing (100%)
+- **New Fixtures**: `sample_project` with varied findings for testing
+
+### 📊 Usage Examples
+
+**Simple Excel export**:
+```http
+GET /api/projects/1/export?format=excel
+```
+
+**CSV with selected columns**:
+```http
+GET /api/projects/1/export?format=csv&columns=title,risk_rating,instance_count
+```
+
+**Filtered by risk and status**:
+```http
+GET /api/projects/1/export?format=excel&risk_filter=Critical,High&status_filter=Open
+```
+
+**Comprehensive custom export**:
+```http
+GET /api/projects/1/export?format=csv&columns=title,risk_rating,jira_issue_key,sla_status&risk_filter=Critical&review_filter=Approved
+```
+
+### 🚀 Performance
+
+- **Server-Side Generation**: Reduces browser memory usage
+- **Streaming Response**: Efficient for large datasets
+- **No Client Dependencies**: openpyxl only on backend (ExcelJS still used for legacy function)
+- **Optimized Queries**: Single query fetches all findings with instances
+
+### 🔄 Migration Notes
+
+- No database migrations required
+- Frontend rebuild required for ExportDialog component
+- Backend rebuild required for openpyxl dependency
+- Existing export functionality remains unchanged (backward compatible)
+
+---
+
 ## [0.4.1] - November 3, 2025
 
 ### 🔒 Security
