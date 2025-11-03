@@ -1,7 +1,7 @@
 # 🗺️ VulnManager Project Roadmap
 
-**Last Updated:** November 3, 2025  
-**Version:** 0.4.0 Planning
+**Last Updated:** November 4, 2025  
+**Version:** 0.7.2 (Current) → 1.2.0 Planning
 
 ---
 
@@ -674,7 +674,250 @@ Create a centralized vulnerability knowledge base that:
 
 ---
 
-## 📋 Development Priorities Matrix
+## � Version 1.1.0 - UI/UX Overhaul & Extended Scanner Support (Q4 2026)
+
+**Timeline:** 6-8 weeks  
+**Effort:** 40-50 hours  
+**Status:** Concept Phase
+
+### Key Features
+
+#### Modern Navigation System
+- [ ] **Collapsible left side navigation bar**
+  - Replace top-right buttons with persistent left sidebar
+  - Collapsible/expandable with toggle button
+  - Icons + labels for main sections
+  - Nested navigation for sub-sections
+  - Active state indicators
+  - Keyboard navigation support (Tab, Arrow keys)
+  - Responsive: Auto-collapse on mobile
+  - User preference persistence (collapsed/expanded state)
+  
+  **Navigation Structure:**
+  ```
+  ├── 📊 Dashboard
+  ├── 📁 Projects
+  ├── 🔍 Findings
+  ├── 📚 Vulnerability Repository
+  ├── 📈 Reports & Analytics
+  ├── 🔗 Integrations
+  │   ├── Jira
+  │   ├── Slack
+  │   └── Webhooks
+  ├── ⚙️ Settings
+  │   ├── User Preferences
+  │   ├── Timezone
+  │   └── Notifications
+  └── 👤 User Profile
+  ```
+
+#### Extended Scanner Support
+- [ ] **Nmap XML parser**
+  - Parse Nmap XML output (-oX)
+  - Extract open ports as findings
+  - Service version detection
+  - OS detection results
+  - Map service vulnerabilities to templates
+  - Risk rating based on service exposure
+  
+- [ ] **Metasploit XML/JSON parser**
+  - Parse Metasploit database export
+  - Extract exploitation results
+  - Map exploited vulnerabilities
+  - Link to CVEs/modules used
+  - Critical risk for successful exploits
+  
+- [ ] **OWASP ZAP XML parser**
+  - Parse ZAP XML report format
+  - Extract web vulnerabilities
+  - Map to CWE/OWASP Top 10
+  - Include request/response evidence
+  - Support ZAP API integration
+  
+- [ ] **Additional scanners (stretch goals)**
+  - Qualys XML
+  - Nexpose XML
+  - OpenVAS XML
+  - Acunetix XML
+  - Nikto CSV/XML
+  - Nuclei JSON
+  
+- [ ] **Backend parser architecture**
+  - New parsers.py functions: `parse_nmap_xml()`, `parse_metasploit_export()`, `parse_zap_xml()`
+  - Unified parser interface/base class
+  - Scanner type detection heuristics
+  - Validation for each format
+  - Error handling and logging
+  
+- [ ] **Upload flow enhancements**
+  - Auto-detect additional scanner types
+  - Multi-file upload support (batch processing)
+  - Scanner-specific field mapping
+  - Preview parsed data before import
+  - Conflict resolution UI
+
+**Estimated Effort:** 40-50 hours
+
+---
+
+## 🔐 Version 1.2.0 - Security & Access Control (Q1 2027)
+
+**Timeline:** 8-10 weeks  
+**Effort:** 60-80 hours  
+**Status:** Concept Phase
+
+### Key Features
+
+#### HTTPS & Secure Communications
+- [ ] **HTTPS-only deployment**
+  - Enforce HTTPS on port 3443
+  - Auto-redirect HTTP (port 80) → HTTPS (443)
+  - Self-signed certificate generation for dev/testing
+  - LetsEncrypt integration for production
+  - Certificate management UI
+  - SSL/TLS configuration best practices
+  - HSTS headers (Strict-Transport-Security)
+  - Certificate expiry warnings
+  
+- [ ] **Docker/nginx configuration**
+  - Update nginx.conf for SSL termination
+  - Add volume mounts for certificates
+  - Environment variables for certificate paths
+  - Health check endpoints (HTTPS)
+  - Update docker-compose.yml ports (3443:443)
+
+#### OAuth Authentication & MFA
+- [ ] **OAuth 2.0 / OpenID Connect**
+  - Support multiple OAuth providers:
+    - Google OAuth
+    - Microsoft Azure AD
+    - GitHub OAuth
+    - Okta
+    - Custom OIDC providers
+  - OAuth client configuration UI
+  - Callback URL handling
+  - Token refresh logic
+  - Session management
+  
+- [ ] **Multi-Factor Authentication (MFA)**
+  - TOTP (Time-based One-Time Password)
+    - QR code generation
+    - Authenticator app setup (Google Authenticator, Authy)
+    - Backup codes generation
+  - SMS-based OTP (optional, via Twilio/SNS)
+  - Email-based OTP
+  - MFA enforcement options:
+    - Optional (user choice)
+    - Required for all users
+    - Required for admin roles only
+  - Recovery options
+  
+- [ ] **CAPTCHA integration**
+  - reCAPTCHA v3 (invisible)
+  - hCaptcha support
+  - CAPTCHA on login page
+  - CAPTCHA on registration page
+  - CAPTCHA on password reset
+  - Configurable threshold scores
+  - Fallback for accessibility
+
+#### Role-Based Access Control (RBAC)
+- [ ] **User role system**
+  - Database schema: users table, roles table, user_roles junction
+  - Predefined roles:
+    - **Super Admin**: Full system access, user management
+    - **Admin**: Org-level admin, project management
+    - **Lead Consultant**: Create projects, manage team findings
+    - **Consultant**: View/edit assigned projects
+    - **Reviewer**: Read-only + review permissions
+    - **Client**: Read-only access to specific projects
+  - Custom role creation (admin feature)
+  
+- [ ] **Permission granularity**
+  - Resource-based permissions:
+    - Projects: create, read, update, delete, archive
+    - Findings: create, read, update, delete, export
+    - Templates: create, read, update, delete
+    - Reports: generate, download, share
+    - Settings: read, update
+    - Users: invite, manage, delete
+  - Project-level permissions:
+    - Assign users to projects
+    - Role override per project
+    - Visibility controls (private/team/public)
+  
+- [ ] **Backend enforcement**
+  - FastAPI dependencies for auth/authz
+  - `@require_role("admin")` decorators
+  - `@require_permission("projects:create")` decorators
+  - Automatic permission checks in endpoints
+  - 403 Forbidden for unauthorized access
+  - Audit logging of permission denials
+  
+- [ ] **Frontend enforcement**
+  - Hide/disable UI elements based on permissions
+  - Role-aware navigation menu
+  - Permission-based feature flags
+  - Graceful degradation for limited users
+
+#### Admin Dashboard
+- [ ] **Admin-only page (/admin)**
+  - User management:
+    - List all users
+    - Create/invite users
+    - Assign/revoke roles
+    - Enable/disable accounts
+    - View user activity logs
+  - Role management:
+    - Create custom roles
+    - Define permissions per role
+    - Role assignment overview
+  - System settings:
+    - OAuth provider configuration
+    - MFA settings (enforce/optional)
+    - CAPTCHA configuration
+    - Session timeout settings
+    - Password policy (complexity, expiry)
+  - Audit logs:
+    - View all user actions
+    - Filter by user, action, date
+    - Export audit logs
+  - System health:
+    - Active users count
+    - Database size
+    - Upload statistics
+    - Error rate monitoring
+  
+- [ ] **User invitation system**
+  - Send email invitations
+  - Invitation link with expiry
+  - Pre-assign role on invite
+  - Track invitation status
+  - Resend invitations
+
+#### Authentication Infrastructure
+- [ ] **Backend changes**
+  - New models: User, Role, Permission, UserRole
+  - Authentication middleware
+  - JWT token generation/validation
+  - Refresh token logic
+  - Password hashing (bcrypt/argon2)
+  - OAuth callback handlers
+  - MFA verification endpoints
+  
+- [ ] **Frontend changes**
+  - Login page with OAuth buttons
+  - Registration page (if enabled)
+  - MFA setup wizard
+  - Password reset flow
+  - Session timeout handling
+  - Auto-redirect to login on 401
+
+**Estimated Effort:** 60-80 hours
+
+---
+
+## �📋 Updated Development Priorities Matrix
 
 | Version | Feature Category | Business Value | Technical Complexity | Priority |
 |---------|-----------------|----------------|---------------------|----------|
@@ -688,8 +931,37 @@ Create a centralized vulnerability knowledge base that:
 | v0.6.0 | Compliance Mapping | ⭐⭐⭐ | 🔧🔧 | P2 |
 | v1.0.0 | Multi-Tenancy | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧🔧 | P2 |
 | v1.0.0 | SSO/SAML | ⭐⭐⭐⭐ | 🔧🔧🔧🔧 | P2 |
+| v1.1.0 | Left Navigation | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
+| v1.1.0 | Extended Scanners | ⭐⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
+| v1.2.0 | HTTPS-only | ⭐⭐⭐⭐⭐ | 🔧🔧 | **P0** |
+| v1.2.0 | OAuth + MFA | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧 | **P0** |
+| v1.2.0 | RBAC | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧🔧 | **P0** |
+| v1.2.0 | Admin Dashboard | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
 
 ---
+
+## 📈 Long-Term Vision
+
+**Year 1 Goals (2026):**
+- Comprehensive vulnerability knowledge base (v0.4.0)
+- Industry-standard risk scoring (v0.4.0)
+- Intelligent auto-matching (v0.4.0)
+- Enhanced UI/UX (v0.5.0)
+- Advanced analytics and reporting (v0.6.0)
+- Modern navigation and extended scanner support (v1.1.0)
+
+**Year 2 Goals (2027):**
+- Enterprise authentication and security (v1.2.0)
+- Enterprise features and multi-tenancy (v1.0.0+)
+- AI-powered vulnerability analysis
+- Automated remediation suggestions
+- Integration ecosystem
+- Mobile applications
+- Cloud-native deployment options
+
+---
+
+## 📞 Stakeholder Communication
 
 ## 🎯 Next Immediate Actions
 
