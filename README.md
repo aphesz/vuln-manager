@@ -12,7 +12,11 @@ VulnManager is a comprehensive, full-stack web application designed to help cybe
 * **Professional Reporting:** Export findings tables directly into **DOCX** and **PDF** formats.
 
 ### Advanced Features ✨
-* **🔄 Peer Review Workflow:** Complete review system with status tracking (Pending, In Review, Approved, Rejected), reviewer assignment, and collaborative comments.
+* **� Quick Add Finding:** Rapid finding creation with vulnerability template search and multi-instance support.
+* **📚 Vulnerability Repository:** Searchable library of 100+ vulnerability templates with CWE/CVE mapping.
+* **📤 Export Enhancements:** Export to Excel/CSV with custom column selection and advanced filtering.
+* **📊 Dashboard Widgets:** Real-time metrics cards showing project statistics and risk distribution.
+* **�🔄 Peer Review Workflow:** Complete review system with status tracking (Pending, In Review, Approved, Rejected), reviewer assignment, and collaborative comments.
 * **📊 Issue Status Tracking:** Manage finding lifecycle (Open, Partially Closed, Closed) with status comments and audit trails.
 * **⏰ SLA Management:** Automatic deadline tracking with visual indicators (On Track, At Risk, Overdue) based on risk severity.
 * **🔗 Jira Integration:** Bi-directional sync with Jira for seamless issue tracking and status updates.
@@ -148,16 +152,25 @@ Key API endpoints (full documentation at `/docs`):
 
 ### Projects
 - `GET /projects/` - List all projects
-- `POST /projects/` - Create new project
+- `POST /projects/` - Create new project (rate limited: 30/hour)
 - `GET /projects/{id}` - Get project with findings
 - `GET /projects/stats/all` - Get all projects with statistics
-- `POST /projects/{id}/upload/{scanner}` - Upload Burp/Nessus report
+- `POST /projects/{id}/upload/{scanner}` - Upload Burp/Nessus report (rate limited: 10/min)
+- `POST /projects/{id}/findings` - Manually create finding (rate limited: 20/min)
+- `GET /projects/{id}/export.{format}` - Export findings (csv/xlsx)
 
 ### Findings
 - `GET /findings/` - List all findings
 - `PATCH /findings/{id}` - Update finding
 - `GET /findings/{id}/comments` - Get finding comments
-- `POST /findings/{id}/comments` - Add comment
+- `POST /findings/{id}/comments` - Add comment (rate limited: 60/min)
+
+### Vulnerability Templates
+- `GET /vulnerability-templates` - List all templates (search, filter, paginate)
+- `POST /vulnerability-templates` - Create template (rate limited: 30/hour)
+- `GET /vulnerability-templates/{id}` - Get template details
+- `GET /repository/search` - Search templates (fuzzy search)
+- `GET /projects/{id}/template-suggestions` - Get project-specific suggestions
 
 ### Peer Review
 - `GET /findings/{id}/review` - Get review status
@@ -223,10 +236,21 @@ All datetime fields use `TIMESTAMPTZ` (timezone-aware) for proper timezone handl
 
 ## 🔒 Security Features
 
+- **Rate Limiting:** Automatic throttling of API requests to prevent abuse
+  - Uploads: 10 per minute per IP
+  - Project creation: 30 per hour per IP
+  - Finding creation: 20 per minute per IP
+  - Comments: 60 per minute per IP
+  - Templates: 30 per hour per IP
+- **Input Validation:** Comprehensive sanitization of all user inputs
+  - Length limits (titles: 200 chars, descriptions: 5000 chars)
+  - HTML/Script tag stripping to prevent XSS attacks
+  - URL format validation
+  - Maximum instance limits (100 per request)
 - **XXE Prevention:** Secure XML parsing with `defusedxml`
 - **File Size Limits:** 10 MiB upload limit to prevent DoS
 - **SQL Injection Protection:** Parameterized queries via SQLModel
-- **Input Validation:** Pydantic models validate all API inputs
+- **Security Headers:** CSP, X-Frame-Options, X-Content-Type-Options, etc.
 - **Connection Pooling:** Prevents connection exhaustion attacks
 - **CORS Configuration:** Controlled cross-origin access
 
