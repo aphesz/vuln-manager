@@ -70,6 +70,9 @@ class FindingBase(SQLModel):
     remediation_deadline: Optional[datetime] = Field(default=None, index=True)
     sla_status: Optional[SLAStatus] = Field(default=None, index=True)
     remediation_owner: Optional[str] = None
+    
+    # Vulnerability Repository link
+    template_id: Optional[int] = Field(default=None, index=True)  # Foreign key to VulnerabilityTemplate
 
 class InstanceBase(SQLModel):
     """Base model for a single instance (or occurrence) of a finding."""
@@ -159,6 +162,73 @@ class UserPreferences(UserPreferencesBase, table=True):
     """Database model for user preferences."""
     id: Optional[int] = Field(default=None, primary_key=True)
 
+# --- Vulnerability Repository Models ---
+
+class VulnerabilityTemplateBase(SQLModel):
+    """Base model for vulnerability templates in the knowledge repository."""
+    # Core identification
+    title: str = Field(..., index=True, max_length=500)
+    description: str = Field(...)
+    
+    # Weakness/Vulnerability IDs
+    cwe_id: Optional[str] = Field(default=None, index=True, max_length=20)  # e.g., "CWE-79"
+    cve_id: Optional[str] = Field(default=None, index=True, max_length=50)  # e.g., "CVE-2024-1234"
+    
+    # Risk Scoring - CVSS 3.1
+    cvss_vector: Optional[str] = Field(default=None, max_length=100)  # e.g., "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+    cvss_score: Optional[float] = Field(default=None, ge=0.0, le=10.0)  # 0.0 - 10.0
+    
+    # Risk Scoring - OWASP
+    owasp_likelihood: Optional[int] = Field(default=None, ge=1, le=9)  # 1-9
+    owasp_impact: Optional[int] = Field(default=None, ge=1, le=9)  # 1-9
+    owasp_risk_rating: Optional[str] = Field(default=None, max_length=20)  # Critical/High/Medium/Low
+    
+    # Default categorization
+    default_risk_rating: Optional[str] = Field(default=None, max_length=20, index=True)  # Maps to FindingBase.RiskRating
+    vulnerability_type: Optional[str] = Field(default=None, max_length=100)  # e.g., "XSS", "SQLi", "CSRF"
+    
+    # Remediation guidance
+    remediation_summary: Optional[str] = Field(default=None)
+    remediation_steps: Optional[str] = Field(default=None)  # Detailed steps
+    references: Optional[str] = Field(default=None)  # URLs, CWE links, etc.
+    
+    # Metadata
+    source: str = Field(default="manual", max_length=50, index=True)  # "manual", "burp", "nessus", "nvd", "cwe"
+    is_verified: bool = Field(default=False, index=True)  # Has this been reviewed/verified?
+    usage_count: int = Field(default=0)  # How many findings use this template?
+    
+    # Timestamps
+    created_at: datetime = Field(default=None, index=True)
+    updated_at: datetime = Field(default=None)
+    last_used: Optional[datetime] = Field(default=None)
+
+class VulnerabilityTemplate(VulnerabilityTemplateBase, table=True):
+    """Database model for VulnerabilityTemplate."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    
+    # Relationships
+    matches: List["VulnerabilityMatch"] = Relationship(back_populates="template")
+
+class VulnerabilityMatchBase(SQLModel):
+    """Base model for tracking finding-to-template matches."""
+    finding_id: int = Field(..., foreign_key="finding.id", index=True)
+    template_id: int = Field(..., foreign_key="vulnerabilitytemplate.id", index=True)
+    
+    # Match metrics
+    similarity_score: float = Field(..., ge=0.0, le=1.0)  # 0.0 - 1.0 (100%)
+    match_method: str = Field(..., max_length=50, index=True)  # "exact_cwe", "exact_cve", "fuzzy_title", "fuzzy_description", "ai_embedding"
+    
+    # Metadata
+    matched_at: datetime = Field(default=None, index=True)
+    matched_by: str = Field(default="auto", max_length=50)  # "auto" or username
+
+class VulnerabilityMatch(VulnerabilityMatchBase, table=True):
+    """Database model for VulnerabilityMatch."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    
+    # Relationships
+    template: Optional[VulnerabilityTemplate] = Relationship(back_populates="matches")
+
 # --- Read Models (For FastAPI Responses) ---
 
 # 1. Instance Read Model
@@ -221,6 +291,43 @@ class ProjectReadWithStats(ProjectBase):
     medium_count: int = 0
     low_count: int = 0
     last_upload_date: Optional[datetime] = None
+
+# 10. VulnerabilityTemplate Read Model
+class VulnerabilityTemplateRead(VulnerabilityTemplateBase):
+    """Used to read a VulnerabilityTemplate."""
+    id: int
+    
+    @field_serializer('created_at', 'updated_at', 'last_used')
+    def serialize_datetime(self, value: Optional[datetime], _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
+
+# 11. VulnerabilityMatch Read Model
+class VulnerabilityMatchRead(VulnerabilityMatchBase):
+    """Used to read a VulnerabilityMatch."""
+    id: int
+    
+    @field_serializer('matched_at')
+    def serialize_matched_at(self, value: datetime, _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
+
+# 12. VulnerabilityTemplate with Matches
+class VulnerabilityTemplateWithMatches(VulnerabilityTemplateBase):
+    """Used to read a VulnerabilityTemplate with its matches."""
+    id: int
+    matches: List[VulnerabilityMatchRead] = []
+    
+    @field_serializer('created_at', 'updated_at', 'last_used')
+    def serialize_datetime(self, value: Optional[datetime], _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
 
 # --- Utility Models (The Fixes) ---
 

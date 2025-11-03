@@ -40,6 +40,10 @@ from app.models import (
     JiraSettings,
     JiraSettingsRead,
     JiraSettingsBase,
+    VulnerabilityTemplate,
+    VulnerabilityTemplateRead,
+    VulnerabilityMatch,
+    VulnerabilityMatchRead,
 )
 
 # Use the RiskRating from FindingBase
@@ -1516,3 +1520,266 @@ def create_or_update_user_preferences(
         "date_format": prefs.date_format,
         "locale": prefs.locale
     }
+
+# =====================================================
+# VULNERABILITY REPOSITORY ENDPOINTS
+# =====================================================
+
+@app.get("/api/vulnerability-templates", response_model=List[VulnerabilityTemplateRead])
+def get_vulnerability_templates(
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    risk_rating: Optional[str] = None,
+    is_verified: Optional[bool] = None,
+    cwe_id: Optional[str] = None,
+    cve_id: Optional[str] = None,
+    session: Session = Depends(get_session)
+):
+    """
+    Get all vulnerability templates with optional filtering and pagination.
+    
+    Query parameters:
+    - skip: Number of records to skip (default: 0)
+    - limit: Maximum number of records to return (default: 100, max: 1000)
+    - search: Search in title and description
+    - source: Filter by source (manual, burp, nessus, nvd, cwe)
+    - risk_rating: Filter by default risk rating
+    - is_verified: Filter by verification status
+    - cwe_id: Filter by CWE ID
+    - cve_id: Filter by CVE ID
+    """
+    from app.models import VulnerabilityTemplate
+    
+    # Build query
+    statement = select(VulnerabilityTemplate)
+    
+    # Apply filters
+    if search:
+        search_pattern = f"%{search}%"
+        statement = statement.where(
+            (VulnerabilityTemplate.title.ilike(search_pattern)) |
+            (VulnerabilityTemplate.description.ilike(search_pattern))
+        )
+    
+    if source:
+        statement = statement.where(VulnerabilityTemplate.source == source)
+    
+    if risk_rating:
+        statement = statement.where(VulnerabilityTemplate.default_risk_rating == risk_rating)
+    
+    if is_verified is not None:
+        statement = statement.where(VulnerabilityTemplate.is_verified == is_verified)
+    
+    if cwe_id:
+        statement = statement.where(VulnerabilityTemplate.cwe_id == cwe_id)
+    
+    if cve_id:
+        statement = statement.where(VulnerabilityTemplate.cve_id == cve_id)
+    
+    # Apply pagination and ordering
+    statement = statement.order_by(VulnerabilityTemplate.created_at.desc())
+    statement = statement.offset(skip).limit(min(limit, 1000))
+    
+    templates = session.exec(statement).all()
+    return templates
+
+
+@app.post("/api/vulnerability-templates", response_model=VulnerabilityTemplateRead, status_code=201)
+async def create_vulnerability_template(
+    title: str = Body(...),
+    description: str = Body(...),
+    cwe_id: Optional[str] = Body(None),
+    cve_id: Optional[str] = Body(None),
+    cvss_vector: Optional[str] = Body(None),
+    cvss_score: Optional[float] = Body(None),
+    owasp_likelihood: Optional[int] = Body(None),
+    owasp_impact: Optional[int] = Body(None),
+    owasp_risk_rating: Optional[str] = Body(None),
+    default_risk_rating: Optional[str] = Body(None),
+    vulnerability_type: Optional[str] = Body(None),
+    remediation_summary: Optional[str] = Body(None),
+    remediation_steps: Optional[str] = Body(None),
+    references: Optional[str] = Body(None),
+    is_verified: bool = Body(True),
+    session: Session = Depends(get_session)
+):
+    """
+    Create a new vulnerability template.
+    
+    All templates created manually are marked with source='manual' and is_verified=True by default.
+    """
+    from app.models import VulnerabilityTemplate
+    
+    # Validate CVSS score range
+    if cvss_score is not None and (cvss_score < 0.0 or cvss_score > 10.0):
+        raise HTTPException(status_code=400, detail="CVSS score must be between 0.0 and 10.0")
+    
+    # Validate OWASP ranges
+    if owasp_likelihood is not None and (owasp_likelihood < 1 or owasp_likelihood > 9):
+        raise HTTPException(status_code=400, detail="OWASP likelihood must be between 1 and 9")
+    
+    if owasp_impact is not None and (owasp_impact < 1 or owasp_impact > 9):
+        raise HTTPException(status_code=400, detail="OWASP impact must be between 1 and 9")
+    
+    # Create template
+    template = VulnerabilityTemplate(
+        title=title,
+        description=description,
+        cwe_id=cwe_id,
+        cve_id=cve_id,
+        cvss_vector=cvss_vector,
+        cvss_score=cvss_score,
+        owasp_likelihood=owasp_likelihood,
+        owasp_impact=owasp_impact,
+        owasp_risk_rating=owasp_risk_rating,
+        default_risk_rating=default_risk_rating,
+        vulnerability_type=vulnerability_type,
+        remediation_summary=remediation_summary,
+        remediation_steps=remediation_steps,
+        references=references,
+        source="manual",
+        is_verified=is_verified,
+        usage_count=0,
+        created_at=get_utc_now(),
+        updated_at=get_utc_now()
+    )
+    
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    
+    logger.info(f"Created vulnerability template: {template.id} - {template.title}")
+    
+    return template
+
+
+@app.get("/api/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
+def get_vulnerability_template(
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get a single vulnerability template by ID."""
+    from app.models import VulnerabilityTemplate
+    
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Vulnerability template not found")
+    
+    return template
+
+
+@app.patch("/api/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
+async def update_vulnerability_template(
+    template_id: int,
+    title: Optional[str] = Body(None),
+    description: Optional[str] = Body(None),
+    cwe_id: Optional[str] = Body(None),
+    cve_id: Optional[str] = Body(None),
+    cvss_vector: Optional[str] = Body(None),
+    cvss_score: Optional[float] = Body(None),
+    owasp_likelihood: Optional[int] = Body(None),
+    owasp_impact: Optional[int] = Body(None),
+    owasp_risk_rating: Optional[str] = Body(None),
+    default_risk_rating: Optional[str] = Body(None),
+    vulnerability_type: Optional[str] = Body(None),
+    remediation_summary: Optional[str] = Body(None),
+    remediation_steps: Optional[str] = Body(None),
+    references: Optional[str] = Body(None),
+    is_verified: Optional[bool] = Body(None),
+    session: Session = Depends(get_session)
+):
+    """
+    Update an existing vulnerability template.
+    Only provided fields will be updated.
+    """
+    from app.models import VulnerabilityTemplate
+    
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Vulnerability template not found")
+    
+    # Update fields if provided
+    if title is not None:
+        template.title = title
+    if description is not None:
+        template.description = description
+    if cwe_id is not None:
+        template.cwe_id = cwe_id
+    if cve_id is not None:
+        template.cve_id = cve_id
+    if cvss_vector is not None:
+        template.cvss_vector = cvss_vector
+    if cvss_score is not None:
+        if cvss_score < 0.0 or cvss_score > 10.0:
+            raise HTTPException(status_code=400, detail="CVSS score must be between 0.0 and 10.0")
+        template.cvss_score = cvss_score
+    if owasp_likelihood is not None:
+        if owasp_likelihood < 1 or owasp_likelihood > 9:
+            raise HTTPException(status_code=400, detail="OWASP likelihood must be between 1 and 9")
+        template.owasp_likelihood = owasp_likelihood
+    if owasp_impact is not None:
+        if owasp_impact < 1 or owasp_impact > 9:
+            raise HTTPException(status_code=400, detail="OWASP impact must be between 1 and 9")
+        template.owasp_impact = owasp_impact
+    if owasp_risk_rating is not None:
+        template.owasp_risk_rating = owasp_risk_rating
+    if default_risk_rating is not None:
+        template.default_risk_rating = default_risk_rating
+    if vulnerability_type is not None:
+        template.vulnerability_type = vulnerability_type
+    if remediation_summary is not None:
+        template.remediation_summary = remediation_summary
+    if remediation_steps is not None:
+        template.remediation_steps = remediation_steps
+    if references is not None:
+        template.references = references
+    if is_verified is not None:
+        template.is_verified = is_verified
+    
+    # Update timestamp
+    template.updated_at = get_utc_now()
+    
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    
+    logger.info(f"Updated vulnerability template: {template.id} - {template.title}")
+    
+    return template
+
+
+@app.delete("/api/vulnerability-templates/{template_id}", status_code=204)
+def delete_vulnerability_template(
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Delete a vulnerability template.
+    Will fail if template is in use by findings (prevent deletion).
+    """
+    from app.models import VulnerabilityTemplate, Finding
+    
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Vulnerability template not found")
+    
+    # Check if template is in use
+    findings_using_template = session.exec(
+        select(Finding).where(Finding.template_id == template_id)
+    ).first()
+    
+    if findings_using_template:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete template: {template.usage_count} finding(s) are using this template. Unlink them first."
+        )
+    
+    session.delete(template)
+    session.commit()
+    
+    logger.info(f"Deleted vulnerability template: {template_id}")
+    
+    return None
+
