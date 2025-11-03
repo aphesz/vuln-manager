@@ -1,11 +1,11 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlmodel import SQLModel, Session, create_engine, select
-from sqlalchemy import text
+from sqlalchemy import text, case, func
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 import os
@@ -1296,6 +1296,143 @@ def update_finding_review_status(
         "updated_by": user
     }
 
+
+@app.post("/projects/{project_id}/findings", response_model=FindingReadWithInstances, status_code=201)
+async def create_finding_manually(
+    project_id: int,
+    title: str = Body(...),
+    description: str = Body(...),
+    remediation: str = Body(...),
+    risk_rating: str = Body(...),
+    template_id: Optional[int] = Body(None),
+    instances: List[Dict[str, str]] = Body(..., description="List of instance objects with 'location' and 'details'"),
+    issue_status: Optional[str] = Body("Open"),
+    session: Session = Depends(get_session)
+):
+    """
+    Manually create a new finding with instances (Quick Add feature).
+    
+    This endpoint allows creating findings from vulnerability templates
+    or from scratch with multiple instances.
+    
+    Request body:
+    - title: Finding title
+    - description: Detailed description
+    - remediation: Remediation guidance
+    - risk_rating: One of: Critical, High, Medium, Low, Informational
+    - template_id: Optional link to vulnerability template
+    - instances: Array of {location, details} objects
+    - issue_status: One of: Open, Partially Closed, Closed (default: Open)
+    """
+    from app.models import VulnerabilityTemplate
+    
+    # Validate project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Validate risk rating
+    try:
+        risk = FindingBase.RiskRating(risk_rating)
+    except ValueError:
+        valid_ratings = [r.value for r in FindingBase.RiskRating]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid risk_rating. Must be one of: {', '.join(valid_ratings)}"
+        )
+    
+    # Validate issue status
+    try:
+        status = FindingBase.IssueStatus(issue_status) if issue_status else FindingBase.IssueStatus.Open
+    except ValueError:
+        valid_statuses = [s.value for s in FindingBase.IssueStatus]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid issue_status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    # Validate instances
+    if not instances or len(instances) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one instance is required"
+        )
+    
+    for idx, inst in enumerate(instances):
+        if 'location' not in inst or 'details' not in inst:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Instance {idx} must have 'location' and 'details' fields"
+            )
+    
+    # If template_id provided, validate it exists and update usage
+    template = None
+    if template_id:
+        template = session.get(VulnerabilityTemplate, template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail=f"Vulnerability template {template_id} not found")
+        
+        # Update template usage
+        template.usage_count += 1
+        template.last_used = get_utc_now()
+        template.updated_at = get_utc_now()
+        session.add(template)
+    
+    # Check for existing finding with same title in project
+    existing_finding = session.exec(
+        select(Finding).where(
+            Finding.project_id == project_id,
+            Finding.title == title
+        )
+    ).first()
+    
+    if existing_finding:
+        # Add instances to existing finding
+        finding = existing_finding
+        logger.info(f"Adding instances to existing finding {finding.id}: {title}")
+    else:
+        # Create new finding
+        finding = Finding(
+            project_id=project_id,
+            title=title,
+            risk_rating=risk,
+            description=description,
+            remediation=remediation,
+            template_id=template_id,
+            issue_status=status
+        )
+        session.add(finding)
+        session.flush()  # Get finding.id
+        logger.info(f"Created new finding {finding.id}: {title}")
+    
+    # Create instances
+    created_instances = []
+    for inst_data in instances:
+        instance = Instance(
+            finding_id=finding.id,
+            location=inst_data['location'],
+            details=inst_data['details'],
+            status='New - Unvalidated',
+            created_at=get_utc_now()
+        )
+        session.add(instance)
+        created_instances.append(instance)
+    
+    session.commit()
+    session.refresh(finding)
+    
+    # Send WebSocket notification
+    await ws_manager.broadcast_finding_update(
+        project_id,
+        finding.id,
+        'update' if existing_finding else 'create'
+    )
+    
+    logger.info(f"Successfully created finding with {len(created_instances)} instances")
+    
+    return finding
+
+
 @app.post("/findings/{finding_id}/comments", response_model=CommentRead)
 def create_comment(
     finding_id: int,
@@ -2294,6 +2431,145 @@ def cleanup_duplicate_templates(
         "kept_templates": kept_templates,
         "message": f"Removed {removed_count} duplicate template(s)"
     }
+
+
+# =====================================================
+# QUICK ADD / TEMPLATE SEARCH ENDPOINTS
+# =====================================================
+
+@app.get("/repository/search", response_model=List[VulnerabilityTemplateRead])
+def search_repository_templates(
+    q: str = Query(..., min_length=1, description="Search query for title, description, CWE, CVE"),
+    limit: int = Query(20, ge=1, le=50, description="Maximum results to return"),
+    verified_only: bool = Query(False, description="Only return verified templates"),
+    session: Session = Depends(get_session)
+):
+    """
+    Quick search for vulnerability templates (optimized for Quick Add feature).
+    
+    Searches across:
+    - Title (fuzzy match)
+    - Description (fuzzy match)
+    - CWE ID (exact match)
+    - CVE ID (exact match)
+    - Vulnerability type (exact match)
+    
+    Returns templates ordered by:
+    1. Exact title matches first
+    2. Usage count (most used first)
+    3. Creation date (newest first)
+    """
+    from app.models import VulnerabilityTemplate
+    
+    # Build search pattern for fuzzy matching
+    search_pattern = f"%{q}%"
+    
+    # Base query
+    statement = select(VulnerabilityTemplate)
+    
+    # Apply verified filter
+    if verified_only:
+        statement = statement.where(VulnerabilityTemplate.is_verified == True)
+    
+    # Search across multiple fields
+    statement = statement.where(
+        (VulnerabilityTemplate.title.ilike(search_pattern)) |
+        (VulnerabilityTemplate.description.ilike(search_pattern)) |
+        (VulnerabilityTemplate.cwe_id.ilike(search_pattern)) |
+        (VulnerabilityTemplate.cve_id.ilike(search_pattern)) |
+        (VulnerabilityTemplate.vulnerability_type.ilike(search_pattern))
+    )
+    
+    # Order by relevance:
+    # 1. Exact title match first (case-insensitive)
+    # 2. Usage count (most used first)
+    # 3. Creation date (newest first)
+    
+    # Create a score for exact matches
+    exact_match_score = case(
+        (func.lower(VulnerabilityTemplate.title) == q.lower(), 1),
+        else_=0
+    )
+    
+    statement = statement.order_by(
+        exact_match_score.desc(),
+        VulnerabilityTemplate.usage_count.desc(),
+        VulnerabilityTemplate.created_at.desc()
+    ).limit(limit)
+    
+    templates = session.exec(statement).all()
+    
+    logger.info(f"Repository search for '{q}' returned {len(templates)} results")
+    
+    return templates
+
+
+@app.get("/projects/{project_id}/template-suggestions", response_model=List[VulnerabilityTemplateRead])
+def get_project_template_suggestions(
+    project_id: int,
+    limit: int = Query(10, ge=1, le=50, description="Maximum suggestions to return"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get template suggestions for Quick Add based on project's existing findings.
+    
+    Returns templates that:
+    1. Are already used in this project (sorted by frequency)
+    2. Have high overall usage counts (popular templates)
+    3. Are verified templates
+    
+    Useful for "Add Similar" and suggesting common vulnerabilities.
+    """
+    from app.models import VulnerabilityTemplate, Finding, Project
+    
+    # Verify project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get templates already used in this project
+    project_templates_statement = (
+        select(VulnerabilityTemplate.id, func.count(Finding.id).label("usage_in_project"))
+        .join(Finding, Finding.template_id == VulnerabilityTemplate.id)
+        .where(Finding.project_id == project_id)
+        .group_by(VulnerabilityTemplate.id)
+        .order_by(func.count(Finding.id).desc())
+    )
+    
+    project_template_usage = session.exec(project_templates_statement).all()
+    project_template_ids = [t[0] for t in project_template_usage]
+    
+    # Combine:
+    # 1. Templates used in this project (by frequency)
+    # 2. Most popular verified templates not yet used
+    suggestions = []
+    
+    # Add templates from this project first
+    if project_template_ids:
+        project_templates = session.exec(
+            select(VulnerabilityTemplate)
+            .where(VulnerabilityTemplate.id.in_(project_template_ids))
+            .order_by(VulnerabilityTemplate.usage_count.desc())
+        ).all()
+        suggestions.extend(project_templates)
+    
+    # Fill remaining slots with popular verified templates
+    remaining = limit - len(suggestions)
+    if remaining > 0:
+        popular_templates = session.exec(
+            select(VulnerabilityTemplate)
+            .where(
+                VulnerabilityTemplate.is_verified == True,
+                ~VulnerabilityTemplate.id.in_(project_template_ids) if project_template_ids else True
+            )
+            .order_by(VulnerabilityTemplate.usage_count.desc())
+            .limit(remaining)
+        ).all()
+        suggestions.extend(popular_templates)
+    
+    logger.info(f"Generated {len(suggestions)} template suggestions for project {project_id}")
+    
+    return suggestions[:limit]
 
 
 # ============================================================================

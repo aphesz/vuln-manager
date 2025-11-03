@@ -122,3 +122,42 @@ export interface ProjectMetrics {
   jira_sync_rate: number;
   average_time_to_approval: number | null;
 }
+
+export interface VulnerabilityTemplate {
+  id: number;
+  title: string;
+  description: string;
+  cwe_id?: string;
+  cve_id?: string;
+  cvss_vector?: string;
+  cvss_score?: number;
+  owasp_likelihood?: number;
+  owasp_impact?: number;
+  owasp_risk_rating?: string;
+  default_risk_rating?: RiskRating;
+  vulnerability_type?: string;
+  remediation_summary?: string;
+  remediation_steps?: string;
+  references?: string;
+  source: string;
+  is_verified: boolean;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+  last_used?: string;
+}
+
+export interface InstanceCreate {
+  location: string;
+  details: string;
+}
+
+export interface FindingCreate {
+  title: string;
+  description: string;
+  remediation: string;
+  risk_rating: RiskRating;
+  template_id?: number;
+  instances: InstanceCreate[];
+  issue_status?: IssueStatus;
+}

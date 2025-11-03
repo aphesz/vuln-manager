@@ -38,6 +38,7 @@ import {
   Menu as MenuIcon,
   Close as CloseIcon,
   Assessment as ReportIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -47,6 +48,7 @@ import RiskChart from './RiskChart';
 import FindingsTable from './FindingsTable';
 import JiraIntegrationSettings from './JiraIntegrationSettings';
 import ExportDialog, { ExportOptions } from './ExportDialog';
+import QuickAddDialog from './QuickAddDialog';
 import SLAComplianceWidget from './SLAComplianceWidget';
 import ReviewProgressWidget from './ReviewProgressWidget';
 import TopVulnerabilitiesWidget from './TopVulnerabilitiesWidget';
@@ -74,6 +76,7 @@ const Dashboard = () => {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [quickAddDialogOpen, setQuickAddDialogOpen] = useState(false);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<RiskRating | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const theme = useTheme();
@@ -479,6 +482,11 @@ const Dashboard = () => {
           <Divider sx={{ mb: 2 }} />
           
           <List>
+            <ListItem button onClick={() => { setQuickAddDialogOpen(true); setMobileMenuOpen(false); }}>
+              <ListItemIcon><AddIcon /></ListItemIcon>
+              <ListItemText primary="Quick Add Finding" />
+            </ListItem>
+
             <ListItem button onClick={() => { setUploadDialogOpen(true); setMobileMenuOpen(false); }}>
               <ListItemIcon><UploadIcon /></ListItemIcon>
               <ListItemText primary="Upload Scan" />
@@ -857,6 +865,14 @@ const Dashboard = () => {
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                 <Button
                   variant="contained"
+                  color="primary"
+                  startIcon={<AddIcon />}
+                  onClick={() => setQuickAddDialogOpen(true)}
+                >
+                  Quick Add Finding
+                </Button>
+                <Button
+                  variant="contained"
                   startIcon={<UploadIcon />}
                   onClick={() => setUploadDialogOpen(true)}
                 >
@@ -1122,6 +1138,17 @@ const Dashboard = () => {
         open={exportDialogOpen}
         onClose={() => setExportDialogOpen(false)}
         onExport={handleExport}
+        projectId={parseInt(projectId as string, 10)}
+      />
+
+      {/* Quick Add Dialog */}
+      <QuickAddDialog
+        open={quickAddDialogOpen}
+        onClose={() => setQuickAddDialogOpen(false)}
+        onSuccess={() => {
+          fetchProject();
+          showSuccess('Finding created successfully');
+        }}
         projectId={parseInt(projectId as string, 10)}
       />
     </Box>
