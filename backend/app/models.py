@@ -114,12 +114,16 @@ class CommentBase(SQLModel):
     """Base model for comments on findings."""
     text: str = Field(..., max_length=5000)
     user: str = Field(..., max_length=255)  # TODO: Replace with proper user auth later
-    created_at: datetime = Field(default=None)  # Will be set by timezone_utils.get_utc_now()
+
+class CommentCreate(CommentBase):
+    """Model for creating a comment (no created_at)."""
+    pass
 
 class Comment(CommentBase, table=True):
     """Database model for Comment."""
     id: Optional[int] = Field(default=None, primary_key=True)
     finding_id: int = Field(..., foreign_key="finding.id", index=True)
+    created_at: datetime = Field()  # Required field, explicitly set by API using timezone_utils.get_utc_now()
     
     # Relationships
     finding: Optional[Finding] = Relationship(back_populates="comments")
@@ -130,7 +134,7 @@ class AuditLogBase(SQLModel):
     entity_id: int = Field(..., index=True)
     action: str = Field(..., max_length=50, index=True)  # 'created', 'updated', 'deleted', 'status_changed'
     user: str = Field(..., max_length=255)
-    timestamp: datetime = Field(default=None, index=True)  # Will be set by timezone_utils.get_utc_now()
+    timestamp: datetime = Field(index=True)  # Required field, explicitly set by caller using timezone_utils.get_utc_now()
     changes_json: Optional[str] = None  # JSON string of before/after changes
 
 class AuditLog(AuditLogBase, table=True):
@@ -244,9 +248,13 @@ class InstanceRead(InstanceBase):
         return value
 
 # 2. Comment Read Model
-class CommentRead(CommentBase):
+class CommentRead(SQLModel):
+    """Read model for Comment with all fields."""
     id: int
     finding_id: int
+    text: str
+    user: str
+    created_at: datetime
     
     @field_serializer('created_at')
     def serialize_created_at(self, value: datetime, _info):

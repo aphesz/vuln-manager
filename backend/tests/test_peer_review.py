@@ -136,15 +136,18 @@ def test_get_comments(client: TestClient, session: Session):
     session.refresh(finding)
     
     # Add multiple comments
+    from app.timezone_utils import get_utc_now
     comment1 = Comment(
         finding_id=finding.id,
         text="First comment",
         user="user1",
+        created_at=get_utc_now(),
     )
     comment2 = Comment(
         finding_id=finding.id,
         text="Second comment",
         user="user2",
+        created_at=get_utc_now(),
     )
     session.add(comment1)
     session.add(comment2)
@@ -182,11 +185,13 @@ def test_get_audit_log(client: TestClient, session: Session):
     
     # Create audit log entries
     import json
+    from app.timezone_utils import get_utc_now
     log1 = AuditLog(
         entity_type="finding",
         entity_id=finding.id,
         action="review_status_changed",
         user="user1",
+        timestamp=get_utc_now(),
         changes_json=json.dumps({
             "field": "review_status",
             "old_value": "Pending",
@@ -198,6 +203,7 @@ def test_get_audit_log(client: TestClient, session: Session):
         entity_id=finding.id,
         action="review_status_changed",
         user="user2",
+        timestamp=get_utc_now(),
         changes_json=json.dumps({
             "field": "review_status",
             "old_value": "In Review",
@@ -219,9 +225,15 @@ def test_get_audit_log(client: TestClient, session: Session):
     assert len(logs) == 2
     assert logs[0]["action"] == "review_status_changed"
     
-    # Parse changes_json to check values (if present)
+    # API returns newest first, so logs[0] is the most recent (log2)
     import json
     if logs[0]["changes_json"]:
         changes = json.loads(logs[0]["changes_json"])
+        assert changes["old_value"] == "In Review"
+        assert changes["new_value"] == "Approved"
+    
+    # logs[1] should be the older entry (log1)
+    if logs[1]["changes_json"]:
+        changes = json.loads(logs[1]["changes_json"])
         assert changes["old_value"] == "Pending"
         assert changes["new_value"] == "In Review"

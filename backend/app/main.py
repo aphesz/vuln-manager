@@ -35,6 +35,7 @@ from app.models import (
     Comment,
     CommentRead,
     CommentBase,
+    CommentCreate,
     AuditLog,
     AuditLogRead,
     JiraSettings,
@@ -990,7 +991,7 @@ def update_finding_review_status(
 @app.post("/findings/{finding_id}/comments", response_model=CommentRead)
 def create_comment(
     finding_id: int,
-    comment_data: CommentBase,
+    comment_data: CommentCreate,
     session: Session = Depends(get_session)
 ):
     """
