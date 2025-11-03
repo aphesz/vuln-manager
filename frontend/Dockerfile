@@ -17,11 +17,15 @@ RUN npm config set registry https://registry.npmjs.org/ && \
 # Copy source code 
 COPY . .
 
+# Fix permissions for all binaries
+RUN find node_modules -type f -name "esbuild" -exec chmod +x {} \; && \
+    chmod -R +x node_modules/.bin/ || true
+
 # Remove old .js files to avoid JSX parsing conflicts
 RUN find /app/src -name "*.js" -type f ! -name "vite.config.js" -delete
 
-# Run the Vite build process
-RUN npm run build
+# Run the Vite build process (use node directly to avoid permission issues)
+RUN node node_modules/vite/bin/vite.js build
 
 # Stage 2: Serve the application using a lightweight web server
 FROM nginx:alpine

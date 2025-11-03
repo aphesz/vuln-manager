@@ -237,6 +237,9 @@ const Dashboard = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  // Alias for backward compatibility
+  const exportToExcel = handleExport;
+
   // Update user preferences
   const updatePreferences = (updates: typeof preferences) => {
     prefsService.updatePreferences(updates);
