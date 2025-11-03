@@ -368,7 +368,8 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
         finding_id=finding.id,
         location=issue_data.get('location', 'N/A'),
         details=issue_data.get('details', 'N/A'),
-        status='New - Unvalidated' # Default status
+        status='New - Unvalidated',  # Default status
+        created_at=get_utc_now()  # Set creation timestamp
     )
     session.add(instance)
     

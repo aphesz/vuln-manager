@@ -76,6 +76,7 @@ class InstanceBase(SQLModel):
     location: str = Field(...)
     details: str = Field(...)
     status: str = Field(default="New - Unvalidated", index=True)  # e.g., 'New', 'Confirmed', 'Remediated'
+    created_at: datetime = Field(default=None, index=True)  # Will be set by timezone_utils.get_utc_now()
 
 # --- Table Models ---
 
@@ -164,6 +165,13 @@ class UserPreferences(UserPreferencesBase, table=True):
 class InstanceRead(InstanceBase):
     id: int
     finding_id: int
+    
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime, _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
 
 # 2. Comment Read Model
 class CommentRead(CommentBase):
