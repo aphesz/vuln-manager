@@ -6,6 +6,250 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [0.7.0] - November 3, 2025
+
+### ✨ New Features
+
+#### Quick Add Finding - Template-Based Rapid Entry
+Create findings manually with intelligent template search and multi-instance support.
+
+**Search & Discovery**:
+- **Template Search Endpoint** - `/repository/search?q={query}&limit={limit}&verified_only={bool}`
+  - Fuzzy search across title, description, CWE ID, CVE ID, vulnerability type
+  - Ordered by: exact title match → usage count → creation date
+  - Configurable result limit (1-50, default 20)
+  - Optional verified-only filter
+  - Optimized for autocomplete UX
+
+- **Template Suggestions** - `/projects/{id}/template-suggestions?limit={limit}`
+  - Returns templates used in current project (by frequency)
+  - Falls back to popular verified templates
+  - Contextual suggestions based on project history
+  - Limit configurable (1-50, default 10)
+
+**Finding Creation**:
+- **Manual Finding Endpoint** - `POST /projects/{id}/findings`
+  - Create findings from templates or from scratch
+  - Multi-instance support (bulk entry)
+  - Request body:
+    ```json
+    {
+      "title": "Cross-Site Scripting",
+      "description": "...",
+      "remediation": "...",
+      "risk_rating": "High",
+      "template_id": 123,  // optional
+      "instances": [
+        {"location": "https://...", "details": "param: value"},
+        {"location": "https://...", "details": "param: value"}
+      ],
+      "issue_status": "Open"  // optional
+    }
+    ```
+  - Automatic template linking and usage tracking
+  - Deduplication: adds instances to existing findings with same title
+  - WebSocket notifications for real-time updates
+
+### 🎨 Frontend Components
+
+#### QuickAddDialog (480+ lines)
+Comprehensive dialog for rapid finding creation with template search.
+
+**Features**:
+- **Autocomplete Search** (Material-UI)
+  - Real-time fuzzy search with 300ms debouncing
+  - Loading indicators during search
+  - Custom result rendering with chips and icons
+  - Keyboard navigation support
+  - Minimum 2 characters to search
+  
+- **Popular Suggestions**
+  - Top 5 templates displayed as chips
+  - Based on project usage and verification status
+  - One-click selection
+  - Star icon for verified templates
+  
+- **Template Result Display**
+  - Title with verification indicator (star icon)
+  - CWE ID badge (if available)
+  - Risk rating chip (color-coded: Critical=red, High=orange)
+  - Usage count badge ("Used 5x")
+  - Compact multi-line layout
+  
+- **Pre-fill from Template**
+  - Automatically populates title, description, remediation
+  - Sets risk rating from template default
+  - Links to template for usage tracking
+  - User can edit all fields before submission
+  
+- **Instance Editor**
+  - Multi-row editor with add/remove buttons
+  - Each instance has location (URL/host) and details (parameter/payload)
+  - Minimum 1 instance required
+  - Delete button (disabled when only 1 instance)
+  - Paper-wrapped cards for visual separation
+  - Instance numbering (#1, #2, etc.)
+  
+- **Form Validation**
+  - Required field checks (title, description, remediation)
+  - Instance validation (location + details required)
+  - Clear error messages with Alert component
+  - Submit button disabled during submission
+  - Dismissible error alerts
+
+**UI/UX**:
+- Dialog size: 70% viewport height, max 90vh, medium width
+- Icon-rich interface (Search, Star, Code, Info, Add, Delete icons)
+- Color-coded risk ratings matching app theme
+- Responsive layout with Grid system
+- Dividers for section separation
+- Success/error notifications via NotificationContext
+
+### 🔧 Backend Changes
+
+#### API Endpoints (3 new)
+1. **GET /repository/search**
+   - Parameters: q (required), limit, verified_only
+   - Returns: `List[VulnerabilityTemplateRead]`
+   - Uses case-insensitive ILIKE for fuzzy matching
+   - SQLAlchemy `case` and `func` for exact match scoring
+
+2. **GET /projects/{project_id}/template-suggestions**
+   - Parameters: limit (default 10)
+   - Returns: `List[VulnerabilityTemplateRead]`
+   - Queries project's template usage with JOIN
+   - Supplements with popular verified templates
+
+3. **POST /projects/{project_id}/findings**
+   - Parameters: title, description, remediation, risk_rating, template_id (optional), instances, issue_status (optional)
+   - Returns: `FindingReadWithInstances` (201 Created)
+   - Validates risk rating and issue status enums
+   - Validates instance structure (location + details required)
+   - Updates template usage_count and last_used
+   - Sends WebSocket notification
+   - Handles deduplication (existing finding by title)
+
+#### Database Operations
+- Template usage tracking: Increments `usage_count`, updates `last_used` and `updated_at`
+- Finding deduplication: Searches by project_id + title before creating
+- Instance creation: Links to finding_id, sets status='New - Unvalidated', timestamps with get_utc_now()
+- Transaction safety: flush() for getting IDs, commit() at end
+
+#### Imports Added
+- `Query` from fastapi (for query parameters with constraints)
+- `case`, `func` from sqlalchemy (for advanced SQL operations)
+
+### 📊 TypeScript Types (Frontend)
+
+Added 3 new interfaces:
+
+```typescript
+export interface VulnerabilityTemplate {
+  id: number;
+  title: string;
+  description: string;
+  cwe_id?: string;
+  cve_id?: string;
+  cvss_vector?: string;
+  cvss_score?: number;
+  // ... 12 more fields
+}
+
+export interface InstanceCreate {
+  location: string;
+  details: string;
+}
+
+export interface FindingCreate {
+  title: string;
+  description: string;
+  remediation: string;
+  risk_rating: RiskRating;
+  template_id?: number;
+  instances: InstanceCreate[];
+  issue_status?: IssueStatus;
+}
+```
+
+### 🚀 Integration
+
+**Dashboard Integration**:
+- Added "Quick Add Finding" button to Quick Actions section
+  - Primary color, positioned before "Upload Report"
+  - Opens QuickAddDialog modal
+- Added to mobile menu drawer
+  - First option in drawer list
+  - Closes drawer on click
+- Success callback: Refreshes project data and shows notification
+- Uses existing NotificationContext for user feedback
+
+**State Management**:
+- Added `quickAddDialogOpen` boolean state
+- Handlers: `setQuickAddDialogOpen(true/false)`
+- onSuccess: Calls `fetchProject()` and `showSuccess()`
+
+### 💡 Use Cases
+
+1. **Template-Based Creation**:
+   - User searches "XSS" → Selects "Cross-Site Scripting (Reflected)" template
+   - Form pre-fills with CWE-79 details
+   - User adds 5 affected URLs as instances
+   - Clicks "Create Finding" → Finding created with 5 instances
+
+2. **Manual Entry** (No Template):
+   - User skips search, fills form from scratch
+   - Adds custom title, description, remediation
+   - Creates instances for affected endpoints
+   - Template-free finding stored
+
+3. **Project-Specific Templates**:
+   - Dialog opens → Shows "Popular in this project" chips
+   - User sees templates already used (e.g., "SQL Injection")
+   - One-click selection for consistency
+
+4. **Bulk Instance Entry**:
+   - Found same XSS on 20 pages
+   - Search/select template once
+   - Add 20 instances with different URLs
+   - Single submission creates all
+
+### 🎯 Performance
+
+- **Debounced Search**: 300ms delay prevents excessive API calls while typing
+- **Parallel Suggestions**: Template suggestions load on dialog open (async)
+- **Form Validation**: Client-side validation before API call
+- **WebSocket**: Real-time updates notify other users of new findings
+- **Template Caching**: Usage count and last_used prevent repeated lookups
+
+### 🔒 Validation & Security
+
+**Backend Validation**:
+- Project existence check (404 if not found)
+- Risk rating enum validation (400 if invalid)
+- Issue status enum validation (400 if invalid)
+- Template existence check if template_id provided (404 if not found)
+- Instance count validation (400 if empty array)
+- Instance structure validation (400 if missing location/details)
+- Duplicate finding check (adds to existing if title matches)
+
+**Frontend Validation**:
+- Required field checks (title, description, remediation)
+- Instance minimum (at least 1 required)
+- Instance field validation (both location and details required)
+- Error alerts with clear messages
+- Submit button disabled during API call
+
+### 📈 Future Enhancements (Not in v0.7.0)
+
+- "Add Similar" button on existing findings (auto-select template)
+- Backend tests for search/suggestions endpoints
+- Filter templates by vulnerability type
+- Recent template history per user
+- Template favorites/bookmarks
+- Advanced search (CWE range, CVSS score range)
+
+---
+
 ## [0.6.0] - November 3, 2025
 
 ### ✨ New Features
