@@ -41,7 +41,7 @@ import {
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
-import { utils, writeFile } from 'xlsx';
+import ExcelJS from 'exceljs';
 
 import RiskChart from './RiskChart';
 import FindingsTable from './FindingsTable';
@@ -192,21 +192,49 @@ const Dashboard = () => {
   }, [projectId]);
 
   // Export findings to Excel
-  const exportToExcel = () => {
+  const handleExport = async () => {
     if (!project) return;
 
-    const data = project.findings.map((finding: Finding) => ({
-      Title: finding.title,
-      Risk: finding.risk_rating,
-      Description: finding.description,
-      Remediation: finding.remediation,
-      'Instance Count': finding.instances.length,
-    }));
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Findings');
 
-    const ws = utils.json_to_sheet(data);
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, 'Findings');
-    writeFile(wb, `${project.name}_findings.xlsx`);
+    // Define columns
+    worksheet.columns = [
+      { header: 'Title', key: 'title', width: 40 },
+      { header: 'Risk', key: 'risk', width: 15 },
+      { header: 'Description', key: 'description', width: 60 },
+      { header: 'Remediation', key: 'remediation', width: 60 },
+      { header: 'Instance Count', key: 'instanceCount', width: 15 },
+    ];
+
+    // Add data rows
+    project.findings.forEach(finding => {
+      worksheet.addRow({
+        title: finding.title,
+        risk: finding.risk_rating,
+        description: finding.description,
+        remediation: finding.remediation,
+        instanceCount: finding.instances.length,
+      });
+    });
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' },
+    };
+
+    // Generate buffer and download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${project.name}_findings.xlsx`;
+    link.click();
+    window.URL.revokeObjectURL(url);
   };
 
   // Update user preferences
