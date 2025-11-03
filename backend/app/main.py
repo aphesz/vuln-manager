@@ -49,6 +49,7 @@ from app.models import (
 # Use the RiskRating from FindingBase
 RiskRating = FindingBase.RiskRating
 from app.parsers import parse_xml_content
+from app import scoring
 from app.reports import generate_report_docx, generate_report_pdf
 from app.sla import (
     calculate_sla_deadline,
@@ -1907,6 +1908,138 @@ def delete_vulnerability_template(
     session.commit()
     
     logger.info(f"Deleted vulnerability template: {template_id}")
+
+
+# ============================================================================
+# SCORING CALCULATORS ENDPOINTS
+# ============================================================================
+
+class CVSSCalculateRequest(BaseModel):
+    """Request model for CVSS calculation."""
+    vector: str
+
+
+class CVSSCalculateResponse(BaseModel):
+    """Response model for CVSS calculation."""
+    vector: str
+    base_score: float
+    severity: str
+    is_valid: bool
+    error: Optional[str] = None
+
+
+@app.post("/api/cvss/calculate", response_model=CVSSCalculateResponse)
+def calculate_cvss(
+    request: CVSSCalculateRequest,
+    session: Session = Depends(get_session)
+):
+    """
+    Calculate CVSS 3.1 Base Score from a vector string.
+    
+    Uses the official CVSS 3.1 formula:
+    - Impact Sub-Score (ISS) calculation
+    - Scope-adjusted Impact
+    - Exploitability calculation
+    - Final Base Score with proper rounding
+    
+    Returns score, severity rating, and validation status.
+    """
+    vector = request.vector.strip()
+    
+    # Validate vector
+    is_valid, error_msg = scoring.validate_cvss_vector(vector)
+    if not is_valid:
+        return CVSSCalculateResponse(
+            vector=vector,
+            base_score=0.0,
+            severity="None",
+            is_valid=False,
+            error=error_msg
+        )
+    
+    # Calculate score
+    result = scoring.calculate_cvss_score(vector)
+    if result is None:
+        return CVSSCalculateResponse(
+            vector=vector,
+            base_score=0.0,
+            severity="None",
+            is_valid=False,
+            error="Failed to calculate CVSS score"
+        )
+    
+    base_score, severity = result
+    
+    logger.info(f"CVSS calculation: {vector} -> {base_score} ({severity})")
+    
+    return CVSSCalculateResponse(
+        vector=vector,
+        base_score=base_score,
+        severity=severity,
+        is_valid=True
+    )
+
+
+class OWASPCalculateRequest(BaseModel):
+    """Request model for OWASP risk calculation."""
+    likelihood: int
+    impact: int
+
+
+class OWASPCalculateResponse(BaseModel):
+    """Response model for OWASP risk calculation."""
+    likelihood: int
+    impact: int
+    risk_score: int
+    risk_rating: str
+    is_valid: bool
+    error: Optional[str] = None
+
+
+@app.post("/api/owasp/calculate", response_model=OWASPCalculateResponse)
+def calculate_owasp(
+    request: OWASPCalculateRequest,
+    session: Session = Depends(get_session)
+):
+    """
+    Calculate OWASP Risk Rating using Likelihood × Impact methodology.
+    
+    Inputs:
+    - likelihood: 1-9 scale (1=rare, 9=almost certain)
+    - impact: 1-9 scale (1=minimal, 9=catastrophic)
+    
+    Risk Rating Thresholds:
+    - Critical: >= 18
+    - High: 12-17
+    - Medium: 6-11
+    - Low: < 6
+    """
+    try:
+        risk_score, risk_rating = scoring.calculate_owasp_risk(
+            request.likelihood,
+            request.impact
+        )
+        
+        logger.info(f"OWASP calculation: L={request.likelihood} × I={request.impact} -> {risk_score} ({risk_rating})")
+        
+        return OWASPCalculateResponse(
+            likelihood=request.likelihood,
+            impact=request.impact,
+            risk_score=risk_score,
+            risk_rating=risk_rating,
+            is_valid=True
+        )
+    
+    except ValueError as e:
+        return OWASPCalculateResponse(
+            likelihood=request.likelihood,
+            impact=request.impact,
+            risk_score=0,
+            risk_rating="Low",
+            is_valid=False,
+            error=str(e)
+        )
+
     
     return None
 
