@@ -317,6 +317,7 @@ def get_risk_rating(raw_rating: str) -> RiskRating:
 async def process_and_save_issue(session: Session, project_id: int, issue_data: Dict[str, Any]):
     """
     Checks for an existing Finding, creates or updates it, and adds a new Instance.
+    Also auto-creates or links to vulnerability templates.
     
     Args:
         session: Database session
@@ -329,12 +330,16 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
     Raises:
         ValueError: If required data is missing or invalid
     """
+    import re
+    
     # Validate required fields
     if not issue_data.get('title'):
         raise ValueError("Finding title is required")
         
     title = issue_data['title']
     raw_risk = issue_data.get('risk_rating_raw')
+    description = issue_data.get('description', 'No description provided.')
+    remediation = issue_data.get('remediation', 'No remediation provided.')
     
     logger.info(f"Processing finding: {title!r}")
     logger.debug(f"Raw risk rating: {raw_risk!r}")
@@ -345,7 +350,19 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
     except Exception as e:
         logger.error(f"Error converting risk rating {raw_risk!r}: {e}")
         standard_risk = RiskRating.Low
-        
+    
+    # Extract CWE and CVE IDs from description
+    cwe_match = re.search(r'CWE-(\d+)', description, re.IGNORECASE)
+    cve_match = re.search(r'CVE-\d{4}-\d{4,}', description, re.IGNORECASE)
+    
+    cwe_id = f"CWE-{cwe_match.group(1)}" if cwe_match else None
+    cve_id = cve_match.group(0) if cve_match else None
+    
+    if cwe_id:
+        logger.debug(f"Extracted CWE: {cwe_id}")
+    if cve_id:
+        logger.debug(f"Extracted CVE: {cve_id}")
+    
     # 1. Check for existing Finding (Deduplication Logic)
     existing_finding = session.exec(
         select(Finding)
@@ -353,21 +370,73 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
         .where(Finding.title == title)
     ).first()
     
+    # 2. Find or create vulnerability template
+    template = None
+    template_id = None
+    
+    # Try to find existing template by title, CWE, or CVE
+    if cwe_id or cve_id:
+        statement = select(VulnerabilityTemplate)
+        if cwe_id:
+            statement = statement.where(VulnerabilityTemplate.cwe_id == cwe_id)
+        elif cve_id:
+            statement = statement.where(VulnerabilityTemplate.cve_id == cve_id)
+        template = session.exec(statement).first()
+    
+    # If no template found by CWE/CVE, try matching by title
+    if not template:
+        template = session.exec(
+            select(VulnerabilityTemplate).where(VulnerabilityTemplate.title == title)
+        ).first()
+    
+    # Create new template if none exists
+    if not template:
+        logger.info(f"Creating new vulnerability template from scan: {title}")
+        template = VulnerabilityTemplate(
+            title=title,
+            description=description,
+            cwe_id=cwe_id,
+            cve_id=cve_id,
+            default_risk_rating=standard_risk.value,
+            vulnerability_type=_extract_vulnerability_type(title),
+            remediation_summary=remediation[:500] if remediation else None,  # First 500 chars
+            remediation_steps=remediation,
+            source=issue_data.get('scanner_type', 'scan'),  # 'burp', 'nessus', etc.
+            is_verified=False,  # Auto-created templates need review
+            usage_count=0,
+            created_at=get_utc_now(),
+            updated_at=get_utc_now()
+        )
+        session.add(template)
+        session.flush()  # Get template.id
+    
+    template_id = template.id
+    
+    # Update template usage count
+    template.usage_count += 1
+    template.last_used = get_utc_now()
+    session.add(template)
+    
     if existing_finding:
         finding = existing_finding
+        # Update template_id if not set
+        if not finding.template_id:
+            finding.template_id = template_id
+            session.add(finding)
     else:
-        # 2. Create a new Finding
+        # 3. Create a new Finding with template link
         finding = Finding(
             project_id=project_id,
             title=title,
             risk_rating=standard_risk,
-            description=issue_data.get('description', 'No description provided.'),
-            remediation=issue_data.get('remediation', 'No remediation provided.')
+            description=description,
+            remediation=remediation,
+            template_id=template_id
         )
         session.add(finding)
         session.flush() # Flushes to get the finding.id for the instance
 
-    # 3. Create a new Instance
+    # 4. Create a new Instance
     instance = Instance(
         finding_id=finding.id,
         location=issue_data.get('location', 'N/A'),
@@ -386,7 +455,63 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
         'update' if existing_finding else 'create'
     )
     
+    logger.info(f"Finding processed successfully. Template ID: {template_id}, Finding ID: {finding.id}")
+    
     return True
+
+
+def _extract_vulnerability_type(title: str) -> str:
+    """
+    Extract vulnerability type from title for categorization.
+    
+    Args:
+        title: Finding title
+        
+    Returns:
+        str: Vulnerability type (XSS, SQLi, CSRF, etc.)
+    """
+    title_lower = title.lower()
+    
+    # Common vulnerability type patterns
+    if 'xss' in title_lower or 'cross-site scripting' in title_lower or 'cross site scripting' in title_lower:
+        return 'XSS'
+    elif 'sql' in title_lower and 'injection' in title_lower:
+        return 'SQLi'
+    elif 'csrf' in title_lower or 'cross-site request forgery' in title_lower:
+        return 'CSRF'
+    elif 'ssrf' in title_lower or 'server-side request forgery' in title_lower:
+        return 'SSRF'
+    elif 'rce' in title_lower or 'remote code execution' in title_lower:
+        return 'RCE'
+    elif 'lfi' in title_lower or 'local file inclusion' in title_lower:
+        return 'LFI'
+    elif 'rfi' in title_lower or 'remote file inclusion' in title_lower:
+        return 'RFI'
+    elif 'xxe' in title_lower or 'xml external entity' in title_lower:
+        return 'XXE'
+    elif 'idor' in title_lower or 'insecure direct object' in title_lower:
+        return 'IDOR'
+    elif 'path traversal' in title_lower or 'directory traversal' in title_lower:
+        return 'Path Traversal'
+    elif 'authentication' in title_lower or 'auth' in title_lower:
+        return 'Authentication'
+    elif 'authorization' in title_lower:
+        return 'Authorization'
+    elif 'session' in title_lower:
+        return 'Session Management'
+    elif 'encryption' in title_lower or 'crypto' in title_lower:
+        return 'Cryptography'
+    elif 'information disclosure' in title_lower or 'info leak' in title_lower:
+        return 'Information Disclosure'
+    elif 'dos' in title_lower or 'denial of service' in title_lower:
+        return 'DoS'
+    elif 'buffer overflow' in title_lower:
+        return 'Buffer Overflow'
+    elif 'insecure deserialization' in title_lower:
+        return 'Insecure Deserialization'
+    else:
+        return 'Other'
+
 
 # --- Health Check ---
 
@@ -605,6 +730,8 @@ async def _process_upload(
     # 2. Process and Save all issues to the database (Deduplication occurs here)
     new_instances_count = 0
     for issue in issues_data:
+        # Add scanner_type to issue data for template creation
+        issue['scanner_type'] = scanner_type
         await process_and_save_issue(session, project_id, issue)
         new_instances_count += 1
 
