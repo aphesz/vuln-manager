@@ -5,6 +5,7 @@ import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   Assessment as SLAIcon,
+  Security as SecurityIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
 
@@ -46,6 +47,23 @@ const AppHeader = () => {
         </Box>
       </Link>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Button
+          component={Link}
+          to="/vulnerability-repository"
+          variant="outlined"
+          startIcon={<SecurityIcon />}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="View vulnerability repository"
+        >
+          Vuln Repository
+        </Button>
         <Button
           component={Link}
           to="/sla"

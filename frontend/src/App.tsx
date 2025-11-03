@@ -5,6 +5,7 @@ import AppHeader from './components/AppHeader'
 import ProjectsLists from './components/ProjectsLists'
 import Dashboard from './components/Dashboard'
 import SLADashboard from './components/SLADashboard'
+import VulnerabilityTemplateManager from './components/VulnerabilityTemplateManager'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
 import { NotificationProvider } from './contexts/NotificationContext'
 
@@ -42,6 +43,8 @@ const App = () => {
             <Route path="/projects/:projectId" element={<Dashboard />} />
             {/* SLA Dashboard route */}
             <Route path="/sla" element={<SLADashboard />} />
+            {/* Vulnerability Repository route */}
+            <Route path="/vulnerability-repository" element={<VulnerabilityTemplateManager />} />
           </Routes>
         </Container>
 
