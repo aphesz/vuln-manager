@@ -46,6 +46,7 @@ import ExcelJS from 'exceljs';
 import RiskChart from './RiskChart';
 import FindingsTable from './FindingsTable';
 import JiraIntegrationSettings from './JiraIntegrationSettings';
+import ExportDialog, { ExportOptions } from './ExportDialog';
 import { DashboardSkeleton } from './LoadingSkeletons';
 import { useThemeContext } from '../theme/ThemeProvider';
 import WebSocketService from '../services/WebSocketService';
@@ -67,6 +68,7 @@ const Dashboard = () => {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<RiskRating | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const theme = useTheme();
@@ -191,8 +193,57 @@ const Dashboard = () => {
     fetchProject();
   }, [projectId]);
 
-  // Export findings to Excel
-  const handleExport = async () => {
+  // Export findings using the new backend endpoint
+  const handleExport = async (options: ExportOptions) => {
+    if (!project) return;
+
+    try {
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('format', options.format);
+      
+      if (options.columns.length > 0) {
+        params.append('columns', options.columns.join(','));
+      }
+      
+      if (options.filters.risk && options.filters.risk.length > 0) {
+        params.append('risk_filter', options.filters.risk.join(','));
+      }
+      
+      if (options.filters.issueStatus && options.filters.issueStatus.length > 0) {
+        params.append('status_filter', options.filters.issueStatus.join(','));
+      }
+      
+      if (options.filters.reviewStatus && options.filters.reviewStatus.length > 0) {
+        params.append('review_filter', options.filters.reviewStatus.join(','));
+      }
+
+      // Make request to backend
+      const response = await axios.get(
+        `${API_BASE_URL}/projects/${projectId}/export?${params.toString()}`,
+        { responseType: 'blob' }
+      );
+
+      // Create download link
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const extension = options.format === 'excel' ? 'xlsx' : 'csv';
+      link.download = `${project.name}_findings.${extension}`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+
+      showSuccess(`Export successful! Downloaded ${link.download}`);
+    } catch (error) {
+      console.error('Export error:', error);
+      showError('Failed to export findings. Please try again.');
+    }
+  };
+
+  // Legacy export function (kept for backward compatibility)
+  const handleLegacyExport = async () => {
     if (!project) return;
 
     const workbook = new ExcelJS.Workbook();
@@ -237,8 +288,10 @@ const Dashboard = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // Alias for backward compatibility
-  const exportToExcel = handleExport;
+  // Open export dialog
+  const exportToExcel = () => {
+    setExportDialogOpen(true);
+  };
 
   // Update user preferences
   const updatePreferences = (updates: typeof preferences) => {
@@ -1008,6 +1061,14 @@ const Dashboard = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Export Dialog */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        onExport={handleExport}
+        projectId={parseInt(projectId as string, 10)}
+      />
     </Box>
   );
 };

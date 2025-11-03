@@ -1,0 +1,254 @@
+import React, { useState } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  FormControl,
+  FormLabel,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
+  RadioGroup,
+  Radio,
+  Divider,
+  Box,
+  Typography,
+  Chip,
+} from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
+import { RiskRating, IssueStatus } from '../types';
+
+interface ExportDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onExport: (options: ExportOptions) => void;
+  projectId: number;
+}
+
+export interface ExportOptions {
+  format: 'excel' | 'csv';
+  columns: string[];
+  filters: {
+    risk?: RiskRating[];
+    issueStatus?: IssueStatus[];
+    reviewStatus?: string[];
+  };
+}
+
+// All available columns for export
+const AVAILABLE_COLUMNS = [
+  { key: 'title', label: 'Title', defaultChecked: true },
+  { key: 'risk_rating', label: 'Risk Rating', defaultChecked: true },
+  { key: 'description', label: 'Description', defaultChecked: true },
+  { key: 'remediation', label: 'Remediation', defaultChecked: true },
+  { key: 'instance_count', label: 'Instance Count', defaultChecked: true },
+  { key: 'review_status', label: 'Review Status', defaultChecked: false },
+  { key: 'reviewer_name', label: 'Reviewer', defaultChecked: false },
+  { key: 'jira_issue_key', label: 'Jira Issue', defaultChecked: false },
+  { key: 'jira_status', label: 'Jira Status', defaultChecked: false },
+  { key: 'remediation_deadline', label: 'Deadline', defaultChecked: false },
+  { key: 'sla_status', label: 'SLA Status', defaultChecked: false },
+  { key: 'remediation_owner', label: 'Owner', defaultChecked: false },
+  { key: 'issue_status', label: 'Issue Status', defaultChecked: false },
+];
+
+const RISK_LEVELS: RiskRating[] = ['Critical', 'High', 'Medium', 'Low', 'Informational'];
+const ISSUE_STATUSES: IssueStatus[] = ['Open', 'Partially Closed', 'Closed'];
+const REVIEW_STATUSES = ['Pending', 'In Review', 'Approved', 'Rejected'];
+
+export default function ExportDialog({ open, onClose, onExport, projectId }: ExportDialogProps) {
+  const [format, setFormat] = useState<'excel' | 'csv'>('excel');
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(
+    AVAILABLE_COLUMNS.filter(c => c.defaultChecked).map(c => c.key)
+  );
+  const [riskFilter, setRiskFilter] = useState<RiskRating[]>([]);
+  const [issueStatusFilter, setIssueStatusFilter] = useState<IssueStatus[]>([]);
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<string[]>([]);
+
+  const handleColumnToggle = (columnKey: string) => {
+    setSelectedColumns(prev =>
+      prev.includes(columnKey)
+        ? prev.filter(k => k !== columnKey)
+        : [...prev, columnKey]
+    );
+  };
+
+  const handleSelectAllColumns = () => {
+    setSelectedColumns(AVAILABLE_COLUMNS.map(c => c.key));
+  };
+
+  const handleDeselectAllColumns = () => {
+    setSelectedColumns([]);
+  };
+
+  const handleRiskFilterToggle = (risk: RiskRating) => {
+    setRiskFilter(prev =>
+      prev.includes(risk)
+        ? prev.filter(r => r !== risk)
+        : [...prev, risk]
+    );
+  };
+
+  const handleIssueStatusToggle = (status: IssueStatus) => {
+    setIssueStatusFilter(prev =>
+      prev.includes(status)
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
+    );
+  };
+
+  const handleReviewStatusToggle = (status: string) => {
+    setReviewStatusFilter(prev =>
+      prev.includes(status)
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
+    );
+  };
+
+  const handleExport = () => {
+    const options: ExportOptions = {
+      format,
+      columns: selectedColumns,
+      filters: {
+        risk: riskFilter.length > 0 ? riskFilter : undefined,
+        issueStatus: issueStatusFilter.length > 0 ? issueStatusFilter : undefined,
+        reviewStatus: reviewStatusFilter.length > 0 ? reviewStatusFilter : undefined,
+      },
+    };
+    onExport(options);
+    onClose();
+  };
+
+  const handleReset = () => {
+    setFormat('excel');
+    setSelectedColumns(AVAILABLE_COLUMNS.filter(c => c.defaultChecked).map(c => c.key));
+    setRiskFilter([]);
+    setIssueStatusFilter([]);
+    setReviewStatusFilter([]);
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Export Findings</DialogTitle>
+      <DialogContent dividers>
+        {/* Format Selection */}
+        <FormControl component="fieldset" sx={{ mb: 3 }}>
+          <FormLabel component="legend">Export Format</FormLabel>
+          <RadioGroup
+            row
+            value={format}
+            onChange={(e) => setFormat(e.target.value as 'excel' | 'csv')}
+          >
+            <FormControlLabel value="excel" control={<Radio />} label="Excel (.xlsx)" />
+            <FormControlLabel value="csv" control={<Radio />} label="CSV (.csv)" />
+          </RadioGroup>
+        </FormControl>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Column Selection */}
+        <FormControl component="fieldset" sx={{ mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <FormLabel component="legend">Select Columns</FormLabel>
+            <Box>
+              <Button size="small" onClick={handleSelectAllColumns}>
+                Select All
+              </Button>
+              <Button size="small" onClick={handleDeselectAllColumns}>
+                Deselect All
+              </Button>
+            </Box>
+          </Box>
+          <FormGroup>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
+              {AVAILABLE_COLUMNS.map(col => (
+                <FormControlLabel
+                  key={col.key}
+                  control={
+                    <Checkbox
+                      checked={selectedColumns.includes(col.key)}
+                      onChange={() => handleColumnToggle(col.key)}
+                    />
+                  }
+                  label={col.label}
+                />
+              ))}
+            </Box>
+          </FormGroup>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            {selectedColumns.length} column{selectedColumns.length !== 1 ? 's' : ''} selected
+          </Typography>
+        </FormControl>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Filters */}
+        <Typography variant="subtitle2" sx={{ mb: 2 }}>
+          Filters (optional - leave empty to export all)
+        </Typography>
+
+        {/* Risk Filter */}
+        <FormControl component="fieldset" sx={{ mb: 2 }}>
+          <FormLabel component="legend">Risk Rating</FormLabel>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+            {RISK_LEVELS.map(risk => (
+              <Chip
+                key={risk}
+                label={risk}
+                onClick={() => handleRiskFilterToggle(risk)}
+                color={riskFilter.includes(risk) ? 'primary' : 'default'}
+                variant={riskFilter.includes(risk) ? 'filled' : 'outlined'}
+              />
+            ))}
+          </Box>
+        </FormControl>
+
+        {/* Issue Status Filter */}
+        <FormControl component="fieldset" sx={{ mb: 2 }}>
+          <FormLabel component="legend">Issue Status</FormLabel>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+            {ISSUE_STATUSES.map(status => (
+              <Chip
+                key={status}
+                label={status}
+                onClick={() => handleIssueStatusToggle(status)}
+                color={issueStatusFilter.includes(status) ? 'primary' : 'default'}
+                variant={issueStatusFilter.includes(status) ? 'filled' : 'outlined'}
+              />
+            ))}
+          </Box>
+        </FormControl>
+
+        {/* Review Status Filter */}
+        <FormControl component="fieldset">
+          <FormLabel component="legend">Review Status</FormLabel>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+            {REVIEW_STATUSES.map(status => (
+              <Chip
+                key={status}
+                label={status}
+                onClick={() => handleReviewStatusToggle(status)}
+                color={reviewStatusFilter.includes(status) ? 'primary' : 'default'}
+                variant={reviewStatusFilter.includes(status) ? 'filled' : 'outlined'}
+              />
+            ))}
+          </Box>
+        </FormControl>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleReset}>Reset</Button>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          onClick={handleExport}
+          variant="contained"
+          startIcon={<DownloadIcon />}
+          disabled={selectedColumns.length === 0}
+        >
+          Export
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

@@ -3,7 +3,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text
 from typing import Optional, List, Dict, Any
@@ -913,6 +913,182 @@ def get_pdf_report(project_id: int, session: Session = Depends(get_session)):
         media_type="application/pdf",
         filename=f"{project.name.replace(' ', '_')}_Report.pdf",
     )
+
+# --- Export Endpoints ---
+
+@app.get("/projects/{project_id}/export")
+def export_findings(
+    project_id: int,
+    format: str = "excel",  # 'excel' or 'csv'
+    columns: Optional[str] = None,  # Comma-separated column names
+    risk_filter: Optional[str] = None,  # Comma-separated risk levels
+    status_filter: Optional[str] = None,  # Comma-separated issue statuses
+    review_filter: Optional[str] = None,  # Comma-separated review statuses
+    session: Session = Depends(get_session)
+):
+    """
+    Export findings with customizable columns and filters.
+    
+    Query Parameters:
+    - format: 'excel' or 'csv' (default: 'excel')
+    - columns: Comma-separated list of columns to include (default: all)
+              Available: title, risk_rating, description, remediation, instance_count,
+                        review_status, reviewer_name, jira_issue_key, jira_status,
+                        remediation_deadline, sla_status, remediation_owner, issue_status
+    - risk_filter: Comma-separated risk levels (Critical, High, Medium, Low, Informational)
+    - status_filter: Comma-separated issue statuses (Open, Partially Closed, Closed)
+    - review_filter: Comma-separated review statuses (Pending, In Review, Approved, Rejected)
+    """
+    import csv
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    
+    # Fetch project
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Fetch findings with instances
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # Apply filters
+    filtered_findings = []
+    for finding in findings:
+        # Risk filter
+        if risk_filter:
+            risk_levels = [r.strip() for r in risk_filter.split(',')]
+            if finding.risk_rating not in risk_levels:
+                continue
+        
+        # Issue status filter
+        if status_filter:
+            statuses = [s.strip() for s in status_filter.split(',')]
+            if finding.issue_status not in statuses:
+                continue
+        
+        # Review status filter
+        if review_filter:
+            reviews = [r.strip() for r in review_filter.split(',')]
+            if finding.review_status not in reviews:
+                continue
+        
+        filtered_findings.append(finding)
+    
+    # Define all available columns
+    all_columns = {
+        'title': 'Title',
+        'risk_rating': 'Risk Rating',
+        'description': 'Description',
+        'remediation': 'Remediation',
+        'instance_count': 'Instance Count',
+        'review_status': 'Review Status',
+        'reviewer_name': 'Reviewer',
+        'jira_issue_key': 'Jira Issue',
+        'jira_status': 'Jira Status',
+        'remediation_deadline': 'Deadline',
+        'sla_status': 'SLA Status',
+        'remediation_owner': 'Owner',
+        'issue_status': 'Issue Status',
+    }
+    
+    # Parse selected columns
+    if columns:
+        selected_cols = [c.strip() for c in columns.split(',')]
+        # Validate columns
+        invalid_cols = [c for c in selected_cols if c not in all_columns]
+        if invalid_cols:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid columns: {', '.join(invalid_cols)}"
+            )
+        column_map = {k: v for k, v in all_columns.items() if k in selected_cols}
+    else:
+        column_map = all_columns
+    
+    # Build data rows
+    rows = []
+    for finding in filtered_findings:
+        row = {}
+        for col_key, col_name in column_map.items():
+            if col_key == 'instance_count':
+                # Count instances
+                instance_count = session.exec(
+                    select(Instance).where(Instance.finding_id == finding.id)
+                ).all()
+                row[col_name] = len(instance_count)
+            else:
+                # Get attribute value
+                value = getattr(finding, col_key, '')
+                row[col_name] = value if value is not None else ''
+        rows.append(row)
+    
+    # Generate Excel file
+    if format.lower() == 'excel':
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Findings"
+        
+        # Add headers
+        headers = list(column_map.values())
+        ws.append(headers)
+        
+        # Style header row
+        header_fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
+        header_font = Font(bold=True)
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+        
+        # Add data rows
+        for row in rows:
+            ws.append([row.get(h, '') for h in headers])
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 60)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # Save to bytes
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        return StreamingResponse(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_findings.xlsx"}
+        )
+    
+    # Generate CSV file
+    elif format.lower() == 'csv':
+        output = io.StringIO()
+        headers = list(column_map.values())
+        writer = csv.DictWriter(output, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+        
+        # Convert to bytes
+        output.seek(0)
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type='text/csv',
+            headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_findings.csv"}
+        )
+    
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format. Use 'excel' or 'csv'")
 
 # --- Peer Review Workflow Endpoints ---
 
