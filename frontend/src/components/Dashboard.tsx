@@ -77,6 +77,7 @@ const Dashboard = () => {
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [quickAddDialogOpen, setQuickAddDialogOpen] = useState(false);
+  const [preSelectedTemplateId, setPreSelectedTemplateId] = useState<number | undefined>(undefined);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<RiskRating | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const theme = useTheme();
@@ -837,6 +838,10 @@ const Dashboard = () => {
                     updatePreferences({ ...preferences, tableColumns: columns })
                   }
                   onRefresh={fetchProject}
+                  onAddSimilar={(templateId: number) => {
+                    setPreSelectedTemplateId(templateId);
+                    setQuickAddDialogOpen(true);
+                  }}
                 />
               </CardContent>
             </Card>
@@ -921,6 +926,10 @@ const Dashboard = () => {
               updatePreferences({ ...preferences, tableColumns: columns })
             }
             onRefresh={fetchProject}
+            onAddSimilar={(templateId: number) => {
+              setPreSelectedTemplateId(templateId);
+              setQuickAddDialogOpen(true);
+            }}
           />
         </Grid>
       </Grid>
@@ -1144,12 +1153,17 @@ const Dashboard = () => {
       {/* Quick Add Dialog */}
       <QuickAddDialog
         open={quickAddDialogOpen}
-        onClose={() => setQuickAddDialogOpen(false)}
+        onClose={() => {
+          setQuickAddDialogOpen(false);
+          setPreSelectedTemplateId(undefined); // Clear pre-selection on close
+        }}
         onSuccess={() => {
           fetchProject();
           showSuccess('Finding created successfully');
+          setPreSelectedTemplateId(undefined); // Clear pre-selection on success
         }}
         projectId={parseInt(projectId as string, 10)}
+        preSelectedTemplateId={preSelectedTemplateId}
       />
     </Box>
   );

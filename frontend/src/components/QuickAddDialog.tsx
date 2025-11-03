@@ -40,9 +40,16 @@ interface QuickAddDialogProps {
   onClose: () => void;
   onSuccess: () => void;
   projectId: number;
+  preSelectedTemplateId?: number; // Optional: Auto-select template on open
 }
 
-const QuickAddDialog: React.FC<QuickAddDialogProps> = ({ open, onClose, onSuccess, projectId }) => {
+const QuickAddDialog: React.FC<QuickAddDialogProps> = ({ 
+  open, 
+  onClose, 
+  onSuccess, 
+  projectId,
+  preSelectedTemplateId 
+}) => {
   // Template search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<VulnerabilityTemplate[]>([]);
@@ -68,8 +75,13 @@ const QuickAddDialog: React.FC<QuickAddDialogProps> = ({ open, onClose, onSucces
     if (open) {
       loadSuggestions();
       resetForm();
+      
+      // Load pre-selected template if provided
+      if (preSelectedTemplateId) {
+        loadPreSelectedTemplate(preSelectedTemplateId);
+      }
     }
-  }, [open, projectId]);
+  }, [open, projectId, preSelectedTemplateId]);
 
   // Search templates with debouncing
   useEffect(() => {
@@ -82,6 +94,17 @@ const QuickAddDialog: React.FC<QuickAddDialogProps> = ({ open, onClose, onSucces
       setSearchResults([]);
     }
   }, [searchQuery]);
+
+  const loadPreSelectedTemplate = async (templateId: number) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/vulnerability-templates/${templateId}`);
+      const template = response.data;
+      handleTemplateSelect(template);
+    } catch (err) {
+      console.error('Failed to load pre-selected template:', err);
+      setError(`Failed to load template #${templateId}`);
+    }
+  };
 
   const loadSuggestions = async () => {
     try {

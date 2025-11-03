@@ -51,6 +51,7 @@ import {
   Delete as DeleteIcon,
   FileDownload as ExportIcon,
   SwapVert as BulkEditIcon,
+  ContentCopy as AddSimilarIcon,
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import FindingReviewPanel from './FindingReviewPanel';
@@ -373,6 +374,7 @@ interface FindingsTableProps {
   };
   onPreferencesChange: (columns: any) => void;
   onRefresh?: () => void;
+  onAddSimilar?: (templateId: number) => void; // Callback for "Add Similar" button
 }
 
 // Utility function to strip HTML tags and decode HTML entities
@@ -402,7 +404,7 @@ const stripHtmlTags = (html: string): string => {
 };
 
 // Main FindingsTable component
-const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }: FindingsTableProps) => {
+const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, onAddSimilar }: FindingsTableProps) => {
   const [selectedFinding, setSelectedFinding] = useState(null);
   const [selectedRows, setSelectedRows] = useState<any[]>([]);
   const [bulkAction, setBulkAction] = useState<string>('');
@@ -901,6 +903,14 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh }
           onClick={() => setSelectedFinding(params.row)}
           showInMenu
         />,
+        ...(onAddSimilar && params.row.template_id ? [
+          <GridActionsCellItem
+            icon={<AddSimilarIcon />}
+            label="Add Similar Finding"
+            onClick={() => onAddSimilar(params.row.template_id)}
+            showInMenu
+          />
+        ] : []),
         <GridActionsCellItem
           label="Export Finding"
           onClick={() => {/* TODO: Implement export */}}
