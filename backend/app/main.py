@@ -1653,7 +1653,7 @@ def create_or_update_user_preferences(
 # VULNERABILITY REPOSITORY ENDPOINTS
 # =====================================================
 
-@app.get("/api/vulnerability-templates", response_model=List[VulnerabilityTemplateRead])
+@app.get("/vulnerability-templates", response_model=List[VulnerabilityTemplateRead])
 def get_vulnerability_templates(
     skip: int = 0,
     limit: int = 100,
@@ -1714,7 +1714,7 @@ def get_vulnerability_templates(
     return templates
 
 
-@app.post("/api/vulnerability-templates", response_model=VulnerabilityTemplateRead, status_code=201)
+@app.post("/vulnerability-templates", response_model=VulnerabilityTemplateRead, status_code=201)
 async def create_vulnerability_template(
     title: str = Body(...),
     description: str = Body(...),
@@ -1751,6 +1751,25 @@ async def create_vulnerability_template(
     if owasp_impact is not None and (owasp_impact < 1 or owasp_impact > 9):
         raise HTTPException(status_code=400, detail="OWASP impact must be between 1 and 9")
     
+    # Check for duplicate templates (same title + CWE/CVE combination)
+    duplicate_check = select(VulnerabilityTemplate).where(
+        VulnerabilityTemplate.title == title
+    )
+    
+    # If CWE or CVE provided, use them for stricter duplicate detection
+    if cwe_id:
+        duplicate_check = duplicate_check.where(VulnerabilityTemplate.cwe_id == cwe_id)
+    if cve_id:
+        duplicate_check = duplicate_check.where(VulnerabilityTemplate.cve_id == cve_id)
+    
+    existing_template = session.exec(duplicate_check).first()
+    
+    if existing_template:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A template with this title{' and CWE ID' if cwe_id else ''}{' and CVE ID' if cve_id else ''} already exists (ID: {existing_template.id})"
+        )
+    
     # Create template
     template = VulnerabilityTemplate(
         title=title,
@@ -1783,7 +1802,7 @@ async def create_vulnerability_template(
     return template
 
 
-@app.get("/api/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
+@app.get("/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
 def get_vulnerability_template(
     template_id: int,
     session: Session = Depends(get_session)
@@ -1798,7 +1817,7 @@ def get_vulnerability_template(
     return template
 
 
-@app.patch("/api/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
+@app.patch("/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
 async def update_vulnerability_template(
     template_id: int,
     title: Optional[str] = Body(None),
@@ -1878,7 +1897,7 @@ async def update_vulnerability_template(
     return template
 
 
-@app.delete("/api/vulnerability-templates/{template_id}", status_code=204)
+@app.delete("/vulnerability-templates/{template_id}", status_code=204)
 def delete_vulnerability_template(
     template_id: int,
     session: Session = Depends(get_session)
@@ -1910,6 +1929,64 @@ def delete_vulnerability_template(
     logger.info(f"Deleted vulnerability template: {template_id}")
 
 
+@app.post("/vulnerability-templates/cleanup-duplicates")
+def cleanup_duplicate_templates(
+    session: Session = Depends(get_session)
+):
+    """
+    Remove duplicate vulnerability templates, keeping the most recent version
+    with the highest usage count for each title+CWE/CVE combination.
+    
+    Returns summary of templates removed.
+    """
+    from app.models import VulnerabilityTemplate
+    from collections import defaultdict
+    
+    # Get all templates
+    all_templates = session.exec(select(VulnerabilityTemplate)).all()
+    
+    # Group by title + CWE + CVE combination
+    groups = defaultdict(list)
+    for template in all_templates:
+        key = (template.title, template.cwe_id or '', template.cve_id or '')
+        groups[key].append(template)
+    
+    removed_count = 0
+    removed_ids = []
+    kept_templates = []
+    
+    # Process each group
+    for key, templates_in_group in groups.items():
+        if len(templates_in_group) > 1:
+            # Sort by: usage_count DESC, created_at DESC
+            templates_in_group.sort(
+                key=lambda t: (t.usage_count, t.created_at),
+                reverse=True
+            )
+            
+            # Keep the first one (highest usage, most recent)
+            keep = templates_in_group[0]
+            kept_templates.append(keep.id)
+            
+            # Remove the rest
+            for template in templates_in_group[1:]:
+                # Only remove if usage_count is 0 (not linked to findings)
+                if template.usage_count == 0:
+                    session.delete(template)
+                    removed_ids.append(template.id)
+                    removed_count += 1
+                    logger.info(f"Removed duplicate template: {template.id} - {template.title}")
+    
+    session.commit()
+    
+    return {
+        "removed_count": removed_count,
+        "removed_ids": removed_ids,
+        "kept_templates": kept_templates,
+        "message": f"Removed {removed_count} duplicate template(s)"
+    }
+
+
 # ============================================================================
 # SCORING CALCULATORS ENDPOINTS
 # ============================================================================
@@ -1928,7 +2005,7 @@ class CVSSCalculateResponse(BaseModel):
     error: Optional[str] = None
 
 
-@app.post("/api/cvss/calculate", response_model=CVSSCalculateResponse)
+@app.post("/cvss/calculate", response_model=CVSSCalculateResponse)
 def calculate_cvss(
     request: CVSSCalculateRequest,
     session: Session = Depends(get_session)
@@ -1996,7 +2073,7 @@ class OWASPCalculateResponse(BaseModel):
     error: Optional[str] = None
 
 
-@app.post("/api/owasp/calculate", response_model=OWASPCalculateResponse)
+@app.post("/owasp/calculate", response_model=OWASPCalculateResponse)
 def calculate_owasp(
     request: OWASPCalculateRequest,
     session: Session = Depends(get_session)

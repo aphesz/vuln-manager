@@ -1,17 +1,28 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useTheme, Box, IconButton, Button } from '@mui/material'
+import { useTheme, Box, IconButton, Button, Menu, MenuItem } from '@mui/material'
 import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   Assessment as SLAIcon,
   Security as SecurityIcon,
+  Calculate as CalculateIcon,
+  KeyboardArrowDown as ArrowDownIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
 
 const AppHeader = () => {
   const theme = useTheme()
   const { mode, toggleTheme } = useThemeContext()
+  const [calculatorMenuAnchor, setCalculatorMenuAnchor] = useState<null | HTMLElement>(null)
+  
+  const handleCalculatorMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setCalculatorMenuAnchor(event.currentTarget)
+  }
+  
+  const handleCalculatorMenuClose = () => {
+    setCalculatorMenuAnchor(null)
+  }
   
   return (
     <Box
@@ -64,6 +75,51 @@ const AppHeader = () => {
         >
           Vuln Repository
         </Button>
+        <Button
+          variant="outlined"
+          startIcon={<CalculateIcon />}
+          endIcon={<ArrowDownIcon />}
+          onClick={handleCalculatorMenuOpen}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="Open calculators menu"
+        >
+          Calculators
+        </Button>
+        <Menu
+          anchorEl={calculatorMenuAnchor}
+          open={Boolean(calculatorMenuAnchor)}
+          onClose={handleCalculatorMenuClose}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'right',
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'right',
+          }}
+        >
+          <MenuItem
+            component={Link}
+            to="/calculators/cvss"
+            onClick={handleCalculatorMenuClose}
+          >
+            CVSS 3.1 Calculator
+          </MenuItem>
+          <MenuItem
+            component={Link}
+            to="/calculators/owasp"
+            onClick={handleCalculatorMenuClose}
+          >
+            OWASP Risk Calculator
+          </MenuItem>
+        </Menu>
         <Button
           component={Link}
           to="/sla"
