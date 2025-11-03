@@ -78,3 +78,47 @@ export interface RiskSummary {
   low: number;
   informational: number;
 }
+
+export interface SLAComplianceMetrics {
+  on_track: number;
+  at_risk: number;
+  overdue: number;
+  total: number;
+  compliance_rate: number;
+}
+
+export interface ReviewProgressMetrics {
+  pending: number;
+  in_review: number;
+  approved: number;
+  rejected: number;
+  total: number;
+  approval_rate: number;
+}
+
+export interface FindingTrend {
+  date: string;
+  total_findings: number;
+  open_findings: number;
+  closed_findings: number;
+}
+
+export interface TopVulnerability {
+  title: string;
+  risk_rating: string;
+  instance_count: number;
+  finding_id: number;
+}
+
+export interface ProjectMetrics {
+  sla_compliance: SLAComplianceMetrics;
+  review_progress: ReviewProgressMetrics;
+  finding_trends: FindingTrend[];
+  top_vulnerabilities: TopVulnerability[];
+  total_findings: number;
+  total_instances: number;
+  average_cvss_score: number | null;
+  findings_with_jira: number;
+  jira_sync_rate: number;
+  average_time_to_approval: number | null;
+}

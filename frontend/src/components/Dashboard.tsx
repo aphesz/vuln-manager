@@ -47,6 +47,10 @@ import RiskChart from './RiskChart';
 import FindingsTable from './FindingsTable';
 import JiraIntegrationSettings from './JiraIntegrationSettings';
 import ExportDialog, { ExportOptions } from './ExportDialog';
+import SLAComplianceWidget from './SLAComplianceWidget';
+import ReviewProgressWidget from './ReviewProgressWidget';
+import TopVulnerabilitiesWidget from './TopVulnerabilitiesWidget';
+import KeyMetricsOverview from './KeyMetricsOverview';
 import { DashboardSkeleton } from './LoadingSkeletons';
 import { useThemeContext } from '../theme/ThemeProvider';
 import WebSocketService from '../services/WebSocketService';
@@ -54,7 +58,7 @@ import MetricsCards from './MetricsCards';
 import UserPreferencesService from '../services/UserPreferencesService';
 import { useNotification } from '../contexts/NotificationContext';
 import { getErrorMessage, retryWithBackoff, validateFileSize, formatFileSize } from '../utils/errorHandler';
-import type { Finding, Project, RiskRating } from '../types';
+import type { Finding, Project, RiskRating, ProjectMetrics } from '../types';
 
 // Use relative path for API calls - proxied through Nginx in Docker
 const API_BASE_URL = '/api';
@@ -63,6 +67,7 @@ const Dashboard = () => {
   const { projectId } = useParams();
   const { showSuccess, showError } = useNotification();
   const [project, setProject] = useState<Project | null>(null);
+  const [metrics, setMetrics] = useState<ProjectMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -168,11 +173,17 @@ const Dashboard = () => {
     const startTime = Date.now();
     
     try {
-      const response = await retryWithBackoff(async () => {
-        return await axios.get(`${API_BASE_URL}/projects/${projectId}`);
-      }, 3); // Retry up to 3 times for data fetching
+      const [projectResponse, metricsResponse] = await Promise.all([
+        retryWithBackoff(async () => {
+          return await axios.get(`${API_BASE_URL}/projects/${projectId}`);
+        }, 3),
+        retryWithBackoff(async () => {
+          return await axios.get(`${API_BASE_URL}/projects/${projectId}/metrics`);
+        }, 3)
+      ]);
       
-      setProject(response.data);
+      setProject(projectResponse.data);
+      setMetrics(metricsResponse.data);
       
       // Ensure minimum skeleton display time
       const elapsedTime = Date.now() - startTime;
@@ -639,6 +650,50 @@ const Dashboard = () => {
 
       {/* Dashboard Grid */}
       <Grid container spacing={3}>
+        {/* Key Metrics Overview */}
+        {metrics && (
+          <Grid item xs={12}>
+            <KeyMetricsOverview
+              totalFindings={metrics.total_findings}
+              totalInstances={metrics.total_instances}
+              jiraSyncRate={metrics.jira_sync_rate}
+              findingsWithJira={metrics.findings_with_jira}
+            />
+          </Grid>
+        )}
+
+        {/* Dashboard Widgets Row */}
+        {metrics && (
+          <Grid item xs={12}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={4}>
+                <SLAComplianceWidget
+                  onTrack={metrics.sla_compliance.on_track}
+                  atRisk={metrics.sla_compliance.at_risk}
+                  overdue={metrics.sla_compliance.overdue}
+                  total={metrics.sla_compliance.total}
+                  complianceRate={metrics.sla_compliance.compliance_rate}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <ReviewProgressWidget
+                  pending={metrics.review_progress.pending}
+                  inReview={metrics.review_progress.in_review}
+                  approved={metrics.review_progress.approved}
+                  rejected={metrics.review_progress.rejected}
+                  total={metrics.review_progress.total}
+                  approvalRate={metrics.review_progress.approval_rate}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TopVulnerabilitiesWidget
+                  vulnerabilities={metrics.top_vulnerabilities}
+                />
+              </Grid>
+            </Grid>
+          </Grid>
+        )}
+
         {/* Metrics Cards */}
         <Grid item xs={12}>
           <MetricsCards findings={project?.findings || []} />

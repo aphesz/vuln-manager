@@ -348,3 +348,58 @@ class FindingStatus(SQLModel): # <-- ADDED THIS MODEL TO FIX THE IMPORTERROR
     """A utility class for finding statuses (not mapped to DB table)."""
     status_name: str
     status_id: int
+
+# --- Dashboard Metrics Models ---
+
+class SLAComplianceMetrics(SQLModel):
+    """SLA compliance breakdown for dashboard widget."""
+    on_track: int
+    at_risk: int
+    overdue: int
+    total: int
+    compliance_rate: float  # Percentage on track
+
+class FindingTrend(SQLModel):
+    """Single data point for finding trends chart."""
+    date: str  # ISO date format
+    total_findings: int
+    open_findings: int
+    closed_findings: int
+
+class TopVulnerability(SQLModel):
+    """Top vulnerability by instance count."""
+    title: str
+    risk_rating: str
+    instance_count: int
+    finding_id: int
+
+class ReviewProgressMetrics(SQLModel):
+    """Review workflow progress metrics."""
+    pending: int
+    in_review: int
+    approved: int
+    rejected: int
+    total: int
+    approval_rate: float  # Percentage approved
+
+class ProjectMetrics(SQLModel):
+    """Comprehensive dashboard metrics for a project."""
+    # SLA Compliance
+    sla_compliance: SLAComplianceMetrics
+    
+    # Review Progress
+    review_progress: ReviewProgressMetrics
+    
+    # Finding Trends (last 30 days or since project start)
+    finding_trends: List[FindingTrend]
+    
+    # Top Vulnerabilities (top 5 by instance count)
+    top_vulnerabilities: List[TopVulnerability]
+    
+    # Key Metrics
+    total_findings: int
+    total_instances: int
+    average_cvss_score: Optional[float]
+    findings_with_jira: int
+    jira_sync_rate: float  # Percentage with Jira tickets
+    average_time_to_approval: Optional[float]  # Days, if available

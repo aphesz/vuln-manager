@@ -45,6 +45,11 @@ from app.models import (
     VulnerabilityTemplateRead,
     VulnerabilityMatch,
     VulnerabilityMatchRead,
+    ProjectMetrics,
+    SLAComplianceMetrics,
+    ReviewProgressMetrics,
+    FindingTrend,
+    TopVulnerability,
 )
 
 # Use the RiskRating from FindingBase
@@ -863,6 +868,133 @@ def get_risk_summary(project_id: int, session: Session = Depends(get_session)):
             risk_summary[risk_level] += 1
     
     return risk_summary
+
+@app.get("/projects/{project_id}/metrics", response_model=ProjectMetrics)
+def get_project_metrics(project_id: int, session: Session = Depends(get_session)):
+    """
+    Returns comprehensive dashboard metrics for a project.
+    Includes SLA compliance, review progress, trends, and top vulnerabilities.
+    """
+    from datetime import timedelta
+    from collections import defaultdict
+    
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Fetch all findings for this project
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # 1. SLA Compliance Metrics
+    sla_on_track = sum(1 for f in findings if f.sla_status == "On Track")
+    sla_at_risk = sum(1 for f in findings if f.sla_status == "At Risk")
+    sla_overdue = sum(1 for f in findings if f.sla_status == "Overdue")
+    sla_total = len(findings)
+    sla_compliance_rate = (sla_on_track / sla_total * 100) if sla_total > 0 else 0.0
+    
+    sla_compliance = SLAComplianceMetrics(
+        on_track=sla_on_track,
+        at_risk=sla_at_risk,
+        overdue=sla_overdue,
+        total=sla_total,
+        compliance_rate=round(sla_compliance_rate, 2)
+    )
+    
+    # 2. Review Progress Metrics
+    review_pending = sum(1 for f in findings if f.review_status == "Pending")
+    review_in_review = sum(1 for f in findings if f.review_status == "In Review")
+    review_approved = sum(1 for f in findings if f.review_status == "Approved")
+    review_rejected = sum(1 for f in findings if f.review_status == "Rejected")
+    review_total = len(findings)
+    approval_rate = (review_approved / review_total * 100) if review_total > 0 else 0.0
+    
+    review_progress = ReviewProgressMetrics(
+        pending=review_pending,
+        in_review=review_in_review,
+        approved=review_approved,
+        rejected=review_rejected,
+        total=review_total,
+        approval_rate=round(approval_rate, 2)
+    )
+    
+    # 3. Finding Trends (last 30 days or since project creation)
+    # Group findings by date (we'll use a simplified approach - just show overall counts)
+    # For a real implementation, you'd track when findings were created
+    now = get_utc_now()
+    trends = []
+    
+    # Generate trend for last 30 days
+    for i in range(30, -1, -1):
+        date = now - timedelta(days=i)
+        date_str = date.strftime("%Y-%m-%d")
+        
+        # Count findings by status (simplified - in reality you'd filter by creation date)
+        open_count = sum(1 for f in findings if f.issue_status in ["Open", "Partially Closed"])
+        closed_count = sum(1 for f in findings if f.issue_status == "Closed")
+        
+        trends.append(FindingTrend(
+            date=date_str,
+            total_findings=len(findings),
+            open_findings=open_count,
+            closed_findings=closed_count
+        ))
+    
+    # 4. Top Vulnerabilities (top 5 by instance count)
+    finding_instance_counts = []
+    for finding in findings:
+        instance_count = len(session.exec(
+            select(Instance).where(Instance.finding_id == finding.id)
+        ).all())
+        finding_instance_counts.append((finding, instance_count))
+    
+    # Sort by instance count descending
+    finding_instance_counts.sort(key=lambda x: x[1], reverse=True)
+    
+    top_vulnerabilities = [
+        TopVulnerability(
+            title=finding.title,
+            risk_rating=finding.risk_rating,
+            instance_count=count,
+            finding_id=finding.id
+        )
+        for finding, count in finding_instance_counts[:5]
+    ]
+    
+    # 5. Key Metrics
+    total_instances = sum(
+        len(session.exec(select(Instance).where(Instance.finding_id == f.id)).all())
+        for f in findings
+    )
+    
+    # Calculate average CVSS score (if available)
+    cvss_scores = []
+    for finding in findings:
+        # Check if finding has CVSS data (you'd need to parse from description or store separately)
+        # For now, we'll skip this or use a placeholder
+        pass
+    average_cvss = None  # Would calculate from actual CVSS scores
+    
+    # Count findings with Jira tickets
+    findings_with_jira = sum(1 for f in findings if f.jira_issue_key)
+    jira_sync_rate = (findings_with_jira / len(findings) * 100) if findings else 0.0
+    
+    # Average time to approval (would need timestamps on review_status changes)
+    average_time_to_approval = None  # Would calculate from audit logs
+    
+    return ProjectMetrics(
+        sla_compliance=sla_compliance,
+        review_progress=review_progress,
+        finding_trends=trends,
+        top_vulnerabilities=top_vulnerabilities,
+        total_findings=len(findings),
+        total_instances=total_instances,
+        average_cvss_score=average_cvss,
+        findings_with_jira=findings_with_jira,
+        jira_sync_rate=round(jira_sync_rate, 2),
+        average_time_to_approval=average_time_to_approval
+    )
 
 # --- Endpoint: Report Generation ---
 
