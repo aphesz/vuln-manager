@@ -39,6 +39,8 @@ import {
   Close as CloseIcon,
   Assessment as ReportIcon,
   Add as AddIcon,
+  Description as DocxIcon,
+  PictureAsPdf as PdfIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -898,7 +900,8 @@ const Dashboard = () => {
                   Export Excel
                 </Button>
                 <Button
-                  variant="outlined"
+                  variant="contained"
+                  startIcon={<DocxIcon />}
                   href={`${API_BASE_URL}/projects/${projectId}/report.docx`}
                   target="_blank"
                   download
@@ -906,7 +909,8 @@ const Dashboard = () => {
                   Export DOCX
                 </Button>
                 <Button
-                  variant="outlined"
+                  variant="contained"
+                  startIcon={<PdfIcon />}
                   href={`${API_BASE_URL}/projects/${projectId}/report.pdf`}
                   target="_blank"
                 >
