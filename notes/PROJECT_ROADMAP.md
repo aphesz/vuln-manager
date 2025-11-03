@@ -1,11 +1,11 @@
 # 🗺️ VulnManager Project Roadmap
 
 **Last Updated:** November 3, 2025  
-**Version:** 1.3.0 Planning
+**Version:** 0.4.0 Planning
 
 ---
 
-## 📊 Current Status (v1.2.0 - Completed)
+## 📊 Current Status (v0.3.1 - Completed)
 
 ### ✅ Core Features Implemented
 - Full-stack architecture (FastAPI + React + PostgreSQL)
@@ -35,20 +35,20 @@
 ## 🎯 Roadmap Overview
 
 ```
-Current: v1.2.0
-├── v1.3.0 - Vulnerability Repository (Q1 2026) ⭐ NEW
+Current: v0.3.1
+├── v0.4.0 - Vulnerability Repository (Q1 2026) ⭐ NEW
 │   ├── Phase 1: Core Repository
 │   ├── Phase 2: Scoring & Calculations
 │   ├── Phase 3: Auto-Matching
 │   └── Phase 4: External Data Integration
-├── v1.4.0 - Enhanced UI/UX (Q2 2026)
-├── v1.5.0 - Advanced Analytics (Q2 2026)
-└── v2.0.0 - Multi-Tenancy & Enterprise (Q3 2026)
+├── v0.5.0 - Enhanced UI/UX (Q2 2026)
+├── v0.6.0 - Advanced Analytics (Q2 2026)
+└── v1.0.0 - Enterprise Features (Q3 2026)
 ```
 
 ---
 
-## 🚀 Version 1.3.0 - Vulnerability Repository (Priority: HIGH)
+## 🚀 Version 0.4.0 - Vulnerability Repository (Priority: HIGH)
 
 **Timeline:** 6-8 weeks  
 **Effort:** 25-35 development hours  
@@ -467,7 +467,7 @@ Create a centralized vulnerability knowledge base that:
 
 ---
 
-### Success Metrics for v1.3.0
+### Success Metrics for v0.4.0
 
 **Functional Metrics:**
 - [ ] 95%+ of imported findings auto-matched to templates
@@ -491,7 +491,7 @@ Create a centralized vulnerability knowledge base that:
 
 ---
 
-## 🎨 Version 1.4.0 - Enhanced UI/UX (Q2 2026)
+## 🎨 Version 0.5.0 - Enhanced UI/UX (Q2 2026)
 
 **Timeline:** 4-5 weeks  
 **Effort:** 25-30 hours  
@@ -553,7 +553,7 @@ Create a centralized vulnerability knowledge base that:
 
 ---
 
-## 📊 Version 1.5.0 - Advanced Analytics & Reporting (Q2 2026)
+## 📊 Version 0.6.0 - Advanced Analytics & Reporting (Q2 2026)
 
 **Timeline:** 3-4 weeks  
 **Effort:** 20-25 hours  
@@ -613,7 +613,7 @@ Create a centralized vulnerability knowledge base that:
 
 ---
 
-## 🏢 Version 2.0.0 - Multi-Tenancy & Enterprise (Q3 2026)
+## 🏢 Version 1.0.0 - Enterprise Features (Q3 2026)
 
 **Timeline:** 8-10 weeks  
 **Effort:** 60-80 hours  
@@ -678,23 +678,23 @@ Create a centralized vulnerability knowledge base that:
 
 | Version | Feature Category | Business Value | Technical Complexity | Priority |
 |---------|-----------------|----------------|---------------------|----------|
-| v1.3.0 | Vulnerability Repository | ⭐⭐⭐⭐⭐ | 🔧🔧🔧 | **P0** |
-| v1.3.0 | CVSS/OWASP Scoring | ⭐⭐⭐⭐ | 🔧🔧 | **P0** |
-| v1.3.0 | Auto-Matching | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧 | **P0** |
-| v1.3.0 | NVD Integration | ⭐⭐⭐ | 🔧🔧 | P1 |
-| v1.4.0 | Advanced Dashboard | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
-| v1.4.0 | Bulk Operations | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
-| v1.5.0 | Custom Reports | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
-| v1.5.0 | Compliance Mapping | ⭐⭐⭐ | 🔧🔧 | P2 |
-| v2.0.0 | Multi-Tenancy | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧🔧 | P2 |
-| v2.0.0 | SSO/SAML | ⭐⭐⭐⭐ | 🔧🔧🔧🔧 | P2 |
+| v0.4.0 | Vulnerability Repository | ⭐⭐⭐⭐⭐ | 🔧🔧🔧 | **P0** |
+| v0.4.0 | CVSS/OWASP Scoring | ⭐⭐⭐⭐ | 🔧🔧 | **P0** |
+| v0.4.0 | Auto-Matching | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧 | **P0** |
+| v0.4.0 | NVD Integration | ⭐⭐⭐ | 🔧🔧 | P1 |
+| v0.5.0 | Advanced Dashboard | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
+| v0.5.0 | Bulk Operations | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
+| v0.6.0 | Custom Reports | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
+| v0.6.0 | Compliance Mapping | ⭐⭐⭐ | 🔧🔧 | P2 |
+| v1.0.0 | Multi-Tenancy | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧🔧 | P2 |
+| v1.0.0 | SSO/SAML | ⭐⭐⭐⭐ | 🔧🔧🔧🔧 | P2 |
 
 ---
 
 ## 🎯 Next Immediate Actions
 
 ### This Week (Nov 3-9, 2025)
-1. ✅ **Review and approve v1.3.0 plan**
+1. ✅ **Review and approve v0.4.0 plan**
 2. [ ] **Create database schema design** for VulnerabilityTemplate
 3. [ ] **Write migration 007** with schema changes
 4. [ ] **Set up development branch** (feature/vulnerability-repository)
@@ -717,13 +717,14 @@ Create a centralized vulnerability knowledge base that:
 ## 📈 Long-Term Vision
 
 **Year 1 Goals (2026):**
-- Comprehensive vulnerability knowledge base
-- Industry-standard risk scoring
-- Intelligent auto-matching
-- Advanced analytics and reporting
-- Enterprise-ready features
+- Comprehensive vulnerability knowledge base (v0.4.0)
+- Industry-standard risk scoring (v0.4.0)
+- Intelligent auto-matching (v0.4.0)
+- Enhanced UI/UX (v0.5.0)
+- Advanced analytics and reporting (v0.6.0)
 
 **Year 2 Goals (2027):**
+- Enterprise features and multi-tenancy (v1.0.0+)
 - AI-powered vulnerability analysis
 - Automated remediation suggestions
 - Integration ecosystem
