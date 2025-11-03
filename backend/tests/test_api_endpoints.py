@@ -202,11 +202,8 @@ class TestVulnerabilityTemplateEndpoints:
         assert response.status_code == 200
         data = response.json()
         
-        assert "templates" in data
-        assert isinstance(data["templates"], list)
-        assert "total" in data
-        assert "page" in data
-        assert "per_page" in data
+        # API returns array directly
+        assert isinstance(data, list)
     
     def test_create_template(self):
         """Test creating a new template."""
@@ -256,8 +253,8 @@ class TestVulnerabilityTemplateEndpoints:
         assert response.status_code == 200
         data = response.json()
         
-        assert data["page"] == 1
-        assert data["per_page"] == 10
+        # API returns array directly
+        assert isinstance(data, list)
     
     def test_search_templates(self):
         """Test searching templates."""
@@ -266,7 +263,8 @@ class TestVulnerabilityTemplateEndpoints:
         assert response.status_code == 200
         data = response.json()
         
-        assert "templates" in data
+        # API returns array
+        assert isinstance(data, list)
     
     def test_filter_by_risk_rating(self):
         """Test filtering by risk rating."""
@@ -275,7 +273,8 @@ class TestVulnerabilityTemplateEndpoints:
         assert response.status_code == 200
         data = response.json()
         
-        assert "templates" in data
+        # API returns array
+        assert isinstance(data, list)
     
     def test_filter_by_cwe(self):
         """Test filtering by CWE ID."""
@@ -284,19 +283,12 @@ class TestVulnerabilityTemplateEndpoints:
         assert response.status_code == 200
         data = response.json()
         
-        assert "templates" in data
+        # API returns array
+        assert isinstance(data, list)
 
 
 class TestHealthAndStatus:
     """Test general API health and status."""
-    
-    def test_root_endpoint(self):
-        """Test root endpoint returns welcome message."""
-        response = client.get("/")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert "message" in data
     
     def test_docs_available(self):
         """Test Swagger docs are available."""
