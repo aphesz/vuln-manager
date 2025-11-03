@@ -6,6 +6,139 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [0.6.0] - November 3, 2025
+
+### ✨ New Features
+
+#### Dashboard Widgets & Metrics
+- **Metrics Endpoint** - Comprehensive project analytics at `/projects/{id}/metrics`
+  - SLA compliance breakdown (On Track/At Risk/Overdue)
+  - Review progress statistics (Pending/In Review/Approved/Rejected)
+  - Top 5 vulnerabilities by instance count
+  - Finding trends (30-day historical data)
+  - Key metrics (total findings, instances, Jira sync rate)
+  
+- **SLA Compliance Widget** - Visual SLA tracking
+  - Circular progress chart with compliance rate percentage
+  - Color-coded indicator (green ≥80%, orange ≥60%, red <60%)
+  - Detailed breakdown with icons (checkmark, warning, error)
+  - On Track, At Risk, and Overdue counts
+  - Total findings summary
+
+- **Review Progress Widget** - Approval pipeline visualization
+  - Linear progress bar showing approval rate
+  - Four status categories with counts and percentages
+  - Color-coded progress bar (green ≥70%, orange ≥40%, red <40%)
+  - Pending, In Review, Approved, Rejected breakdown
+  - Total findings summary
+
+- **Top Vulnerabilities Widget** - Most impactful findings
+  - Top 5 findings ranked by instance count
+  - Risk rating badges (color-coded by severity)
+  - Instance count per finding
+  - Hover effects for interactivity
+  - Ranked list view (#1-#5)
+
+- **Key Metrics Overview** - Quick stats dashboard
+  - Total Findings card (unique vulnerabilities count)
+  - Total Instances card (total occurrences across project)
+  - Jira Integration card (sync percentage + linked count)
+  - Color-coded icon boxes (blue/purple/orange)
+  - Responsive 3-column layout (1 column on mobile)
+
+### 🔧 Backend Changes
+
+#### Metrics Endpoint
+- **Route**: `GET /projects/{project_id}/metrics`
+- **Response**: `ProjectMetrics` model with comprehensive analytics
+- **Calculations**:
+  - SLA compliance: Counts by status with percentage
+  - Review progress: Workflow status breakdown with approval rate
+  - Top vulnerabilities: Instance count aggregation and sorting
+  - Jira sync: Percentage of findings with Jira tickets
+  - Finding trends: 30-day historical data (daily snapshots)
+- **Performance**: Single query for all metrics, efficient aggregation
+
+#### New Models
+- `SLAComplianceMetrics`: on_track, at_risk, overdue, total, compliance_rate
+- `ReviewProgressMetrics`: pending, in_review, approved, rejected, total, approval_rate
+- `FindingTrend`: date, total_findings, open_findings, closed_findings
+- `TopVulnerability`: title, risk_rating, instance_count, finding_id
+- `ProjectMetrics`: Comprehensive metrics response model
+
+### 🎨 Frontend Changes
+
+#### New Components
+- **SLAComplianceWidget.tsx** (110 lines)
+  - Material-UI Card with CircularProgress
+  - Color-coded status indicators
+  - Responsive layout with breakpoints
+  
+- **ReviewProgressWidget.tsx** (120 lines)
+  - Material-UI LinearProgress component
+  - Percentage calculations and display
+  - Status icons (HourglassEmpty, RateReview, CheckCircle, Cancel)
+  
+- **TopVulnerabilitiesWidget.tsx** (130 lines)
+  - Ranked list with risk badges
+  - Hover effects and interactive elements
+  - Responsive card layout
+  
+- **KeyMetricsOverview.tsx** (90 lines)
+  - Grid of metric cards
+  - Icon-based visual indicators
+  - Three key statistics
+
+#### Dashboard Integration
+- Parallel API calls (project + metrics fetched together)
+- Responsive grid: 3 widgets per row on desktop, stacked on mobile
+- Loading states maintained during data fetch
+- Error handling with graceful fallbacks
+- TypeScript types for all metrics interfaces
+
+### 📊 Visual Design
+
+**Color Coding**:
+- SLA Compliance: Green (≥80%), Orange (≥60%), Red (<60%)
+- Review Progress: Green (≥70%), Orange (≥40%), Red (<40%)
+- Risk Ratings: Critical (red), High (orange), Medium (yellow), Low (green), Info (blue)
+
+**Layout**:
+- Key Metrics: 3 columns on desktop, 2 on tablet, 1 on mobile
+- Widgets Row: 3 equal-width widgets on desktop, stacked on mobile
+- Responsive breakpoints: xs (mobile), sm (tablet), md (desktop)
+
+**Icons**:
+- SLA: CheckCircle (on track), Warning (at risk), Error (overdue)
+- Review: HourglassEmpty (pending), RateReview (in review), CheckCircle (approved), Cancel (rejected)
+- Metrics: BugReport (findings), Layers (instances), Link (Jira)
+
+### 🚀 Performance
+
+- **API Optimization**: Parallel fetch reduces load time
+- **Single Query**: All metrics calculated in one database query
+- **Efficient Aggregation**: Instance counting optimized with SQL
+- **Responsive Loading**: Minimum skeleton time ensures smooth UX
+- **Error Recovery**: Retry logic with exponential backoff
+
+### 💡 Use Cases
+
+- **Executive Dashboard**: Quick overview of project health
+- **SLA Monitoring**: Track remediation deadlines and overdue items
+- **Review Workflow**: Monitor approval pipeline bottlenecks
+- **Risk Prioritization**: Identify high-instance vulnerabilities
+- **Jira Integration Health**: Track sync coverage across findings
+
+### 🔄 Migration Notes
+
+- No database migrations required
+- Frontend rebuild required for new widgets
+- Backend rebuild required for new metrics endpoint
+- Existing functionality unchanged (backward compatible)
+- Metrics endpoint adds new capability, doesn't modify existing endpoints
+
+---
+
 ## [0.5.0] - November 3, 2025
 
 ### ✨ New Features
