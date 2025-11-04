@@ -917,7 +917,279 @@ Create a centralized vulnerability knowledge base that:
 
 ---
 
-## �📋 Updated Development Priorities Matrix
+## 🔐 Version 1.3.0 - Secure Report Distribution & Digital Signatures (Q1 2027)
+
+**Timeline:** 6-8 weeks  
+**Effort:** 40-50 hours  
+**Status:** Concept Phase
+
+### Key Features
+
+#### PDF Encryption & Password Protection
+- [ ] **Encrypted PDF generation**
+  - AES-256 encryption for generated PDFs
+  - User-specified passwords
+  - Password strength validation
+  - Separate user/owner passwords
+  - Print/copy/edit restrictions
+  
+- [ ] **Key management**
+  - Secure password storage (hashed)
+  - Password rotation capability
+  - Recovery mechanisms
+  - Audit trail of password access
+
+#### Cloud Distribution & Secure Links
+- [ ] **Cloud storage integration**
+  - AWS S3 / Azure Blob / GCS support
+  - Encrypted at-rest storage
+  - Temporary pre-signed URLs
+  - Automatic expiry (configurable: 24h-30d)
+  
+- [ ] **Secure link generation**
+  - Tokenized share links (UUID/JWT-based)
+  - One-time access tokens (optional)
+  - IP allowlist (optional)
+  - Download tracking and notifications
+  - Link revocation capability
+  
+- [ ] **API endpoints**
+  - `POST /api/projects/{id}/upload-to-cloud` - Upload encrypted report
+  - `POST /api/projects/{id}/generate-share-link` - Create secure link
+  - `GET /api/share/{token}` - Download report (public endpoint)
+  - `DELETE /api/share/{token}` - Revoke link
+  
+- [ ] **Frontend - Share dialog**
+  - Upload to cloud toggle
+  - Password input (optional)
+  - Expiry date selector
+  - One-time link toggle
+  - Copy link button
+  - Email link to recipient (optional)
+
+#### Digital Signatures & Non-Repudiation
+- [ ] **Digital signature framework**
+  - X.509 certificate support
+  - RSA/ECDSA signature algorithms
+  - PDF signature embedding (PDF/A compliance)
+  - Timestamp authority (TSA) integration
+  - Signature validation UI
+  
+- [ ] **Signature workflow**
+  - Generate report → sign → distribute
+  - Multiple signers support (consultant + reviewer)
+  - Signature approval chain
+  - Countersignatures (client acknowledgment)
+  
+- [ ] **Certificate management**
+  - Upload organization certificates
+  - Certificate validation and expiry warnings
+  - Self-signed cert generation (dev/testing)
+  - Integration with corporate PKI
+  
+- [ ] **API endpoints**
+  - `POST /api/projects/{id}/signatures/sign` - Apply signature
+  - `GET /api/projects/{id}/signatures` - List signatures
+  - `POST /api/projects/{id}/signatures/verify` - Validate signature
+  
+- [ ] **Frontend - Signature pages**
+  - Signature request dialog
+  - List of pending signatures
+  - Signature verification status
+  - Download signed report
+
+#### Audit & Compliance
+- [ ] **Distribution audit trail**
+  - Who generated link
+  - Who accessed download
+  - Access timestamp and IP
+  - Number of downloads
+  - Link expiry events
+  
+- [ ] **Compliance features**
+  - SOC 2 / ISO 27001 audit logs
+  - Report access history export
+  - Data retention policies
+  - Automatic archival after expiry
+
+**Estimated Effort:** 40-50 hours
+
+---
+
+## 🤖 Version 1.4.0 - AI-Assisted Authoring (Q3 2027)
+
+**Timeline:** 3-4 weeks  
+**Effort:** 12-22 hours  
+**Status:** Concept Phase
+
+### Summary
+Add an opt-in AI assistant to help users generate or rephrase vulnerability descriptions and remediation guidance. Users can invoke a "Generate" button next to Description and Remediation fields to get suggestions from supported AI providers.
+
+### Key Requirements
+
+#### AI Provider Integration
+- [ ] **Multi-provider support**
+  - OpenAI (GPT-4, GPT-3.5)
+  - Google Gemini
+  - xAI (Grok)
+  - GitHub Copilot
+  - Generic OpenAI-compatible endpoints
+  - Provider selection stored per-user/org
+  
+- [ ] **User configuration**
+  - User profile page: API key input fields
+  - Provider selection dropdown
+  - Test connection button
+  - Secure API key storage (encrypted at rest)
+  - Per-org default provider (optional)
+
+#### Backend - AI Service
+- [ ] **Core AI service module (`backend/app/ai_service.py`)**
+  - `generate_suggestions(prompt, context, provider_config)` - Main generation function
+  - Provider adapters (OpenAI, Gemini, xAI, etc.)
+  - Conservative prompt templates
+  - PII sanitization before external calls
+  - Response parsing and validation
+  
+- [ ] **Endpoint: `POST /api/ai/generate`**
+  - Input: field_type (description/remediation), title, optional context
+  - Constructs safe prompts from templates
+  - Returns 2-4 suggestions
+  - Rate limiting (per-user and per-org)
+  - Per-org usage quotas
+  - Audit logging (user, template_id, prompt_hash)
+  
+- [ ] **Prompt management**
+  - Prompt hash caching for common requests
+  - Template-based prompts (no raw user input in prompts)
+  - Context length limits (max 500 chars)
+  - Sanitization: strip email, phone, IP, sensitive patterns
+  
+- [ ] **Security & privacy**
+  - Feature disabled by default (org-level toggle)
+  - Prompt storage policy (opt-in per org)
+  - Audit metadata: user_id, timestamp, prompt_hash, provider, token_count
+  - Raw prompt storage only if org policy allows
+  - Usage quotas: tokens/day, requests/hour
+  - Cost controls: estimate before sending, abort if exceeds limit
+
+#### Frontend - Generate Button & Modal
+- [ ] **Generate button visibility**
+  - Show only if `userHasAiKey === true` (user has configured provider)
+  - Small icon button next to Description and Remediation fields
+  - Tooltip: "Generate with AI"
+  - Disabled if feature flag off or quota exceeded
+  
+- [ ] **AI Suggestions Modal**
+  - Triggered by Generate button
+  - Shows 2-4 alternative suggestions
+  - Each suggestion card:
+    - Preview text (first 200 chars)
+    - Full text (expandable)
+    - "Apply" button
+    - "Edit before apply" button
+  - Footer actions:
+    - "Regenerate" (calls endpoint again)
+    - "Cancel"
+  - Show provider name and estimated token usage
+  - Privacy note: "Your prompt is sent to [provider] using your configured account; prompts are not stored by default."
+  
+- [ ] **User profile - AI settings**
+  - Section: "AI Assistant Configuration"
+  - Provider dropdown (OpenAI, Gemini, xAI, GitHub, Custom)
+  - API key input (password field, encrypted)
+  - Test connection button
+  - Usage statistics (requests this month, tokens used)
+  - Enable/disable toggle
+
+#### Integration Points
+- [ ] **QuickAddDialog integration**
+  - Generate button next to Description field
+  - Generate button next to Remediation field
+  - Apply suggestion updates form state
+  
+- [ ] **VulnerabilityTemplateManager integration**
+  - Generate button in CreateTemplateDialog
+  - Generate button in TemplateDetailDialog (edit mode)
+  
+- [ ] **FindingsTable inline edit (optional)**
+  - Small AI icon in Description/Remediation cells
+  - Click → show suggestions modal
+
+#### Testing & QA
+- [ ] **Unit tests (`backend/tests/test_ai_generate.py`)**
+  - Mock provider responses (no network calls)
+  - Test prompt sanitization (removes PII)
+  - Test rate limiting behavior
+  - Test quota enforcement
+  - Test feature flag on/off
+  
+- [ ] **Integration tests**
+  - End-to-end: Generate → Apply → Save finding
+  - Test with feature disabled (button hidden)
+  - Test with no user API key (button hidden)
+  - Test with expired API key (error handling)
+  
+- [ ] **Frontend tests (`frontend/src/tests/ai-generate.spec.tsx`)**
+  - Generate button visibility logic
+  - Modal open/close flows
+  - Apply suggestion updates field
+  - Regenerate calls endpoint again
+  - Privacy note displayed
+
+#### Documentation
+- [ ] **README - AI Features section**
+  - How to enable AI assistant
+  - Supported providers and setup steps
+  - Privacy and data handling
+  - Rate limits and quotas
+  - Example prompts
+  
+- [ ] **Admin documentation**
+  - How to enable org-wide AI feature
+  - Setting up provider API keys
+  - Configuring usage quotas
+  - Audit log review
+  - Cost estimation and monitoring
+  
+- [ ] **User guide**
+  - How to configure your AI provider
+  - Using the Generate button
+  - Interpreting suggestions
+  - Best practices for prompts
+
+### Success Metrics
+
+**Adoption:**
+- [ ] ≥25% of active users enable AI-assist within 90 days after release
+- [ ] Average 5+ AI generations per user per month
+- [ ] 70%+ of generated suggestions are applied (not discarded)
+
+**Safety & Privacy:**
+- [ ] 0 reported PII leaks from AI prompts in 6 months
+- [ ] 100% of prompts sanitized before external API calls
+- [ ] Audit logs capture all AI requests
+
+**Cost Control:**
+- [ ] Per-org quota prevents >80% of unexpected spend incidents
+- [ ] Average cost per user <$2/month
+- [ ] Token usage estimation accuracy ≥90%
+
+**User Experience:**
+- [ ] Modal loads suggestions in <3 seconds (p95)
+- [ ] Generate button intuitive (>80% users find it without help)
+- [ ] Privacy note reduces support tickets about data handling
+
+**Technical Quality:**
+- [ ] API uptime ≥99.5%
+- [ ] Rate limiting prevents abuse (0 incidents)
+- [ ] Feature flag rollout without incidents
+
+**Estimated Effort:** 12-22 hours
+
+---
+
+## 📋 Updated Development Priorities Matrix
 
 | Version | Feature Category | Business Value | Technical Complexity | Priority |
 |---------|-----------------|----------------|---------------------|----------|
@@ -940,6 +1212,10 @@ Create a centralized vulnerability knowledge base that:
 | v1.3.0 | PDF Encryption | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
 | v1.3.0 | Cloud Distribution | ⭐⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
 | v1.3.0 | Digital Signatures | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧 | P1 |
+| v1.4.0 | AI Multi-Provider | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
+| v1.4.0 | AI Generate UI | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
+| v1.4.0 | PII Sanitization | ⭐⭐⭐⭐⭐ | 🔧🔧🔧 | **P0** |
+| v1.4.0 | Usage Quotas | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
 
 ---
 
@@ -956,8 +1232,9 @@ Create a centralized vulnerability knowledge base that:
 **Year 2 Goals (2027):**
 - Enterprise authentication and security (v1.2.0)
 - Secure report distribution and digital signatures (v1.3.0)
+- AI-assisted vulnerability authoring (v1.4.0)
 - Enterprise features and multi-tenancy (v1.0.0+)
-- AI-powered vulnerability analysis
+- Advanced AI-powered vulnerability analysis
 - Automated remediation suggestions
 - Integration ecosystem
 - Mobile applications
