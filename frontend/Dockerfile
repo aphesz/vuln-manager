@@ -1,6 +1,7 @@
 # Stage 1: Build the React application with Vite
 # Using Node 22 LTS Alpine for latest security patches (CVE mitigation)
-FROM node:22-alpine AS builder
+# Pinned to specific digest for reproducible builds
+FROM node:22-alpine@sha256:b2358485e3e33bc3a33114d2b1bdb18cdbe4df01bd2b257198eb51beb1f026c5 AS builder
 
 # Set the working directory
 WORKDIR /app
@@ -29,7 +30,8 @@ RUN find /app/src -name "*.js" -type f ! -name "vite.config.js" -delete
 RUN node node_modules/vite/bin/vite.js build
 
 # Stage 2: Serve the application using a lightweight web server
-FROM nginx:alpine
+# Pinned to specific digest for reproducible builds
+FROM nginx:alpine@sha256:b3c656d55d7ad751196f21b7fd2e8d4da9cb430e32f646adcf92441b72f82b14
 
 # Copy the built React app from the builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

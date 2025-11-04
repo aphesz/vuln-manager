@@ -1,5 +1,6 @@
 # Use an official Python base image
-FROM python:3.10-slim
+# Pinned to specific digest for reproducible builds and security
+FROM python:3.10-slim@sha256:e0c4fae70d550834a40f6c3e0326e02cfe239c2351d922e1fb1577a3c6ebde02
 
 # Set the working directory inside the container
 WORKDIR /code
@@ -28,6 +29,14 @@ COPY ./tests /code/tests
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security (principle of least privilege)
+RUN groupadd -g 1001 appuser && \
+    useradd -r -u 1001 -g appuser appuser && \
+    chown -R appuser:appuser /code
+
+# Switch to non-root user
+USER appuser
 
 # Set environment variables
 ENV ENVIRONMENT=production
