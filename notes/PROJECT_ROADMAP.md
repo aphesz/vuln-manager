@@ -937,6 +937,9 @@ Create a centralized vulnerability knowledge base that:
 | v1.2.0 | OAuth + MFA | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧 | **P0** |
 | v1.2.0 | RBAC | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧🔧 | **P0** |
 | v1.2.0 | Admin Dashboard | ⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
+| v1.3.0 | PDF Encryption | ⭐⭐⭐⭐ | 🔧🔧 | P1 |
+| v1.3.0 | Cloud Distribution | ⭐⭐⭐⭐⭐ | 🔧🔧🔧 | P1 |
+| v1.3.0 | Digital Signatures | ⭐⭐⭐⭐⭐ | 🔧🔧🔧🔧 | P1 |
 
 ---
 
@@ -952,6 +955,7 @@ Create a centralized vulnerability knowledge base that:
 
 **Year 2 Goals (2027):**
 - Enterprise authentication and security (v1.2.0)
+- Secure report distribution and digital signatures (v1.3.0)
 - Enterprise features and multi-tenancy (v1.0.0+)
 - AI-powered vulnerability analysis
 - Automated remediation suggestions
