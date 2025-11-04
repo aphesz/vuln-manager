@@ -20,7 +20,6 @@
 - Collaborative comments with timezone support
 - Inline editing capabilities
 - Responsive design with accessibility (WCAG 2.1 AA)
-- Keyboard shortcuts and power user features
 - Advanced filtering and bulk actions
 - Project statistics and metrics cards
 - Fluid tables with column customization
@@ -277,16 +276,10 @@ Build on the successful tagging system to deliver:
 ---
 
 ### Phase 4: UX Improvements (Week 3-4)
-**Effort:** 4-6 hours  
+**Effort:** 3-4 hours  
 **Priority:** Medium
 
 **Tasks:**
-- [ ] **Keyboard shortcuts expanded**
-  - Navigate findings (J/K like Gmail)
-  - Quick actions (E to edit, D to delete)
-  - Command palette (Cmd+K)
-  - Shortcut reference modal (?)
-  
 - [ ] **Customizable table views**
   - Save multiple table configurations
   - Quick-switch between views
@@ -300,10 +293,8 @@ Build on the successful tagging system to deliver:
   - System preference detection
 
 **Deliverables:**
-- Command palette UI
 - Table view presets
 - Enhanced dark mode
-- Keyboard shortcut reference
 
 ---
 
@@ -313,12 +304,10 @@ Build on the successful tagging system to deliver:
 - [ ] Dashboard loads in <2 seconds with 5+ widgets
 - [ ] Custom reports generate in <5 seconds
 - [ ] Export completes in <3 seconds for 1000 findings
-- [ ] Keyboard shortcuts cover 80% of common actions
 
 **User Experience:**
 - [ ] Dashboard customization used by 50%+ of users
 - [ ] Custom reports used at least once per project
-- [ ] Keyboard shortcuts adopted by power users
 - [ ] Positive feedback on UX improvements
 
 **Performance:**
@@ -818,8 +807,6 @@ Create a centralized vulnerability knowledge base that:
 - [ ] **Keyboard shortcuts expanded**
   - Navigate findings (J/K)
   - Quick actions (R for remediate, C for comment)
-  - Command palette (Cmd+K)
-  
 - [ ] **Customizable table views**
   - Save multiple table configurations
   - Quick view switching
@@ -830,7 +817,7 @@ Create a centralized vulnerability knowledge base that:
   - Dark-aware chart colors
   - User preference persistence
 
-**Estimated Effort:** 25-30 hours
+**Estimated Effort:** 20-25 hours
 
 ---
 
