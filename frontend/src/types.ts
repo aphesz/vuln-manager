@@ -19,6 +19,15 @@ export interface Comment {
   created_at: string;
 }
 
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+  description: string | null;
+  created_at: string;
+  usage_count: number;
+}
+
 export interface AuditLog {
   id: number;
   entity_type: string;
@@ -37,6 +46,7 @@ export interface Finding {
   description: string;
   remediation: string;
   instances: Instance[];
+  tags?: Tag[];  // Tags associated with this finding
   // Tier 1 fields
   review_status?: ReviewStatus;
   reviewer_name?: string;

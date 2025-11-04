@@ -13,7 +13,7 @@ import {
   useGridApiContext,
   useGridApiRef,
 } from '@mui/x-data-grid';
-import { Finding, Instance, RiskRating, ReviewStatus, SLAStatus, IssueStatus } from '../types';
+import { Finding, Instance, RiskRating, ReviewStatus, SLAStatus, IssueStatus, Tag } from '../types';
 import {
   Box,
   Chip,
@@ -35,6 +35,7 @@ import {
   FormControl,
   InputLabel,
   IconButton,
+  Autocomplete,
 } from '@mui/material';
 import {
   CheckCircle as ApprovedIcon,
@@ -410,11 +411,27 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
   const [bulkAction, setBulkAction] = useState<string>('');
   const [bulkValue, setBulkValue] = useState<string>('');
   const [filteredFindings, setFilteredFindings] = useState(findings);
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  const [localFindings, setLocalFindings] = useState(findings);
   const apiRef = useGridApiRef();
   const theme = useTheme();
 
-  // Update filtered findings when findings change
+  // Fetch available tags on component mount
   useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/tags`);
+        setAvailableTags(response.data);
+      } catch (error) {
+        console.error('Error fetching tags:', error);
+      }
+    };
+    fetchTags();
+  }, []);
+
+  // Update local findings when findings prop changes
+  useEffect(() => {
+    setLocalFindings(findings);
     setFilteredFindings(findings);
   }, [findings]);
 
@@ -495,7 +512,71 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
       filtered = filtered.filter((f: Finding) => (f.sla_status || 'On Track') === filters.slaStatus);
     }
 
+    // Apply tag filter
+    if (filters.tags.length > 0) {
+      filtered = filtered.filter((f: Finding) => {
+        const findingTagIds = (f.tags || []).map(t => t.id);
+        const selectedTagIds = filters.tags.map(t => t.id);
+        
+        if (filters.tagFilterMode === 'AND') {
+          // ALL selected tags must be present
+          return selectedTagIds.every(tagId => findingTagIds.includes(tagId));
+        } else {
+          // ANY selected tag must be present (OR logic)
+          return selectedTagIds.some(tagId => findingTagIds.includes(tagId));
+        }
+      });
+    }
+
     setFilteredFindings(filtered);
+  };
+
+  // Optimistic update helper - updates finding in local state without refresh
+  const updateFindingOptimistically = (findingId: number, updates: Partial<Finding>) => {
+    setLocalFindings(prev => 
+      prev.map(f => f.id === findingId ? { ...f, ...updates } : f)
+    );
+    setFilteredFindings(prev => 
+      prev.map(f => f.id === findingId ? { ...f, ...updates } : f)
+    );
+    // Also update selectedFinding if it's the one being edited
+    if (selectedFinding && selectedFinding.id === findingId) {
+      setSelectedFinding({ ...selectedFinding, ...updates });
+    }
+  };
+
+  // Tag management handlers
+  const handleAddTag = async (findingId: number, tagId: number) => {
+    try {
+      await axios.post(`${API_BASE_URL}/findings/${findingId}/tags/${tagId}`);
+      // Optimistically add tag to local state
+      const tag = availableTags.find(t => t.id === tagId);
+      if (tag) {
+        const finding = localFindings.find(f => f.id === findingId);
+        const currentTags = finding?.tags || [];
+        updateFindingOptimistically(findingId, { tags: [...currentTags, tag] });
+      }
+    } catch (error) {
+      console.error('Error adding tag:', error);
+      // Revert on error
+      if (onRefresh) onRefresh();
+    }
+  };
+
+  const handleRemoveTag = async (findingId: number, tagId: number) => {
+    try {
+      await axios.delete(`${API_BASE_URL}/findings/${findingId}/tags/${tagId}`);
+      // Optimistically remove tag from local state
+      const finding = localFindings.find(f => f.id === findingId);
+      const currentTags = finding?.tags || [];
+      updateFindingOptimistically(findingId, { 
+        tags: currentTags.filter(t => t.id !== tagId) 
+      });
+    } catch (error) {
+      console.error('Error removing tag:', error);
+      // Revert on error
+      if (onRefresh) onRefresh();
+    }
   };
 
   // Bulk action handlers
@@ -682,47 +763,247 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
       field: 'risk_rating',
       headerName: 'Risk Level',
       flex: 1,
-      minWidth: 120,
-      editable: true,
-      renderCell: (params: GridRenderCellParams) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <RiskChip level={params.value} />
-          <Tooltip title="Click to edit">
-            <IconButton
+      minWidth: 140,
+      sortable: true,
+      renderCell: (params: GridRenderCellParams) => {
+        const [isEditing, setIsEditing] = useState(false);
+        const [selectedRisk, setSelectedRisk] = useState<RiskRating>(params.value);
+
+        const handleRiskChange = async (newRisk: RiskRating) => {
+          setSelectedRisk(newRisk);
+          setIsEditing(false);
+          // Optimistic update
+          updateFindingOptimistically(params.row.id, { risk_rating: newRisk });
+          
+          try {
+            await axios.patch(`${API_BASE_URL}/findings/${params.row.id}`, { 
+              risk_rating: newRisk 
+            });
+          } catch (error) {
+            console.error('Error updating risk rating:', error);
+            // Revert on error
+            if (onRefresh) onRefresh();
+          }
+        };
+
+        if (isEditing) {
+          return (
+            <Select
               size="small"
-              onClick={(e: any) => {
-                e.stopPropagation();
-                if (apiRef?.current) {
-                  apiRef.current.startCellEditMode({ id: params.id, field: params.field });
-                }
-              }}
-              sx={{ 
-                p: 0.5,
-                '&:hover': { color: 'primary.main' }
-              }}
+              value={selectedRisk}
+              onChange={(e) => handleRiskChange(e.target.value as RiskRating)}
+              onBlur={() => setIsEditing(false)}
+              autoFocus
+              sx={{ width: '100%', fontSize: '0.875rem' }}
             >
-              <EditIcon sx={{ fontSize: 14, opacity: 0.6 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      ),
-      renderEditCell: RiskRatingEditCell,
+              <MenuItem value="Critical">Critical</MenuItem>
+              <MenuItem value="High">High</MenuItem>
+              <MenuItem value="Medium">Medium</MenuItem>
+              <MenuItem value="Low">Low</MenuItem>
+              <MenuItem value="Informational">Informational</MenuItem>
+            </Select>
+          );
+        }
+
+        return (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              cursor: 'pointer',
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
+            }}
+            onClick={() => setIsEditing(true)}
+          >
+            <RiskChip level={params.value} />
+          </Box>
+        );
+      },
+    },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      flex: 1,
+      minWidth: 250,
+      sortable: false,
+      renderCell: (params: GridRenderCellParams) => {
+        const findingTags = params.row.tags || [];
+        const [isEditing, setIsEditing] = useState(false);
+        const [selectedTags, setSelectedTags] = useState<Tag[]>(findingTags);
+
+        const handleTagChange = async (newTags: Tag[]) => {
+          const findingId = params.row.id;
+          const oldTagIds = findingTags.map((t: Tag) => t.id);
+          const newTagIds = newTags.map(t => t.id);
+
+          // Find tags to add (in new but not in old)
+          const toAdd = newTagIds.filter(id => !oldTagIds.includes(id));
+          // Find tags to remove (in old but not in new)
+          const toRemove = oldTagIds.filter(id => !newTagIds.includes(id));
+
+          try {
+            // Add new tags
+            for (const tagId of toAdd) {
+              await handleAddTag(findingId, tagId);
+            }
+            // Remove old tags
+            for (const tagId of toRemove) {
+              await handleRemoveTag(findingId, tagId);
+            }
+            setSelectedTags(newTags);
+            setIsEditing(false);
+          } catch (error) {
+            console.error('Error updating tags:', error);
+          }
+        };
+
+        if (isEditing) {
+          return (
+            <Autocomplete
+              multiple
+              size="small"
+              options={availableTags}
+              getOptionLabel={(option) => option.name}
+              value={selectedTags}
+              onChange={(event, newValue) => handleTagChange(newValue)}
+              onBlur={() => setIsEditing(false)}
+              renderInput={(params) => (
+                <TextField {...params} placeholder="Select tags" autoFocus />
+              )}
+              renderTags={(value, getTagProps) =>
+                value.map((tag, index) => (
+                  <Chip
+                    {...getTagProps({ index })}
+                    key={tag.id}
+                    label={tag.name}
+                    size="small"
+                    sx={{
+                      bgcolor: tag.color,
+                      color: '#fff',
+                      fontWeight: 'bold',
+                      fontSize: '0.7rem',
+                      height: 20,
+                      '& .MuiChip-deleteIcon': {
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        '&:hover': {
+                          color: '#fff',
+                        },
+                      },
+                    }}
+                  />
+                ))
+              }
+              sx={{ width: '100%' }}
+            />
+          );
+        }
+
+        return (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              flexWrap: 'wrap',
+              cursor: 'pointer',
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
+            }}
+            onClick={() => setIsEditing(true)}
+          >
+            {findingTags.map((tag: any) => (
+              <Chip
+                key={tag.id}
+                label={tag.name}
+                size="small"
+                sx={{
+                  backgroundColor: tag.color,
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  fontSize: '0.7rem',
+                  height: 20,
+                }}
+              />
+            ))}
+            {findingTags.length === 0 && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                Click to add tags
+              </Typography>
+            )}
+          </Box>
+        );
+      },
     },
     {
       field: 'review_status',
       headerName: 'Review Status',
       flex: 1,
-      minWidth: 140,
+      minWidth: 160,
+      sortable: true,
       renderCell: (params: GridRenderCellParams) => {
+        const [isEditing, setIsEditing] = useState(false);
+        const [selectedStatus, setSelectedStatus] = useState<ReviewStatus>(
+          (params.value as ReviewStatus) || 'Pending'
+        );
+
+        const handleStatusChange = async (newStatus: ReviewStatus) => {
+          setSelectedStatus(newStatus);
+          setIsEditing(false);
+          // Optimistic update
+          updateFindingOptimistically(params.row.id, { review_status: newStatus });
+          
+          try {
+            await axios.patch(`${API_BASE_URL}/findings/${params.row.id}`, { 
+              review_status: newStatus 
+            });
+          } catch (error) {
+            console.error('Error updating review status:', error);
+            // Revert on error
+            if (onRefresh) onRefresh();
+          }
+        };
+
+        if (isEditing) {
+          return (
+            <Select
+              size="small"
+              value={selectedStatus}
+              onChange={(e) => handleStatusChange(e.target.value as ReviewStatus)}
+              onBlur={() => setIsEditing(false)}
+              autoFocus
+              sx={{ width: '100%', fontSize: '0.875rem' }}
+            >
+              <MenuItem value="Pending">Pending</MenuItem>
+              <MenuItem value="In Review">In Review</MenuItem>
+              <MenuItem value="Approved">Approved</MenuItem>
+              <MenuItem value="Rejected">Rejected</MenuItem>
+            </Select>
+          );
+        }
+
         const status = (params.value as ReviewStatus) || 'Pending';
         return (
-          <Chip
-            label={status}
-            size="small"
-            color={getReviewStatusColor(status) as any}
-            icon={getReviewStatusIcon(status)}
-            sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
-          />
+          <Box
+            sx={{
+              cursor: 'pointer',
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
+            }}
+            onClick={() => setIsEditing(true)}
+          >
+            <Chip
+              label={status}
+              size="small"
+              color={getReviewStatusColor(status) as any}
+              icon={getReviewStatusIcon(status)}
+              sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+            />
+          </Box>
         );
       },
     },
@@ -763,33 +1044,96 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
       field: 'sla_status',
       headerName: 'SLA Status',
       flex: 1,
-      minWidth: 130,
+      minWidth: 150,
+      sortable: true,
       renderCell: (params: GridRenderCellParams) => {
+        const [isEditing, setIsEditing] = useState(false);
+        const [selectedStatus, setSelectedStatus] = useState<SLAStatus | ''>(
+          (params.value as SLAStatus) || ''
+        );
+
+        const handleStatusChange = async (newStatus: SLAStatus | '') => {
+          setSelectedStatus(newStatus);
+          setIsEditing(false);
+          // Optimistic update
+          updateFindingOptimistically(params.row.id, { 
+            sla_status: (newStatus || undefined) as SLAStatus | undefined
+          });
+          
+          try {
+            await axios.patch(`${API_BASE_URL}/findings/${params.row.id}`, { 
+              sla_status: newStatus || null
+            });
+          } catch (error) {
+            console.error('Error updating SLA status:', error);
+            // Revert on error
+            if (onRefresh) onRefresh();
+          }
+        };
+
+        if (isEditing) {
+          return (
+            <Select
+              size="small"
+              value={selectedStatus}
+              onChange={(e) => handleStatusChange(e.target.value as SLAStatus | '')}
+              onBlur={() => setIsEditing(false)}
+              autoFocus
+              sx={{ width: '100%', fontSize: '0.875rem' }}
+            >
+              <MenuItem value="">Not Set</MenuItem>
+              <MenuItem value="On Track">On Track</MenuItem>
+              <MenuItem value="At Risk">At Risk</MenuItem>
+              <MenuItem value="Overdue">Overdue</MenuItem>
+            </Select>
+          );
+        }
+
         const status = params.value as SLAStatus;
         
         if (!status) {
           return (
-            <Chip
-              label="Not Set"
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: '0.7rem' }}
-            />
+            <Box
+              sx={{
+                cursor: 'pointer',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
+              onClick={() => setIsEditing(true)}
+            >
+              <Chip
+                label="Click to set"
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: '0.7rem' }}
+              />
+            </Box>
           );
         }
         
         return (
-          <Chip
-            label={status}
-            size="small"
-            icon={getSLAStatusIcon(status) || undefined}
+          <Box
             sx={{
-              bgcolor: getSLAStatusColor(status),
-              color: 'white',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
+              cursor: 'pointer',
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
             }}
-          />
+            onClick={() => setIsEditing(true)}
+          >
+            <Chip
+              label={status}
+              size="small"
+              icon={getSLAStatusIcon(status) || undefined}
+              sx={{
+                bgcolor: getSLAStatusColor(status),
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '0.75rem',
+              }}
+            />
+          </Box>
         );
       },
     },
@@ -797,69 +1141,80 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
       field: 'issue_status',
       headerName: 'Issue Status',
       flex: 1,
-      minWidth: 130,
-      editable: true,
+      minWidth: 160,
+      sortable: true,
       renderCell: (params: GridRenderCellParams) => {
-        const apiRef = useGridApiContext();
-        const status = params.value as string | undefined;
-        
-        const getChip = () => {
-          if (!status || status === 'Open') {
-            return (
-              <Chip
-                label="Open"
-                size="small"
-                color="error"
-                sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
-              />
-            );
-          }
+        const [isEditing, setIsEditing] = useState(false);
+        const [selectedStatus, setSelectedStatus] = useState<IssueStatus>(
+          (params.value as IssueStatus) || 'Open'
+        );
+
+        const handleStatusChange = async (newStatus: IssueStatus) => {
+          setSelectedStatus(newStatus);
+          setIsEditing(false);
+          // Optimistic update
+          updateFindingOptimistically(params.row.id, { issue_status: newStatus });
           
-          if (status === 'Partially Closed') {
-            return (
-              <Chip
-                label="Partially Closed"
-                size="small"
-                color="warning"
-                sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}
-              />
+          try {
+            await IssueStatusService.updateIssueStatus(
+              params.row.id,
+              newStatus,
+              undefined,
+              'user@example.com'
             );
+          } catch (error) {
+            console.error('Error updating issue status:', error);
+            // Revert on error
+            if (onRefresh) onRefresh();
           }
-          
+        };
+
+        if (isEditing) {
           return (
-            <Chip
-              label="Closed"
+            <Select
               size="small"
-              color="success"
-              sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
-            />
+              value={selectedStatus}
+              onChange={(e) => handleStatusChange(e.target.value as IssueStatus)}
+              onBlur={() => setIsEditing(false)}
+              autoFocus
+              sx={{ width: '100%', fontSize: '0.875rem' }}
+            >
+              <MenuItem value="Open">Open</MenuItem>
+              <MenuItem value="Partially Closed">Partially Closed</MenuItem>
+              <MenuItem value="Closed">Closed</MenuItem>
+            </Select>
           );
+        }
+
+        const status = (params.value as IssueStatus) || 'Open';
+        const getChipProps = () => {
+          if (status === 'Open') {
+            return { label: 'Open', color: 'error' as const };
+          } else if (status === 'Partially Closed') {
+            return { label: 'Partially Closed', color: 'warning' as const };
+          } else {
+            return { label: 'Closed', color: 'success' as const };
+          }
         };
 
         return (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {getChip()}
-            <Tooltip title="Click to edit">
-              <IconButton
-                size="small"
-                onClick={(e: any) => {
-                  e.stopPropagation();
-                  if (apiRef?.current) {
-                    apiRef.current.startCellEditMode({ id: params.id, field: params.field });
-                  }
-                }}
-                sx={{ 
-                  p: 0.5,
-                  '&:hover': { color: 'primary.main' }
-                }}
-              >
-                <EditIcon sx={{ fontSize: 14, opacity: 0.6 }} />
-              </IconButton>
-            </Tooltip>
+          <Box
+            sx={{
+              cursor: 'pointer',
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
+            }}
+            onClick={() => setIsEditing(true)}
+          >
+            <Chip
+              {...getChipProps()}
+              size="small"
+              sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+            />
           </Box>
         );
       },
-      renderEditCell: IssueStatusEditCell,
     },
     {
       field: 'remediation_deadline',

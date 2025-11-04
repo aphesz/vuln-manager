@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
-from app.main import app
+from app.main import app, limiter
 from app.main import get_session
 
 
@@ -43,7 +43,12 @@ def client_fixture(session: Session):
     
     app.dependency_overrides[get_session] = get_session_override
     
+    # Disable rate limiting for tests
+    limiter._enabled = False
+    
     with TestClient(app) as client:
         yield client
     
+    # Re-enable rate limiting after tests
+    limiter._enabled = True
     app.dependency_overrides.clear()

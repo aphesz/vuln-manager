@@ -2,7 +2,7 @@
 /** @jsx React.createElement */
 /** @jsxFrag React.Fragment */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GridToolbarContainer,
   GridToolbarQuickFilter,
@@ -20,13 +20,18 @@ import {
   Button,
   IconButton,
   Tooltip,
+  Autocomplete,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
   FilterList as FilterIcon,
   Clear as ClearIcon,
   Save as SaveIcon,
 } from '@mui/icons-material';
-import type { RiskRating, IssueStatus, SLAStatus } from '../types';
+import type { RiskRating, IssueStatus, SLAStatus, Tag } from '../types';
+import axios from 'axios';
 
 interface FindingsTableToolbarProps {
   onFilterChange?: (filters: FilterState) => void;
@@ -36,6 +41,8 @@ export interface FilterState {
   riskRating: RiskRating | 'All';
   issueStatus: IssueStatus | 'All';
   slaStatus: SLAStatus | 'All';
+  tags: Tag[];
+  tagFilterMode: 'AND' | 'OR';
 }
 
 const FindingsTableToolbar: React.FC<FindingsTableToolbarProps> = ({ onFilterChange }) => {
@@ -43,7 +50,24 @@ const FindingsTableToolbar: React.FC<FindingsTableToolbarProps> = ({ onFilterCha
     riskRating: 'All',
     issueStatus: 'All',
     slaStatus: 'All',
+    tags: [],
+    tagFilterMode: 'OR',
   });
+
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+
+  // Fetch available tags on component mount
+  useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const response = await axios.get('/api/tags');
+        setAvailableTags(response.data);
+      } catch (error) {
+        console.error('Error fetching tags:', error);
+      }
+    };
+    fetchTags();
+  }, []);
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     const newFilters = { ...filters, [field]: value };
@@ -58,6 +82,8 @@ const FindingsTableToolbar: React.FC<FindingsTableToolbarProps> = ({ onFilterCha
       riskRating: 'All',
       issueStatus: 'All',
       slaStatus: 'All',
+      tags: [],
+      tagFilterMode: 'OR',
     };
     setFilters(clearedFilters);
     if (onFilterChange) {
@@ -67,7 +93,8 @@ const FindingsTableToolbar: React.FC<FindingsTableToolbarProps> = ({ onFilterCha
 
   const hasActiveFilters = filters.riskRating !== 'All' || 
                           filters.issueStatus !== 'All' || 
-                          filters.slaStatus !== 'All';
+                          filters.slaStatus !== 'All' ||
+                          filters.tags.length > 0;
 
   return (
     <GridToolbarContainer sx={{ p: 2, gap: 2, flexWrap: 'wrap' }}>
@@ -129,6 +156,65 @@ const FindingsTableToolbar: React.FC<FindingsTableToolbarProps> = ({ onFilterCha
           </Select>
         </FormControl>
 
+        <Autocomplete
+          multiple
+          size="small"
+          options={availableTags}
+          getOptionLabel={(option) => option.name}
+          value={filters.tags}
+          onChange={(event, newValue) => handleFilterChange('tags', newValue)}
+          renderInput={(params) => (
+            <TextField {...params} label="Filter by Tags" placeholder="Select tags" />
+          )}
+          renderTags={(value, getTagProps) =>
+            value.map((tag, index) => (
+              <Chip
+                {...getTagProps({ index })}
+                key={tag.id}
+                label={tag.name}
+                size="small"
+                sx={{
+                  bgcolor: tag.color,
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  '& .MuiChip-deleteIcon': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    '&:hover': {
+                      color: '#fff',
+                    },
+                  },
+                }}
+              />
+            ))
+          }
+          sx={{ minWidth: 240 }}
+        />
+
+        {filters.tags.length > 1 && (
+          <ToggleButtonGroup
+            size="small"
+            value={filters.tagFilterMode}
+            exclusive
+            onChange={(e, newMode) => {
+              if (newMode !== null) {
+                handleFilterChange('tagFilterMode', newMode);
+              }
+            }}
+            sx={{ height: 40 }}
+          >
+            <ToggleButton value="OR">
+              <Tooltip title="Match ANY selected tag">
+                <span>OR</span>
+              </Tooltip>
+            </ToggleButton>
+            <ToggleButton value="AND">
+              <Tooltip title="Match ALL selected tags">
+                <span>AND</span>
+              </Tooltip>
+            </ToggleButton>
+          </ToggleButtonGroup>
+        )}
+
         {hasActiveFilters && (
           <Tooltip title="Clear all filters">
             <IconButton 
@@ -143,7 +229,9 @@ const FindingsTableToolbar: React.FC<FindingsTableToolbarProps> = ({ onFilterCha
 
         {hasActiveFilters && (
           <Chip 
-            label={`${Object.values(filters).filter(v => v !== 'All').length} active`}
+            label={`${Object.entries(filters).filter(([k, v]) => 
+              k === 'tags' ? (v as Tag[]).length > 0 : v !== 'All' && k !== 'tagFilterMode'
+            ).length} active`}
             size="small"
             color="primary"
             variant="outlined"

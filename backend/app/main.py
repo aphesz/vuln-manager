@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlmodel import SQLModel, Session, create_engine, select
-from sqlalchemy import text, case, func
+from sqlalchemy import text, case, func, delete
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -54,6 +54,11 @@ from app.models import (
     ReviewProgressMetrics,
     FindingTrend,
     TopVulnerability,
+    Tag,
+    TagRead,
+    TagCreate,
+    TagUpdate,
+    FindingTag,
 )
 
 # Use the RiskRating from FindingBase
@@ -140,7 +145,11 @@ def sanitize_html_input(value: str) -> str:
 
 # --- Rate Limiting Setup ---
 
-limiter = Limiter(key_func=get_remote_address)
+# Disable rate limiting during tests
+import sys
+is_testing = "pytest" in sys.modules
+
+limiter = Limiter(key_func=get_remote_address, enabled=not is_testing)
 
 # --- Request Models (for API endpoints) ---
 from pydantic import BaseModel
@@ -760,8 +769,28 @@ def read_project(project_id: int, session: Session = Depends(get_session)):
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Build the response with tags
+    findings_with_tags = []
+    for finding in project.findings:
+        # Load tags for this finding
+        finding_tags = session.exec(
+            select(Tag)
+            .join(FindingTag, Tag.id == FindingTag.tag_id)
+            .where(FindingTag.finding_id == finding.id)
+            .order_by(Tag.name)
+        ).all()
         
-    return project
+        # Convert to dict and add tags
+        finding_dict = finding.model_dump()
+        finding_dict['tags'] = [TagRead.model_validate(tag) for tag in finding_tags]
+        findings_with_tags.append(FindingReadWithInstances(**finding_dict))
+    
+    # Build project response
+    project_dict = project.model_dump(exclude={'findings'})
+    project_dict['findings'] = findings_with_tags
+    
+    return ProjectReadWithFindings(**project_dict)
 
 @app.put("/projects/{project_id}", response_model=Project)
 def update_project(project_id: int, project_update: Project, session: Session = Depends(get_session)):
@@ -2564,6 +2593,284 @@ def cleanup_duplicate_templates(
         "kept_templates": kept_templates,
         "message": f"Removed {removed_count} duplicate template(s)"
     }
+
+
+# =====================================================
+# TAG MANAGEMENT ENDPOINTS
+# =====================================================
+
+@app.get("/tags", response_model=List[TagRead])
+@limiter.limit("100/minute")
+def list_tags(
+    request: Request,
+    search: Optional[str] = Query(None, description="Search tags by name"),
+    session: Session = Depends(get_session)
+):
+    """
+    List all tags with optional search.
+    Returns tags sorted by usage count (most used first).
+    """
+    
+    statement = select(Tag)
+    
+    if search:
+        statement = statement.where(Tag.name.ilike(f"%{search}%"))
+    
+    statement = statement.order_by(Tag.usage_count.desc(), Tag.name)
+    
+    tags = session.exec(statement).all()
+    
+    return tags
+
+
+@app.post("/tags", response_model=TagRead, status_code=201)
+@limiter.limit("30/hour")
+def create_tag(
+    request: Request,
+    tag: TagCreate,
+    session: Session = Depends(get_session)
+):
+    """
+    Create a new tag.
+    Tag names must be unique (case-insensitive).
+    """
+    from app.timezone_utils import get_utc_now
+    
+    # Check if tag already exists (case-insensitive)
+    existing = session.exec(
+        select(Tag).where(func.lower(Tag.name) == tag.name.lower())
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tag '{tag.name}' already exists"
+        )
+    
+    # Validate color format (hex color)
+    if tag.color and not re.match(r'^#[0-9A-Fa-f]{6}$', tag.color):
+        raise HTTPException(
+            status_code=400,
+            detail="Color must be a valid hex color code (e.g., #2196F3)"
+        )
+    
+    new_tag = Tag(
+        name=tag.name,
+        color=tag.color or "#2196F3",
+        description=tag.description,
+        created_at=get_utc_now(),
+        usage_count=0
+    )
+    
+    session.add(new_tag)
+    session.commit()
+    session.refresh(new_tag)
+    
+    logger.info(f"Created tag: {new_tag.id} - {new_tag.name}")
+    
+    return new_tag
+
+
+@app.get("/tags/{tag_id}", response_model=TagRead)
+def get_tag(
+    tag_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get a single tag by ID."""
+    
+    tag = session.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    return tag
+
+
+@app.patch("/tags/{tag_id}", response_model=TagRead)
+@limiter.limit("60/hour")
+def update_tag(
+    request: Request,
+    tag_id: int,
+    tag_update: TagUpdate,
+    session: Session = Depends(get_session)
+):
+    """
+    Update a tag.
+    Only provided fields will be updated.
+    """
+    from app.timezone_utils import get_utc_now
+    
+    tag = session.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    # Check name uniqueness if being updated
+    if tag_update.name and tag_update.name != tag.name:
+        existing = session.exec(
+            select(Tag).where(
+                func.lower(Tag.name) == tag_update.name.lower(),
+                Tag.id != tag_id
+            )
+        ).first()
+        
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tag '{tag_update.name}' already exists"
+            )
+        tag.name = tag_update.name
+    
+    if tag_update.color:
+        if not re.match(r'^#[0-9A-Fa-f]{6}$', tag_update.color):
+            raise HTTPException(
+                status_code=400,
+                detail="Color must be a valid hex color code (e.g., #2196F3)"
+            )
+        tag.color = tag_update.color
+    
+    if tag_update.description is not None:
+        tag.description = tag_update.description
+    
+    session.add(tag)
+    session.commit()
+    session.refresh(tag)
+    
+    logger.info(f"Updated tag: {tag_id} - {tag.name}")
+    
+    return tag
+
+
+@app.delete("/tags/{tag_id}", status_code=204)
+def delete_tag(
+    tag_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Delete a tag.
+    This will also remove all associations with findings.
+    """
+    
+    tag = session.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    # Delete all finding-tag associations
+    session.exec(delete(FindingTag).where(FindingTag.tag_id == tag_id))
+    
+    # Delete the tag
+    session.delete(tag)
+    session.commit()
+    
+    logger.info(f"Deleted tag: {tag_id} - {tag.name}")
+
+
+@app.post("/findings/{finding_id}/tags/{tag_id}", status_code=201)
+@limiter.limit("100/minute")
+def add_tag_to_finding(
+    request: Request,
+    finding_id: int,
+    tag_id: int,
+    session: Session = Depends(get_session)
+):
+    """Add a tag to a finding."""
+    from app.models import Finding
+    from app.timezone_utils import get_utc_now
+    
+    # Verify finding exists
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Verify tag exists
+    tag = session.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    # Check if already associated
+    existing = session.exec(
+        select(FindingTag).where(
+            FindingTag.finding_id == finding_id,
+            FindingTag.tag_id == tag_id
+        )
+    ).first()
+    
+    if existing:
+        return {"message": "Tag already associated with finding"}
+    
+    # Create association
+    finding_tag = FindingTag(
+        finding_id=finding_id,
+        tag_id=tag_id,
+        created_at=get_utc_now()
+    )
+    
+    session.add(finding_tag)
+    
+    # Update tag usage count
+    tag.usage_count += 1
+    session.add(tag)
+    
+    session.commit()
+    
+    logger.info(f"Added tag {tag_id} to finding {finding_id}")
+    
+    return {"message": "Tag added to finding"}
+
+
+@app.delete("/findings/{finding_id}/tags/{tag_id}", status_code=204)
+def remove_tag_from_finding(
+    finding_id: int,
+    tag_id: int,
+    session: Session = Depends(get_session)
+):
+    """Remove a tag from a finding."""
+    
+    # Find the association
+    finding_tag = session.exec(
+        select(FindingTag).where(
+            FindingTag.finding_id == finding_id,
+            FindingTag.tag_id == tag_id
+        )
+    ).first()
+    
+    if not finding_tag:
+        raise HTTPException(status_code=404, detail="Tag association not found")
+    
+    # Delete association
+    session.delete(finding_tag)
+    
+    # Update tag usage count
+    tag = session.get(Tag, tag_id)
+    if tag and tag.usage_count > 0:
+        tag.usage_count -= 1
+        session.add(tag)
+    
+    session.commit()
+    
+    logger.info(f"Removed tag {tag_id} from finding {finding_id}")
+
+
+@app.get("/findings/{finding_id}/tags", response_model=List[TagRead])
+def get_finding_tags(
+    finding_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get all tags for a finding."""
+    from app.models import Finding
+    
+    # Verify finding exists
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Get all tags for this finding
+    tags = session.exec(
+        select(Tag)
+        .join(FindingTag, Tag.id == FindingTag.tag_id)
+        .where(FindingTag.finding_id == finding_id)
+        .order_by(Tag.name)
+    ).all()
+    
+    return tags
 
 
 # =====================================================

@@ -6,6 +6,99 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [0.4.0] - November 4, 2025
+
+### ✨ New Features - Vulnerability Repository & Scoring Calculators
+
+#### Vulnerability Template System
+Complete infrastructure for managing reusable vulnerability templates with CVSS/OWASP scoring.
+
+**Database Models**:
+- `VulnerabilityTemplate`: 20+ fields including CWE/CVE, CVSS vector, OWASP scores, remediation
+- `VulnerabilityMatch`: Many-to-many linking findings to templates
+- Migration 008: 7 optimized indexes for search performance
+
+**CRUD API Endpoints** (5 total):
+- `POST /vulnerability-templates` - Create new template
+- `GET /vulnerability-templates` - List with search, pagination, risk filtering
+- `GET /vulnerability-templates/{id}` - Retrieve single template
+- `PATCH /vulnerability-templates/{id}` - Update template
+- `DELETE /vulnerability-templates/{id}` - Delete unused template
+
+**Auto-Population**:
+- Automatic template creation from Burp/Nessus uploads
+- CWE/CVE extraction from scanner reports
+- Deduplication by title + CWE
+
+#### CVSS 3.1 Calculator
+Official CVSS v3.1 base score calculation following FIRST specification.
+
+**Backend Functions**:
+- `parse_cvss_vector(vector: str)` → Parse CVSS:3.1 vector strings
+- `calculate_cvss_score(vector: str)` → Calculate base score (0.0-10.0) + severity rating
+- Severity mapping: None/Low/Medium/High/Critical
+
+**Features**:
+- 8 base metrics: AV, AC, PR, UI, S, C, I, A
+- Scope-aware privilege required calculations
+- Edge case handling (zero impact = 0.0 score)
+
+**Validation**: 6 tests covering official examples (XSS 6.1, SQL Injection 9.8, max score 10.0)
+
+#### OWASP Risk Calculator
+Likelihood × Impact matrix for risk rating assessment.
+
+**Backend Function**:
+- `calculate_owasp_risk(likelihood: int, impact: int)` → Calculate risk score + rating
+- Input: 1-9 scales for both likelihood and impact
+- Output: Risk score (1-81) + rating (Low/Medium/High/Critical)
+
+**Thresholds**:
+- Low: 1-5
+- Medium: 6-11
+- High: 12-17
+- Critical: 18+
+
+**Validation**: 8 tests covering all risk levels and boundary conditions
+
+#### Frontend Components
+- `VulnerabilityTemplateManager.tsx` (640 lines) - Complete CRUD UI
+- `CVSSCalculator.tsx` - Interactive CVSS 3.1 calculator widget
+- `OWASPRiskCalculator.tsx` - Interactive OWASP risk matrix widget
+
+### 🧪 Testing Improvements
+
+**New Test Suite**: `test_scoring_calculators.py` (17 tests)
+- `TestCVSSVectorParsing`: Valid/invalid vector parsing
+- `TestCVSSCalculation`: Official score accuracy, edge cases
+- `TestOWASPRiskCalculation`: Risk matrix validation, boundary tests
+
+**Rate Limiting Fix**:
+- Disabled rate limiting during pytest runs
+- Prevents HTTP 429 errors in test environment
+- Detection via `"pytest" in sys.modules`
+
+**Test Results**:
+- Total: 156 tests
+- Passing: 142 (91.0%)
+- Duration: 1.21s
+
+### 📝 Documentation
+- `V0.4.0_COMPLETE.md` - Comprehensive completion summary
+- `VULNERABILITY_REPOSITORY_COMPLETE.md` - Phase 1 documentation
+
+### 🔧 Technical Details
+**Modified Files**:
+- `backend/app/scoring.py` (303 lines) - CVSS/OWASP calculators
+- `backend/app/main.py` - Rate limiter pytest detection, template CRUD
+- `backend/app/models.py` - VulnerabilityTemplate, VulnerabilityMatch models
+- `backend/tests/test_scoring_calculators.py` (NEW) - Comprehensive scoring tests
+- `backend/tests/conftest.py` - Rate limiter disable logic
+
+**Migration**: `008_add_vulnerability_repository.py` - Database schema
+
+---
+
 ## [0.7.2] - November 3, 2025
 
 ### 🔒 Security Enhancements

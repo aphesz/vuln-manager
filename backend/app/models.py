@@ -166,6 +166,28 @@ class UserPreferences(UserPreferencesBase, table=True):
     """Database model for user preferences."""
     id: Optional[int] = Field(default=None, primary_key=True)
 
+# --- Tagging System Models ---
+
+class TagBase(SQLModel):
+    """Base model for tags."""
+    name: str = Field(..., unique=True, index=True, max_length=50)
+    color: str = Field(default="#2196F3", max_length=7)  # Hex color code
+    description: Optional[str] = Field(default=None, max_length=200)
+
+class Tag(TagBase, table=True):
+    """Database model for Tag."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default=None)
+    usage_count: int = Field(default=0)  # How many findings have this tag
+
+class FindingTag(SQLModel, table=True):
+    """Junction table for finding-tag many-to-many relationship."""
+    __tablename__ = "finding_tags"
+    
+    finding_id: int = Field(foreign_key="finding.id", primary_key=True, index=True)
+    tag_id: int = Field(foreign_key="tag.id", primary_key=True, index=True)
+    created_at: datetime = Field(default=None)
+
 # --- Vulnerability Repository Models ---
 
 class VulnerabilityTemplateBase(SQLModel):
@@ -208,6 +230,8 @@ class VulnerabilityTemplateBase(SQLModel):
 
 class VulnerabilityTemplate(VulnerabilityTemplateBase, table=True):
     """Database model for VulnerabilityTemplate."""
+    __tablename__ = "vulnerability_templates"
+    
     id: Optional[int] = Field(default=None, primary_key=True)
     
     # Relationships
@@ -216,7 +240,7 @@ class VulnerabilityTemplate(VulnerabilityTemplateBase, table=True):
 class VulnerabilityMatchBase(SQLModel):
     """Base model for tracking finding-to-template matches."""
     finding_id: int = Field(..., foreign_key="finding.id", index=True)
-    template_id: int = Field(..., foreign_key="vulnerabilitytemplate.id", index=True)
+    template_id: int = Field(..., foreign_key="vulnerability_templates.id", index=True)
     
     # Match metrics
     similarity_score: float = Field(..., ge=0.0, le=1.0)  # 0.0 - 1.0 (100%)
@@ -228,6 +252,8 @@ class VulnerabilityMatchBase(SQLModel):
 
 class VulnerabilityMatch(VulnerabilityMatchBase, table=True):
     """Database model for VulnerabilityMatch."""
+    __tablename__ = "vulnerability_matches"
+    
     id: Optional[int] = Field(default=None, primary_key=True)
     
     # Relationships
@@ -282,6 +308,7 @@ class FindingReadWithInstances(FindingBase):
     project_id: int
     instances: List[InstanceRead] = []
     comments: List[CommentRead] = []
+    tags: List["TagRead"] = []  # Include tags with findings (forward reference)
 
 # 8. Project Read Model
 class ProjectReadWithFindings(ProjectBase):
@@ -402,4 +429,25 @@ class ProjectMetrics(SQLModel):
     average_cvss_score: Optional[float]
     findings_with_jira: int
     jira_sync_rate: float  # Percentage with Jira tickets
-    average_time_to_approval: Optional[float]  # Days, if available
+
+# --- Tag Read Models ---
+
+class TagRead(TagBase):
+    """Read model for Tag with metadata."""
+    id: int
+    created_at: datetime
+    usage_count: int
+
+class TagCreate(TagBase):
+    """Model for creating a tag."""
+    pass
+
+class TagUpdate(SQLModel):
+    """Model for updating a tag (all fields optional)."""
+    name: Optional[str] = Field(default=None, max_length=50)
+    color: Optional[str] = Field(default=None, max_length=7)
+    description: Optional[str] = Field(default=None, max_length=200)
+    average_time_to_approval: Optional[float] = None  # Days, if available
+
+# Rebuild models to resolve forward references
+FindingReadWithInstances.model_rebuild()

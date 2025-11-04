@@ -8,6 +8,7 @@ import {
   Security as SecurityIcon,
   Calculate as CalculateIcon,
   KeyboardArrowDown as ArrowDownIcon,
+  LocalOffer as TagIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
 
@@ -58,6 +59,23 @@ const AppHeader = () => {
         </Box>
       </Link>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Button
+          component={Link}
+          to="/tags"
+          variant="outlined"
+          startIcon={<TagIcon />}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="Manage tags"
+        >
+          Tags
+        </Button>
         <Button
           component={Link}
           to="/vulnerability-repository"

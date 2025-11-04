@@ -6,6 +6,7 @@ import ProjectsLists from './components/ProjectsLists'
 import Dashboard from './components/Dashboard'
 import SLADashboard from './components/SLADashboard'
 import VulnerabilityTemplateManager from './components/VulnerabilityTemplateManager'
+import TagManager from './components/TagManager'
 import CVSSCalculatorPage from './components/CVSSCalculatorPage'
 import OWASPCalculatorPage from './components/OWASPCalculatorPage'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
@@ -47,6 +48,8 @@ const App = () => {
             <Route path="/sla" element={<SLADashboard />} />
             {/* Vulnerability Repository route */}
             <Route path="/vulnerability-repository" element={<VulnerabilityTemplateManager />} />
+            {/* Tag Management route */}
+            <Route path="/tags" element={<TagManager />} />
             {/* Calculator routes */}
             <Route path="/calculators/cvss" element={<CVSSCalculatorPage />} />
             <Route path="/calculators/owasp" element={<OWASPCalculatorPage />} />
