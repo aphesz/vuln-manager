@@ -1,5 +1,6 @@
 # Stage 1: Build the React application with Vite
-FROM node:20-alpine AS builder
+# Using Node 22 LTS Alpine for latest security patches (CVE mitigation)
+FROM node:22-alpine AS builder
 
 # Set the working directory
 WORKDIR /app
