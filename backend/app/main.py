@@ -47,6 +47,8 @@ from app.models import (
     JiraSettingsBase,
     VulnerabilityTemplate,
     VulnerabilityTemplateRead,
+    VulnerabilityTemplateVersion,
+    VulnerabilityTemplateVersionRead,
     VulnerabilityMatch,
     VulnerabilityMatchRead,
     ProjectMetrics,
@@ -2579,18 +2581,58 @@ async def update_vulnerability_template(
     remediation_steps: Optional[str] = Body(None),
     references: Optional[str] = Body(None),
     is_verified: Optional[bool] = Body(None),
+    changed_by: Optional[str] = Body(None),  # Who is making this change
+    change_reason: Optional[str] = Body(None),  # Why is this change being made
     session: Session = Depends(get_session)
 ):
     """
     Update an existing vulnerability template.
     Only provided fields will be updated.
+    Automatically creates a version snapshot before updating.
     """
-    from app.models import VulnerabilityTemplate
+    from app.models import VulnerabilityTemplate, VulnerabilityTemplateVersion
+    from sqlmodel import func, select
     
     template = session.get(VulnerabilityTemplate, template_id)
     if not template:
         raise HTTPException(status_code=404, detail="Vulnerability template not found")
     
+    # CREATE VERSION SNAPSHOT BEFORE UPDATING
+    # Get current max version number for this template
+    max_version = session.exec(
+        select(func.max(VulnerabilityTemplateVersion.version_number))
+        .where(VulnerabilityTemplateVersion.template_id == template_id)
+    ).first() or 0
+    
+    # Create version snapshot with current state
+    version_snapshot = VulnerabilityTemplateVersion(
+        template_id=template.id,
+        version_number=max_version + 1,
+        title=template.title,
+        description=template.description,
+        cwe_id=template.cwe_id,
+        cve_id=template.cve_id,
+        cvss_vector=template.cvss_vector,
+        cvss_score=template.cvss_score,
+        owasp_likelihood=template.owasp_likelihood,
+        owasp_impact=template.owasp_impact,
+        owasp_risk_rating=template.owasp_risk_rating,
+        default_risk_rating=template.default_risk_rating,
+        vulnerability_type=template.vulnerability_type,
+        remediation_summary=template.remediation_summary,
+        remediation_steps=template.remediation_steps,
+        references=template.references,
+        attack_techniques=template.attack_techniques,
+        source=template.source,
+        is_verified=template.is_verified,
+        changed_by=changed_by or "system",
+        change_reason=change_reason or "Template updated",
+        created_at=get_utc_now()
+    )
+    session.add(version_snapshot)
+    logger.info(f"Created version snapshot {max_version + 1} for template {template_id}")
+    
+    # NOW UPDATE THE TEMPLATE
     # Update fields if provided
     if title is not None:
         template.title = title
@@ -2637,6 +2679,130 @@ async def update_vulnerability_template(
     session.refresh(template)
     
     logger.info(f"Updated vulnerability template: {template.id} - {template.title}")
+    
+    return template
+
+
+@app.get("/vulnerability-templates/{template_id}/versions", response_model=List[VulnerabilityTemplateVersionRead])
+def get_template_version_history(
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Get complete version history for a template.
+    Returns versions in chronological order (oldest to newest).
+    """
+    from app.models import VulnerabilityTemplate, VulnerabilityTemplateVersion
+    
+    # Verify template exists
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Vulnerability template not found")
+    
+    # Get all versions ordered by version number
+    versions = session.exec(
+        select(VulnerabilityTemplateVersion)
+        .where(VulnerabilityTemplateVersion.template_id == template_id)
+        .order_by(VulnerabilityTemplateVersion.version_number)
+    ).all()
+    
+    logger.info(f"Retrieved {len(versions)} versions for template {template_id}")
+    
+    return list(versions)
+
+
+@app.post("/vulnerability-templates/{template_id}/rollback/{version_number}", response_model=VulnerabilityTemplateRead)
+def rollback_template_to_version(
+    template_id: int,
+    version_number: int,
+    changed_by: Optional[str] = Body(None),
+    change_reason: Optional[str] = Body("Rolled back to previous version"),
+    session: Session = Depends(get_session)
+):
+    """
+    Rollback a template to a specific version.
+    Creates a new version snapshot before rolling back.
+    """
+    from app.models import VulnerabilityTemplate, VulnerabilityTemplateVersion
+    from sqlmodel import func
+    
+    # Verify template exists
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Vulnerability template not found")
+    
+    # Find the target version
+    target_version = session.exec(
+        select(VulnerabilityTemplateVersion)
+        .where(
+            VulnerabilityTemplateVersion.template_id == template_id,
+            VulnerabilityTemplateVersion.version_number == version_number
+        )
+    ).first()
+    
+    if not target_version:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Version {version_number} not found for template {template_id}"
+        )
+    
+    # CREATE SNAPSHOT OF CURRENT STATE BEFORE ROLLBACK
+    max_version = session.exec(
+        select(func.max(VulnerabilityTemplateVersion.version_number))
+        .where(VulnerabilityTemplateVersion.template_id == template_id)
+    ).first() or 0
+    
+    current_snapshot = VulnerabilityTemplateVersion(
+        template_id=template.id,
+        version_number=max_version + 1,
+        title=template.title,
+        description=template.description,
+        cwe_id=template.cwe_id,
+        cve_id=template.cve_id,
+        cvss_vector=template.cvss_vector,
+        cvss_score=template.cvss_score,
+        owasp_likelihood=template.owasp_likelihood,
+        owasp_impact=template.owasp_impact,
+        owasp_risk_rating=template.owasp_risk_rating,
+        default_risk_rating=template.default_risk_rating,
+        vulnerability_type=template.vulnerability_type,
+        remediation_summary=template.remediation_summary,
+        remediation_steps=template.remediation_steps,
+        references=template.references,
+        attack_techniques=template.attack_techniques,
+        source=template.source,
+        is_verified=template.is_verified,
+        changed_by=changed_by or "system",
+        change_reason=f"Before rollback to v{version_number}",
+        created_at=get_utc_now()
+    )
+    session.add(current_snapshot)
+    
+    # RESTORE FROM TARGET VERSION
+    template.title = target_version.title
+    template.description = target_version.description
+    template.cwe_id = target_version.cwe_id
+    template.cve_id = target_version.cve_id
+    template.cvss_vector = target_version.cvss_vector
+    template.cvss_score = target_version.cvss_score
+    template.owasp_likelihood = target_version.owasp_likelihood
+    template.owasp_impact = target_version.owasp_impact
+    template.owasp_risk_rating = target_version.owasp_risk_rating
+    template.default_risk_rating = target_version.default_risk_rating
+    template.vulnerability_type = target_version.vulnerability_type
+    template.remediation_summary = target_version.remediation_summary
+    template.remediation_steps = target_version.remediation_steps
+    template.references = target_version.references
+    template.attack_techniques = target_version.attack_techniques
+    template.source = target_version.source
+    template.is_verified = target_version.is_verified
+    template.updated_at = get_utc_now()
+    
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    
+    logger.info(f"Rolled back template {template_id} to version {version_number}")
     
     return template
 

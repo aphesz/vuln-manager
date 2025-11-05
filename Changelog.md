@@ -136,6 +136,72 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 - **For Compliance**: Map vulnerabilities to MITRE ATT&CK for framework alignment
 - **Strategic Defense**: Prioritize defenses based on attack technique coverage
 
+#### Phase 3: Template Versioning & History (COMPLETE)
+**Full version control** for vulnerability templates with automatic snapshots and rollback capability.
+
+**Database Schema**: New `vulnerability_template_versions` table
+- **Snapshot-based versioning**: Every update creates a version snapshot of the PREVIOUS state
+- **Sequential versioning**: Auto-incremented version numbers per template (v1, v2, v3...)
+- **Complete field preservation**: All template fields (title, description, CWE, CVE, CVSS, remediation, ATT&CK, etc.)
+- **Change tracking metadata**: `changed_by`, `change_reason`, `created_at` for audit trail
+- **Foreign key cascade**: Versions deleted when parent template is deleted
+- **Composite unique index**: (template_id, version_number) for efficient lookups
+- Migration: `8f7f56672c50_add_vulnerability_template_versioning.py`
+
+**Backend Implementation**:
+- **Automatic Versioning**: `PATCH /vulnerability-templates/{id}` creates snapshot BEFORE updating
+- **Version History**: `GET /vulnerability-templates/{id}/versions` - Returns chronological version list
+- **Rollback**: `POST /vulnerability-templates/{id}/rollback/{version_number}` - Restore to any previous version
+- **Safety**: Rollback creates snapshot of current state before restoring (no data loss)
+- **Updated Endpoint**: Added `changed_by` and `change_reason` optional parameters to PATCH endpoint
+
+**Frontend Component**: `VersionHistoryDialog.tsx` (350+ lines)
+- **Visual Timeline**: List-based layout with color-coded version cards
+- **Version Cards**: Display title, description preview, CWE/CVE/CVSS, risk rating, change metadata
+- **Color Coding**: Current version (blue border), rollback versions (purple indicator), historical (grey)
+- **Rollback Button**: One-click rollback with confirmation dialog on each version card
+- **Metadata Display**: Shows who made the change, when, and why
+- **Empty State**: Informative message for templates with no version history yet
+- **Loading States**: Skeleton loading and progress indicators
+- **Error Handling**: User-friendly error messages with retry capability
+
+**Integration**: "Version History" button added to VulnerabilityTemplateManager actions column
+- Icon: History (clock) icon
+- Placement: Between "Enrich from NVD" and "Edit" buttons
+- Callback: Refreshes template list after successful rollback
+
+**Version Workflow**:
+1. **Create Template**: No versions exist yet (baseline state)
+2. **First Update**: Creates v1 with original state, updates template to new state
+3. **Second Update**: Creates v2 with state before second update, updates template
+4. **Rollback to v1**: Creates v3 snapshot (current state), restores template to v1 state
+5. **View History**: Timeline shows v1 (original) → v2 (after 1st update) → v3 (before rollback)
+
+**Testing**:
+- **Backend Tests**: `test_versioning.py` with 10 comprehensive test cases
+  - Version creation on update
+  - Sequential version numbering (v1, v2, v3...)
+  - Version history API endpoint
+  - Rollback functionality
+  - Field preservation
+  - Edge cases (nonexistent versions, empty history)
+- **API Testing**: curl commands verified version creation, history retrieval, rollback
+- **Browser Testing**: UI verified with 4-version history on Template #1
+
+**Example Version History** (Template #1):
+- v1: "SQL Injection in Login Form" (original state, by test_user)
+- v2: "XSS v2" (after first update, by admin)
+- v3: "XSS v3 - Latest" (before rollback, by admin)
+- v4: "SQL Injection in Login Form" (rolled back to v1, by security_team)
+
+**Business Value**:
+- **Audit Trail**: Complete history of who changed what and why
+- **Compliance**: Required for SOC 2, ISO 27001 audit logging
+- **Rollback Safety**: Undo mistakes or revert controversial changes
+- **Knowledge Preservation**: Never lose historical vulnerability intelligence
+- **Team Collaboration**: Track contributions from multiple security analysts
+- **Quality Control**: Review changes before committing to production
+
 ---
 
 ## [0.6.0] - November 5, 2025

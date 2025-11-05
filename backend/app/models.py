@@ -240,6 +240,45 @@ class VulnerabilityTemplate(VulnerabilityTemplateBase, table=True):
     
     # Relationships
     matches: List["VulnerabilityMatch"] = Relationship(back_populates="template")
+    versions: List["VulnerabilityTemplateVersion"] = Relationship(back_populates="template")
+
+class VulnerabilityTemplateVersionBase(SQLModel):
+    """Base model for template version history (snapshot-based versioning)."""
+    template_id: int = Field(..., foreign_key="vulnerability_templates.id", index=True)
+    version_number: int = Field(..., index=True)  # Auto-incremented per template
+    
+    # Snapshot of template state at this version
+    title: str = Field(..., max_length=500)
+    description: str
+    cwe_id: Optional[str] = Field(default=None, max_length=20)
+    cve_id: Optional[str] = Field(default=None, max_length=50)
+    cvss_vector: Optional[str] = Field(default=None, max_length=100)
+    cvss_score: Optional[float] = Field(default=None)
+    owasp_likelihood: Optional[int] = Field(default=None)
+    owasp_impact: Optional[int] = Field(default=None)
+    owasp_risk_rating: Optional[str] = Field(default=None, max_length=20)
+    default_risk_rating: Optional[str] = Field(default=None, max_length=20)
+    vulnerability_type: Optional[str] = Field(default=None, max_length=100)
+    remediation_summary: Optional[str] = Field(default=None)
+    remediation_steps: Optional[str] = Field(default=None)
+    references: Optional[str] = Field(default=None)
+    attack_techniques: Optional[str] = Field(default=None)
+    source: str = Field(default="manual", max_length=50)
+    is_verified: bool = Field(default=False)
+    
+    # Change tracking metadata
+    changed_by: Optional[str] = Field(default=None, max_length=255)  # Username/email of who made the change
+    change_reason: Optional[str] = Field(default=None, max_length=500)  # Why was this change made?
+    created_at: datetime = Field(default=None, index=True)  # When this version was created
+
+class VulnerabilityTemplateVersion(VulnerabilityTemplateVersionBase, table=True):
+    """Database model for VulnerabilityTemplateVersion."""
+    __tablename__ = "vulnerability_template_versions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    
+    # Relationships
+    template: Optional[VulnerabilityTemplate] = Relationship(back_populates="versions")
 
 class VulnerabilityMatchBase(SQLModel):
     """Base model for tracking finding-to-template matches."""
@@ -374,6 +413,29 @@ class VulnerabilityTemplateWithMatches(VulnerabilityTemplateBase):
     
     @field_serializer('created_at', 'updated_at', 'last_used')
     def serialize_datetime(self, value: Optional[datetime], _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
+
+# 13. VulnerabilityTemplateVersion Read Model
+class VulnerabilityTemplateVersionRead(VulnerabilityTemplateVersionBase):
+    """Used to read a VulnerabilityTemplateVersion."""
+    id: int
+    
+    @computed_field
+    @property
+    def attack_techniques_parsed(self) -> Optional[List[Dict[str, str]]]:
+        """Parse attack_techniques JSON on demand"""
+        if self.attack_techniques:
+            try:
+                return json.loads(self.attack_techniques)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
+    
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime, _info):
         """Serialize datetime with timezone info"""
         if value and value.tzinfo:
             return value.isoformat()
