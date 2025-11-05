@@ -6,6 +6,138 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ---
 
+## [0.7.0] - In Progress (Q1 2026)
+
+### ✨ New Features - Vulnerability Intelligence & Advanced Matching
+
+#### Phase 1B: Fuzzy Matching Engine (COMPLETE)
+**Three-tier matching strategy** for auto-linking findings to templates:
+- **Tier 1 - Exact Match** (100% confidence): CWE ID or CVE ID exact match
+- **Tier 2 - Fuzzy Match** (85-99% confidence): Title/description similarity using rapidfuzz
+- **Tier 3 - Manual Review**: Human review with confidence scores
+
+**Backend Module**: `backend/app/matching.py` (310 lines)
+- `find_exact_cwe_match()` - Match by CWE ID
+- `find_exact_cve_match()` - Match by CVE ID  
+- `find_fuzzy_title_matches()` - Fuzzy title matching with token_sort_ratio
+- `find_fuzzy_description_matches()` - Fuzzy description matching
+- `find_best_match()` - Tiered fallback strategy
+- `auto_match_finding()` - Create VulnerabilityMatch record
+- Comprehensive test suite: 90+ tests in `test_matching.py`
+
+**API Endpoint**: `POST /projects/{project_id}/auto-match`
+- Query params: `min_score` (default: 0.85), `auto_create` (default: false)
+- Returns: matched findings count, suggestions with confidence scores
+- Tested: Project 4 achieved 15/15 findings matched (100%)
+
+#### Phase 1C: Match Review UI (COMPLETE)
+**Frontend Component**: `MatchReviewDialog.tsx` (387 lines)
+- Interactive match review dialog with suggestion cards
+- Confidence-based filtering (High/Medium/Low)
+- Bulk approve/reject workflow
+- Color-coded confidence indicators (green ≥85%, yellow ≥70%, blue <70%)
+- Method labels: "CWE Match", "CVE Match", "Title Match", "Description Match"
+- Checkbox selection with "Select All" / "High Confidence Only" actions
+- Integrated into Dashboard with "Auto-Match" button
+
+**User Experience**:
+- Review 100% of matches before creation (safety first)
+- Visual confidence scores guide decision-making
+- One-click approval for high-confidence matches
+- Clear rejection workflow
+
+#### Phase 2A: NVD Integration (COMPLETE)
+**NIST National Vulnerability Database API 2.0** integration for official CVE data enrichment.
+
+**Backend Module**: `backend/app/nvd.py` (295 lines)
+- `fetch_cve_data()` - Fetch CVE details from NVD API 2.0
+- `parse_nvd_vulnerability()` - Parse NVD response to template format
+- `enrich_template_from_nvd()` - Auto-populate template fields
+- `map_cvss_severity_to_risk_rating()` - Normalize NVD severity to internal enum
+- 24-hour caching to reduce API calls
+- 6-second rate limiting (respects NVD free tier: 5 req/30s)
+
+**Enrichment Data**:
+- CVE description (official NIST text)
+- CVSS 3.1 score and vector string
+- Severity rating (Critical/High/Medium/Low/None)
+- CWE ID(s) - primary and secondary weaknesses
+- References (up to 5 external URLs)
+- Published and last modified dates
+
+**API Endpoint**: `POST /vulnerability-templates/{id}/enrich`
+- Fetches official CVE data from NVD
+- Auto-populates: description, CVSS score/vector, risk rating, CWE ID, references
+- Marks template as verified (source='nvd', is_verified=true)
+- Returns: enriched template with metadata
+
+**Testing**: Verified with CVE-2021-44228 (Log4Shell)
+- CVSS 10.0, CWE-20, 103 references successfully fetched
+- Enrichment completed in ~2 seconds
+
+**UI Integration**: "Sync from NVD" icon button in VulnerabilityTemplateManager
+- Changed from CloudDownload to Sync icon (MUI compatibility fix)
+- Shows loading state during enrichment
+- Success/error notifications
+
+#### Phase 2B: MITRE ATT&CK Integration (COMPLETE)
+**Map vulnerabilities to attack techniques** for strategic threat intelligence.
+
+**Backend Module**: `backend/app/attack.py` (370+ lines)
+- **22 curated ATT&CK techniques** relevant to web/app vulnerabilities
+- **11 tactic categories**: Initial Access, Execution, Persistence, Privilege Escalation, Defense Evasion, Credential Access, Discovery, Lateral Movement, Collection, Exfiltration, Impact
+- `get_all_techniques()` - Retrieve full technique catalog
+- `search_techniques(query)` - Keyword-based search across ID/name/tactic/description
+- `suggest_techniques()` - AI-powered suggestions based on CWE/description/type
+- `format_techniques_for_storage()` - JSON serialization for database
+- `parse_techniques_from_storage()` - JSON deserialization with enrichment
+
+**Database Schema**:
+- Added `attack_techniques` TEXT field to `vulnerability_templates` table
+- Stores JSON array: `[{"technique_id": "T1059", "technique_name": "...", "tactic": "Execution"}, ...]`
+- Migration: `011_add_attack_techniques.py`
+
+**API Endpoints**:
+- `GET /attack/techniques?query={search}` - Search/list all ATT&CK techniques
+- `POST /vulnerability-templates/{id}/suggest-attack` - AI-powered technique suggestions
+- `PATCH /vulnerability-templates/{id}/attack-techniques` - Update template's ATT&CK mappings
+
+**Frontend Component**: `AttackTechniqueSelector.tsx` (300+ lines)
+- Material-UI Autocomplete with 22 ATT&CK techniques
+- **Color-coded tactics**: Each tactic has unique color (red=Initial Access, orange=Execution, etc.)
+- Search by technique ID, name, or tactic
+- "Get Suggestions" button for AI-powered recommendations
+- Selected techniques displayed as colored chips
+- Clear all functionality
+- Integrated into VulnerabilityTemplateManager (create/edit dialog)
+
+**Example ATT&CK Techniques**:
+- T1059 - Command and Scripting Interpreter (Execution)
+- T1190 - Exploit Public-Facing Application (Initial Access)
+- T1078 - Valid Accounts (Defense Evasion, Persistence, Privilege Escalation, Initial Access)
+- T1213 - Data from Information Repositories (Collection)
+- T1498 - Network Denial of Service (Impact)
+
+**Suggestion Algorithm**:
+- Keyword matching: CWE ID, vulnerability type, description text
+- Relevance scoring: Counts keyword matches to rank techniques
+- Top 8 suggestions returned with scores
+- Example: Log4Shell (CWE-20, "remote code execution") → T1059 scores highest (score: 6)
+
+**Testing**: Template 29 verified with 2 ATT&CK techniques persisted
+- T1213 (Data from Information Repositories - Collection)
+- T1059 (Command and Scripting Interpreter - Execution)
+- JSON parsing via @computed_field working correctly
+
+**Business Value**:
+- **For Pentesters**: Faster reporting with pre-mapped attack scenarios
+- **For Security Teams**: Build detection rules aligned with ATT&CK framework
+- **For Executives**: Communicate business impact (e.g., "enables data exfiltration")
+- **For Compliance**: Map vulnerabilities to MITRE ATT&CK for framework alignment
+- **Strategic Defense**: Prioritize defenses based on attack technique coverage
+
+---
+
 ## [0.6.0] - November 5, 2025
 
 ### ✨ New Features - Enhanced UI/UX & Analytics
