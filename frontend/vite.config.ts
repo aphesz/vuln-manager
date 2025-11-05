@@ -22,6 +22,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     minify: 'terser',
+    target: ['es2015', 'safari11'], // Support older Safari versions including mobile
     rollupOptions: {
       output: {
         manualChunks: {
@@ -32,7 +33,13 @@ export default defineConfig({
       },
     },
   },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: 'es2015', // Transpile dependencies for older browsers
+    },
+  },
   define: {
-    'process.env.REACT_APP_API_URL': JSON.stringify(process.env.REACT_APP_API_URL || 'http://localhost:8000' as any),
+    // Use empty string to force relative /api paths (works on both desktop and mobile)
+    'process.env.REACT_APP_API_URL': JSON.stringify(''),
   },
 })

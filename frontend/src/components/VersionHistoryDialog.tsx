@@ -74,7 +74,7 @@ const VersionHistoryDialog: React.FC<VersionHistoryDialogProps> = ({
     setError(null);
     try {
       const response = await fetch(
-        `http://localhost:8000/vulnerability-templates/${templateId}/versions`
+        `/api/vulnerability-templates/${templateId}/versions`
       );
       if (!response.ok) {
         throw new Error('Failed to fetch version history');
@@ -101,7 +101,7 @@ const VersionHistoryDialog: React.FC<VersionHistoryDialogProps> = ({
     setRollbackLoading(versionNumber);
     try {
       const response = await fetch(
-        `http://localhost:8000/vulnerability-templates/${templateId}/rollback/${versionNumber}`,
+        `/api/vulnerability-templates/${templateId}/rollback/${versionNumber}`,
         {
           method: 'POST',
           headers: {
