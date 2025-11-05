@@ -1,13 +1,14 @@
 # backend/app/models.py
 
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sqlmodel import Field, SQLModel, Relationship  # type: ignore
 from enum import Enum
 from datetime import datetime
+import json
 
 # --- Base Models ---
 
-from pydantic import field_serializer
+from pydantic import field_serializer, computed_field
 
 class ProjectBase(SQLModel):
     """Base model for project creation and updates."""
@@ -218,6 +219,9 @@ class VulnerabilityTemplateBase(SQLModel):
     remediation_steps: Optional[str] = Field(default=None)  # Detailed steps
     references: Optional[str] = Field(default=None)  # URLs, CWE links, etc.
     
+    # MITRE ATT&CK mapping (JSON stored as text)
+    attack_techniques: Optional[str] = Field(default=None)  # JSON array: [{"technique_id": "T1190", "technique_name": "Exploit Public-Facing Application", "tactic": "Initial Access"}]
+    
     # Metadata
     source: str = Field(default="manual", max_length=50, index=True)  # "manual", "burp", "nessus", "nvd", "cwe"
     is_verified: bool = Field(default=False, index=True)  # Has this been reviewed/verified?
@@ -331,6 +335,17 @@ class ProjectReadWithStats(ProjectBase):
 class VulnerabilityTemplateRead(VulnerabilityTemplateBase):
     """Used to read a VulnerabilityTemplate."""
     id: int
+    
+    @computed_field
+    @property
+    def attack_techniques_parsed(self) -> Optional[List[Dict[str, str]]]:
+        """Parse attack_techniques JSON on demand"""
+        if self.attack_techniques:
+            try:
+                return json.loads(self.attack_techniques)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
     
     @field_serializer('created_at', 'updated_at', 'last_used')
     def serialize_datetime(self, value: Optional[datetime], _info):

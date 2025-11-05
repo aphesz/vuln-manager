@@ -2595,6 +2595,313 @@ def cleanup_duplicate_templates(
     }
 
 
+@app.post("/vulnerability-templates/{template_id}/enrich")
+async def enrich_template_from_nvd(
+    template_id: int,
+    overwrite_existing: bool = Query(False, description="Overwrite existing fields with NVD data"),
+    session: Session = Depends(get_session)
+):
+    """
+    Enrich a vulnerability template with data from the National Vulnerability Database (NVD).
+    
+    Fetches official CVE data including:
+    - Official description from NIST
+    - CVSS 3.1 score and vector
+    - CWE mapping
+    - Severity rating
+    - Official references
+    
+    Args:
+        template_id: Template to enrich
+        overwrite_existing: If False, only populate empty fields. If True, overwrite all.
+    
+    Returns:
+        Updated template with NVD data
+    
+    Examples:
+        POST /vulnerability-templates/5/enrich
+        → Fetches CVE data and updates template
+    """
+    from app.nvd import enrich_template_from_nvd, NVDAPIError
+    
+    # Get template
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Check if template has CVE ID
+    if not template.cve_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Template must have a CVE ID to enrich from NVD"
+        )
+    
+    try:
+        # Fetch enrichment data from NVD
+        logger.info(f"Enriching template {template_id} from NVD: {template.cve_id}")
+        enrichment_data = await enrich_template_from_nvd(
+            template.cve_id,
+            overwrite_existing=overwrite_existing
+        )
+        
+        # Apply updates to template
+        for field, value in enrichment_data.items():
+            # Skip if field already has value and overwrite_existing=False
+            if not overwrite_existing and getattr(template, field, None):
+                continue
+            
+            # Update field
+            setattr(template, field, value)
+        
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+        
+        logger.info(f"Successfully enriched template {template_id} with NVD data")
+        
+        # Return updated template
+        return VulnerabilityTemplateRead.model_validate(template)
+    
+    except NVDAPIError as e:
+        logger.error(f"NVD API error: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch data from NVD: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error enriching template: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error while enriching template: {str(e)}"
+        )
+
+
+# =============================================================================
+# ATT&CK Mapping Endpoints (v0.7.0 Phase 2B)
+# =============================================================================
+
+@app.get("/attack/techniques")
+def get_attack_techniques(
+    query: str = Query(None, description="Search query for filtering techniques"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get all available MITRE ATT&CK techniques or search for specific ones.
+    
+    GET /attack/techniques - Get all techniques
+    GET /attack/techniques?query=injection - Search techniques
+    
+    Returns:
+        List of ATT&CK techniques with details
+    """
+    from app.attack import get_all_techniques, search_techniques
+    
+    if query:
+        techniques = search_techniques(query)
+    else:
+        techniques = get_all_techniques()
+    
+    return {
+        "count": len(techniques),
+        "techniques": techniques
+    }
+
+
+@app.post("/vulnerability-templates/{template_id}/suggest-attack")
+def suggest_attack_techniques(
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Suggest MITRE ATT&CK techniques for a vulnerability template.
+    
+    POST /vulnerability-templates/5/suggest-attack
+    
+    Returns:
+        List of suggested techniques with relevance scores
+    """
+    from app.attack import suggest_techniques
+    
+    # Get template
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Get suggestions
+    suggestions = suggest_techniques(
+        description=template.description,
+        cwe_id=template.cwe_id,
+        vulnerability_type=template.vulnerability_type
+    )
+    
+    logger.info(f"Generated {len(suggestions)} ATT&CK technique suggestions for template {template_id}")
+    
+    return {
+        "template_id": template_id,
+        "template_title": template.title,
+        "suggestion_count": len(suggestions),
+        "suggestions": suggestions
+    }
+
+
+@app.patch("/vulnerability-templates/{template_id}/attack-techniques")
+def update_attack_techniques(
+    template_id: int,
+    technique_ids: List[str],
+    session: Session = Depends(get_session)
+):
+    """
+    Update ATT&CK techniques for a vulnerability template.
+    
+    PATCH /vulnerability-templates/5/attack-techniques
+    Body: ["T1190", "T1059", "T1505.003"]
+    
+    Returns:
+        Updated template with ATT&CK mappings
+    """
+    from app.attack import get_all_techniques, format_techniques_for_storage
+    
+    # Get template
+    template = session.get(VulnerabilityTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Validate technique IDs
+    all_techniques = get_all_techniques()
+    valid_ids = {t['technique_id'] for t in all_techniques}
+    
+    selected_techniques = []
+    for tid in technique_ids:
+        if tid not in valid_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid technique ID: {tid}"
+            )
+        
+        # Find technique details
+        tech = next(t for t in all_techniques if t['technique_id'] == tid)
+        selected_techniques.append(tech)
+    
+    # Store as JSON
+    template.attack_techniques = format_techniques_for_storage(selected_techniques)
+    template.updated_at = datetime.utcnow()
+    
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    
+    logger.info(f"Updated ATT&CK techniques for template {template_id}: {technique_ids}")
+    
+    return VulnerabilityTemplateRead.model_validate(template)
+
+
+@app.post("/projects/{project_id}/auto-match")
+def auto_match_project_findings(
+    project_id: int,
+    min_score: float = Query(0.6, ge=0.0, le=1.0, description="Minimum similarity score (0.0-1.0)"),
+    auto_create: bool = Query(True, description="Automatically create matches above threshold"),
+    session: Session = Depends(get_session)
+):
+    """
+    Automatically match all findings in a project to vulnerability templates.
+    
+    Uses tiered matching strategy (v0.7.0 Phase 1):
+    - Tier 1 (Exact): CWE/CVE exact matching → 100% confidence
+    - Tier 2 (Fuzzy): Title/description fuzzy matching → 60-99% confidence
+    - Tier 3 (Semantic): AI embeddings → future enhancement
+    
+    Args:
+        project_id: Project to process
+        min_score: Minimum similarity threshold (0.0-1.0). Default 0.6 (60%)
+        auto_create: If True, automatically create VulnerabilityMatch records.
+                     If False, return suggestions only (preview mode)
+    
+    Returns:
+        {
+            "project_id": int,
+            "total_findings": int,
+            "matched_count": int,
+            "unmatched_count": int,
+            "matches": [
+                {
+                    "finding_id": int,
+                    "finding_title": str,
+                    "template_id": int,
+                    "template_title": str,
+                    "similarity_score": float,
+                    "match_method": str,
+                    "created": bool  # True if auto_create=True
+                }
+            ]
+        }
+    
+    Examples:
+        # Preview mode (no changes)
+        POST /projects/1/auto-match?auto_create=false
+        
+        # Auto-create matches with 70% minimum
+        POST /projects/1/auto-match?min_score=0.7&auto_create=true
+    """
+    from app.matching import find_all_matches, create_vulnerability_match
+    
+    # Verify project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all findings in project
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    total_findings = len(findings)
+    matched_count = 0
+    results = []
+    
+    for finding in findings:
+        # Find all potential matches for this finding
+        matches = find_all_matches(session, finding, min_score=min_score)
+        
+        if matches:
+            # Take the best match (first in list, highest score)
+            template, score, method = matches[0]
+            matched_count += 1
+            
+            created = False
+            if auto_create:
+                # Create VulnerabilityMatch record
+                create_vulnerability_match(
+                    session, finding, template, score, method, matched_by="auto_match_api"
+                )
+                created = True
+            
+            results.append({
+                "finding_id": finding.id,
+                "finding_title": finding.title,
+                "template_id": template.id,
+                "template_title": template.title,
+                "similarity_score": round(score, 3),
+                "match_method": method,
+                "created": created
+            })
+    
+    unmatched_count = total_findings - matched_count
+    
+    logger.info(
+        f"Auto-match complete for project {project_id}: "
+        f"{matched_count}/{total_findings} findings matched "
+        f"(min_score={min_score}, auto_create={auto_create})"
+    )
+    
+    return {
+        "project_id": project_id,
+        "total_findings": total_findings,
+        "matched_count": matched_count,
+        "unmatched_count": unmatched_count,
+        "matches": results
+    }
+
+
 # =====================================================
 # TAG MANAGEMENT ENDPOINTS
 # =====================================================

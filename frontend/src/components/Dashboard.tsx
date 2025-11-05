@@ -41,6 +41,7 @@ import {
   Add as AddIcon,
   Description as DocxIcon,
   PictureAsPdf as PdfIcon,
+  AutoAwesome as AutoAwesomeIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -51,6 +52,7 @@ import FindingsTable from './FindingsTable';
 import JiraIntegrationSettings from './JiraIntegrationSettings';
 import ExportDialog, { ExportOptions } from './ExportDialog';
 import QuickAddDialog from './QuickAddDialog';
+import MatchReviewDialog from './MatchReviewDialog';
 import SLAComplianceWidget from './SLAComplianceWidget';
 import ReviewProgressWidget from './ReviewProgressWidget';
 import TopVulnerabilitiesWidget from './TopVulnerabilitiesWidget';
@@ -79,6 +81,7 @@ const Dashboard = () => {
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [quickAddDialogOpen, setQuickAddDialogOpen] = useState(false);
+  const [matchReviewDialogOpen, setMatchReviewDialogOpen] = useState(false);
   const [preSelectedTemplateId, setPreSelectedTemplateId] = useState<number | undefined>(undefined);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<RiskRating | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -880,6 +883,14 @@ const Dashboard = () => {
                 </Button>
                 <Button
                   variant="contained"
+                  color="secondary"
+                  startIcon={<AutoAwesomeIcon />}
+                  onClick={() => setMatchReviewDialogOpen(true)}
+                >
+                  Auto-Match Findings
+                </Button>
+                <Button
+                  variant="contained"
                   startIcon={<UploadIcon />}
                   onClick={() => setUploadDialogOpen(true)}
                 >
@@ -1168,6 +1179,16 @@ const Dashboard = () => {
         }}
         projectId={parseInt(projectId as string, 10)}
         preSelectedTemplateId={preSelectedTemplateId}
+      />
+
+      <MatchReviewDialog
+        open={matchReviewDialogOpen}
+        onClose={() => setMatchReviewDialogOpen(false)}
+        projectId={parseInt(projectId as string, 10)}
+        onMatchesCreated={() => {
+          fetchProject();
+          showSuccess('Matches created successfully');
+        }}
       />
     </Box>
   );

@@ -58,6 +58,15 @@ const RISK_LEVELS: RiskRating[] = ['Critical', 'High', 'Medium', 'Low', 'Informa
 const ISSUE_STATUSES: IssueStatus[] = ['Open', 'Partially Closed', 'Closed'];
 const REVIEW_STATUSES = ['Pending', 'In Review', 'Approved', 'Rejected'];
 
+// Risk level colors matching the dashboard
+const RISK_COLORS: Record<RiskRating, { bg: string; text: string }> = {
+  Critical: { bg: '#d32f2f', text: '#ffffff' },
+  High: { bg: '#f57c00', text: '#ffffff' },
+  Medium: { bg: '#fbc02d', text: '#000000' },
+  Low: { bg: '#388e3c', text: '#ffffff' },
+  Informational: { bg: '#1976d2', text: '#ffffff' },
+};
+
 export default function ExportDialog({ open, onClose, onExport, projectId }: ExportDialogProps) {
   const [format, setFormat] = useState<'excel' | 'csv'>('excel');
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
@@ -198,8 +207,21 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
                 key={risk}
                 label={risk}
                 onClick={() => handleRiskFilterToggle(risk)}
-                color={riskFilter.includes(risk) ? 'primary' : 'default'}
                 variant={riskFilter.includes(risk) ? 'filled' : 'outlined'}
+                sx={{
+                  backgroundColor: riskFilter.includes(risk) 
+                    ? RISK_COLORS[risk].bg 
+                    : 'transparent',
+                  color: riskFilter.includes(risk) 
+                    ? RISK_COLORS[risk].text 
+                    : RISK_COLORS[risk].bg,
+                  borderColor: RISK_COLORS[risk].bg,
+                  '&:hover': {
+                    backgroundColor: riskFilter.includes(risk)
+                      ? RISK_COLORS[risk].bg
+                      : `${RISK_COLORS[risk].bg}20`,
+                  },
+                }}
               />
             ))}
           </Box>
