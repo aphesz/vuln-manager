@@ -2410,6 +2410,142 @@ async def create_vulnerability_template(
     return template
 
 
+@app.get("/vulnerability-templates/analytics")
+def get_template_analytics(
+    session: Session = Depends(get_session)
+):
+    """
+    Get comprehensive analytics about the vulnerability template repository.
+    
+    Returns statistics on:
+    - Total template count
+    - Distribution by source (manual/burp/nessus/nvd/cwe)
+    - Distribution by risk rating
+    - Top 10 most-used templates
+    - Data quality metrics (CVSS coverage, CWE coverage, verification rate)
+    - ATT&CK technique usage statistics
+    """
+    from collections import defaultdict
+    import json
+    
+    # Total templates
+    total_templates = session.exec(
+        select(func.count(VulnerabilityTemplate.id))
+    ).one()
+    
+    # Templates by source
+    by_source_raw = session.exec(
+        select(
+            VulnerabilityTemplate.source,
+            func.count(VulnerabilityTemplate.id)
+        ).group_by(VulnerabilityTemplate.source)
+    ).all()
+    by_source = {source or "unknown": count for source, count in by_source_raw}
+    
+    # Templates by risk rating
+    by_risk_raw = session.exec(
+        select(
+            VulnerabilityTemplate.default_risk_rating,
+            func.count(VulnerabilityTemplate.id)
+        ).group_by(VulnerabilityTemplate.default_risk_rating)
+    ).all()
+    by_risk = {risk or "None": count for risk, count in by_risk_raw}
+    
+    # Most used templates (top 10)
+    most_used_templates = session.exec(
+        select(VulnerabilityTemplate)
+        .order_by(VulnerabilityTemplate.usage_count.desc())
+        .limit(10)
+    ).all()
+    
+    most_used = [
+        {
+            "template_id": t.id,
+            "title": t.title,
+            "usage_count": t.usage_count,
+            "risk_rating": t.default_risk_rating
+        }
+        for t in most_used_templates
+    ]
+    
+    # Quality metrics
+    with_cvss = session.exec(
+        select(func.count(VulnerabilityTemplate.id))
+        .where(VulnerabilityTemplate.cvss_score.isnot(None))
+    ).one()
+    
+    with_cwe = session.exec(
+        select(func.count(VulnerabilityTemplate.id))
+        .where(VulnerabilityTemplate.cwe_id.isnot(None))
+    ).one()
+    
+    verified = session.exec(
+        select(func.count(VulnerabilityTemplate.id))
+        .where(VulnerabilityTemplate.is_verified == True)
+    ).one()
+    
+    # Calculate percentages
+    cvss_pct = (with_cvss / total_templates * 100) if total_templates > 0 else 0
+    cwe_pct = (with_cwe / total_templates * 100) if total_templates > 0 else 0
+    verified_pct = (verified / total_templates * 100) if total_templates > 0 else 0
+    
+    # ATT&CK technique statistics
+    templates_with_attack = session.exec(
+        select(func.count(VulnerabilityTemplate.id))
+        .where(VulnerabilityTemplate.attack_techniques.isnot(None))
+        .where(VulnerabilityTemplate.attack_techniques != "null")
+        .where(VulnerabilityTemplate.attack_techniques != "[]")
+    ).one()
+    
+    # Count total techniques and tactic distribution
+    all_templates_with_attack = session.exec(
+        select(VulnerabilityTemplate.attack_techniques)
+        .where(VulnerabilityTemplate.attack_techniques.isnot(None))
+        .where(VulnerabilityTemplate.attack_techniques != "null")
+        .where(VulnerabilityTemplate.attack_techniques != "[]")
+    ).all()
+    
+    total_techniques_mapped = 0
+    tactic_counts = defaultdict(int)
+    
+    for attack_json in all_templates_with_attack:
+        try:
+            techniques = json.loads(attack_json)
+            if isinstance(techniques, list):
+                total_techniques_mapped += len(techniques)
+                for tech in techniques:
+                    if isinstance(tech, dict) and "tactic" in tech:
+                        tactic_counts[tech["tactic"]] += 1
+        except (json.JSONDecodeError, TypeError):
+            continue
+    
+    # Sort tactics by count
+    most_common_tactics = [
+        {"tactic": tactic, "count": count}
+        for tactic, count in sorted(tactic_counts.items(), key=lambda x: x[1], reverse=True)
+    ]
+    
+    return {
+        "total_templates": total_templates,
+        "by_source": by_source,
+        "by_risk_rating": by_risk,
+        "most_used": most_used,
+        "quality_metrics": {
+            "with_cvss": with_cvss,
+            "with_cwe": with_cwe,
+            "verified": verified,
+            "cvss_coverage_pct": round(cvss_pct, 1),
+            "cwe_coverage_pct": round(cwe_pct, 1),
+            "verification_rate_pct": round(verified_pct, 1)
+        },
+        "attack_techniques": {
+            "templates_with_attack": templates_with_attack,
+            "total_techniques_mapped": total_techniques_mapped,
+            "most_common_tactics": most_common_tactics[:5]  # Top 5 tactics
+        }
+    }
+
+
 @app.get("/vulnerability-templates/{template_id}", response_model=VulnerabilityTemplateRead)
 def get_vulnerability_template(
     template_id: int,
