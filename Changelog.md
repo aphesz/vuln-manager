@@ -80,6 +80,167 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 - Shows loading state during enrichment
 - Success/error notifications
 
+#### Phase 3: Template Versioning & History (COMPLETE)
+**Complete version control system** for vulnerability templates with automatic snapshot creation and rollback capabilities.
+
+**Database Schema**: `vulnerability_template_versions` table
+- **Fields**: 30+ snapshot fields including title, description, CWE, CVE, CVSS, remediation, attack techniques
+- **Metadata**: version_number (auto-incremented), changed_by, change_reason, created_at
+- **Indexes**: 4 indexes for performance (template_id, version_number, created_at, composite unique)
+- **Relationship**: CASCADE delete ensures version cleanup
+- **Migration**: `8f7f56672c50_add_vulnerability_template_versioning.py`
+
+**Backend Implementation** (139 lines in main.py):
+1. **Automatic Versioning** - PATCH `/vulnerability-templates/{id}`:
+   - Creates snapshot BEFORE applying changes (preserves OLD state)
+   - Sequential version numbering (v1, v2, v3...)
+   - Captures changed_by and change_reason metadata
+   - Example: Update title → v1 created with previous title
+
+2. **Version History** - GET `/vulnerability-templates/{id}/versions`:
+   ```json
+   [
+     {
+       "version_number": 2,
+       "title": "Updated Title",
+       "cvss_score": 9.8,
+       "changed_by": "john_doe",
+       "change_reason": "Added CVSS data",
+       "created_at": "2025-11-05T11:45:23"
+     }
+   ]
+   ```
+
+3. **Rollback** - POST `/vulnerability-templates/{id}/rollback/{version_number}`:
+   - Restores template to specific version
+   - Creates snapshot BEFORE rollback (preserves current state)
+   - Returns updated template with confirmation
+
+**Frontend Component**: `VersionHistoryDialog.tsx` (350+ lines)
+- **Visual Timeline**: List-based layout with Paper cards
+- **Color-Coded Borders**: Blue (current/rollback target), purple (rollback), grey (historical)
+- **Metadata Display**: CWE, CVE, CVSS score, risk rating chips
+- **Change Tracking**: PersonIcon + CalendarIcon for changed_by/change_reason
+- **Complete Field View**: All 20+ template fields visible in each version
+- **Rollback Confirmation**: Double-confirm before reverting changes
+- **Integration**: History icon button in VulnerabilityTemplateManager actions column
+
+**Testing** (10 comprehensive test cases):
+- `test_create_template_no_version` - No v0 created on template creation
+- `test_update_creates_version_snapshot` - v1 captures OLD state before update
+- `test_multiple_updates_create_sequential_versions` - v1 → v2 → v3 numbering
+- `test_get_version_history` - API returns chronological list
+- `test_rollback_to_previous_version` - Restore + snapshot creation
+- `test_rollback_nonexistent_version_fails` - 404 error handling
+- `test_version_preserves_all_fields` - Complete field integrity
+- End-to-end verified: 4 versions created, rollback from v3 to v1 successful
+
+**Example Version History** (Template #1):
+```
+v1: Original "SQL Injection" title, created before update
+v2: Updated to "SQL Injection in Login Form", CVSS added
+v3: Enriched from NVD, references added
+v4: Rollback to v1 (snapshot created before rollback)
+```
+
+**Business Value**:
+- **Audit Trail**: Complete change history with attribution
+- **Compliance**: Demonstrates due diligence for security audits
+- **Rollback Safety**: Undo mistakes without data loss
+- **Collaboration**: Track who changed what and why
+
+#### Phase 4A: Bulk Operations (COMPLETE)
+**Efficient multi-template management** with version-aware bulk delete and update operations.
+
+**Backend Endpoints**:
+
+1. **Bulk Delete** - POST `/vulnerability-templates/bulk-delete`:
+   ```json
+   Request: [1, 2, 3, 4, 5]
+   Response: {
+     "deleted_count": 3,
+     "deleted": [
+       {"id": 1, "title": "SQL Injection"},
+       {"id": 2, "title": "XSS"}
+     ],
+     "error_count": 2,
+     "errors": [
+       {"id": 3, "title": "CSRF", "error": "Template in use by 5 finding(s)"},
+       {"id": 4, "error": "Template not found"}
+     ]
+   }
+   ```
+   - **Safety Validation**: Prevents deletion of in-use templates
+   - **Version Cleanup**: Automatically deletes version history before template deletion (FK constraint fix)
+   - **Granular Errors**: Returns specific error for each failed deletion
+   - **Transaction Safety**: All-or-nothing within session commit
+
+2. **Bulk Update** - POST `/vulnerability-templates/bulk-update`:
+   ```json
+   Request: {
+     "updates": [
+       {"id": 1, "is_verified": true, "default_risk_rating": "High"},
+       {"id": 2, "is_verified": true}
+     ],
+     "changed_by": "admin",
+     "change_reason": "Standardizing verified templates"
+   }
+   Response: {
+     "updated_count": 2,
+     "updated": [
+       {"id": 1, "title": "SQL Injection"},
+       {"id": 2, "title": "XSS"}
+     ],
+     "error_count": 0,
+     "errors": []
+   }
+   ```
+   - **Version Snapshots**: Creates version BEFORE each update (same as individual PATCH)
+   - **Selective Updates**: Only specified fields are updated, others preserved
+   - **Metadata Tracking**: changed_by and change_reason applied to all updates
+   - **Error Handling**: Per-template error tracking with ID, title, and specific error message
+
+**Frontend Implementation** (VulnerabilityTemplateManager.tsx):
+
+**Bulk Delete Enhancement**:
+- Upgraded existing `handleBatchDelete()` to use new bulk endpoint
+- Warning dialog: "Templates in use by findings cannot be deleted"
+- Success/error summary: "Deleted 3 template(s), Failed: 2"
+- Error details displayed with template titles
+
+**Bulk Update Dialog** (95 lines):
+- **Field Selectors**:
+  - Verification Status: Verified / Unverified / Leave unchanged
+  - Default Risk Rating: Critical / High / Medium / Low / None / Leave unchanged
+  - Vulnerability Type: Network / Web Application / Mobile / API / Infrastructure / Cloud / Other / Leave unchanged
+- **Metadata Inputs**:
+  - Changed By: User attribution
+  - Change Reason: Multi-line explanation text
+- **Smart Button State**: Disabled if no fields selected for update
+- **Info Alert**: "Only fill in the fields you want to update. Empty fields will not be changed."
+
+**User Workflow**:
+1. Select templates via checkboxes (multi-select DataGrid)
+2. Chip shows "X selected" count
+3. Click "Bulk Update (X)" button (secondary color, EditIcon)
+4. Choose which fields to update (selective)
+5. Fill in attribution metadata
+6. Confirm → See success summary
+7. All updated templates have new version snapshots created
+
+**Testing Completed**:
+- ✅ Bulk delete: Multiple templates deleted successfully
+- ✅ Usage protection: In-use templates rejected with clear errors
+- ✅ Bulk update: Field-selective updates working
+- ✅ Version snapshots: New versions created for each bulk-updated template
+- ✅ Error handling: Granular per-template error messages displayed
+
+**Performance & Safety**:
+- Version history deletion prevents FK constraint violations
+- Transaction-based operations ensure data consistency
+- Granular error tracking prevents silent failures
+- Version snapshots maintain complete audit trail
+
 #### Phase 2B: MITRE ATT&CK Integration (COMPLETE)
 **Map vulnerabilities to attack techniques** for strategic threat intelligence.
 

@@ -2816,7 +2816,7 @@ def delete_vulnerability_template(
     Delete a vulnerability template.
     Will fail if template is in use by findings (prevent deletion).
     """
-    from app.models import VulnerabilityTemplate, Finding
+    from app.models import VulnerabilityTemplate, Finding, VulnerabilityTemplateVersion
     
     template = session.get(VulnerabilityTemplate, template_id)
     if not template:
@@ -2833,10 +2833,186 @@ def delete_vulnerability_template(
             detail=f"Cannot delete template: {template.usage_count} finding(s) are using this template. Unlink them first."
         )
     
+    # Delete version history first (to avoid FK constraint issues)
+    versions = session.exec(
+        select(VulnerabilityTemplateVersion).where(
+            VulnerabilityTemplateVersion.template_id == template_id
+        )
+    ).all()
+    for version in versions:
+        session.delete(version)
+    
     session.delete(template)
     session.commit()
     
     logger.info(f"Deleted vulnerability template: {template_id}")
+
+
+@app.post("/vulnerability-templates/bulk-delete")
+def bulk_delete_vulnerability_templates(
+    template_ids: List[int] = Body(...),
+    session: Session = Depends(get_session)
+):
+    """
+    Bulk delete multiple vulnerability templates.
+    Will skip templates that are in use by findings.
+    
+    Returns summary with deleted count and errors for templates that couldn't be deleted.
+    """
+    from app.models import VulnerabilityTemplate, Finding, VulnerabilityTemplateVersion
+    
+    deleted = []
+    errors = []
+    
+    for template_id in template_ids:
+        template = session.get(VulnerabilityTemplate, template_id)
+        
+        if not template:
+            errors.append({
+                "id": template_id,
+                "error": "Template not found"
+            })
+            continue
+        
+        # Check if template is in use
+        findings_using_template = session.exec(
+            select(Finding).where(Finding.template_id == template_id)
+        ).first()
+        
+        if findings_using_template:
+            errors.append({
+                "id": template_id,
+                "title": template.title,
+                "error": f"Template in use by {template.usage_count} finding(s)"
+            })
+            continue
+        
+        # Delete version history first (to avoid FK constraint issues)
+        versions = session.exec(
+            select(VulnerabilityTemplateVersion).where(
+                VulnerabilityTemplateVersion.template_id == template_id
+            )
+        ).all()
+        for version in versions:
+            session.delete(version)
+        
+        # Now safe to delete the template
+        session.delete(template)
+        deleted.append({
+            "id": template_id,
+            "title": template.title
+        })
+    
+    session.commit()
+    
+    logger.info(f"Bulk delete: {len(deleted)} deleted, {len(errors)} errors")
+    
+    return {
+        "deleted_count": len(deleted),
+        "deleted": deleted,
+        "error_count": len(errors),
+        "errors": errors
+    }
+
+
+@app.post("/vulnerability-templates/bulk-update")
+def bulk_update_vulnerability_templates(
+    updates: List[Dict[str, Any]] = Body(...),
+    changed_by: Optional[str] = Body(None),
+    change_reason: Optional[str] = Body("Bulk update"),
+    session: Session = Depends(get_session)
+):
+    """
+    Bulk update multiple vulnerability templates.
+    Each update object should have 'id' and the fields to update.
+    
+    Creates version snapshots for each template before updating.
+    
+    Example: [{"id": 1, "is_verified": true}, {"id": 2, "default_risk_rating": "High"}]
+    
+    Returns summary with updated count and errors.
+    """
+    from app.models import VulnerabilityTemplate, VulnerabilityTemplateVersion
+    from sqlmodel import func
+    
+    updated = []
+    errors = []
+    
+    for update_data in updates:
+        if "id" not in update_data:
+            errors.append({"error": "Missing 'id' field in update object"})
+            continue
+        
+        template_id = update_data.pop("id")
+        template = session.get(VulnerabilityTemplate, template_id)
+        
+        if not template:
+            errors.append({
+                "id": template_id,
+                "error": "Template not found"
+            })
+            continue
+        
+        # CREATE VERSION SNAPSHOT BEFORE UPDATING (same logic as PATCH endpoint)
+        max_version = session.exec(
+            select(func.max(VulnerabilityTemplateVersion.version_number))
+            .where(VulnerabilityTemplateVersion.template_id == template_id)
+        ).first() or 0
+        
+        version_snapshot = VulnerabilityTemplateVersion(
+            template_id=template.id,
+            version_number=max_version + 1,
+            title=template.title,
+            description=template.description,
+            cwe_id=template.cwe_id,
+            cve_id=template.cve_id,
+            cvss_vector=template.cvss_vector,
+            cvss_score=template.cvss_score,
+            owasp_likelihood=template.owasp_likelihood,
+            owasp_impact=template.owasp_impact,
+            owasp_risk_rating=template.owasp_risk_rating,
+            default_risk_rating=template.default_risk_rating,
+            vulnerability_type=template.vulnerability_type,
+            remediation_summary=template.remediation_summary,
+            remediation_steps=template.remediation_steps,
+            references=template.references,
+            attack_techniques=template.attack_techniques,
+            source=template.source,
+            is_verified=template.is_verified,
+            changed_by=changed_by or "bulk_update",
+            change_reason=change_reason or "Bulk update",
+            created_at=get_utc_now()
+        )
+        session.add(version_snapshot)
+        
+        # Apply updates
+        for key, value in update_data.items():
+            if hasattr(template, key):
+                setattr(template, key, value)
+            else:
+                errors.append({
+                    "id": template_id,
+                    "error": f"Invalid field: {key}"
+                })
+                continue
+        
+        template.updated_at = get_utc_now()
+        session.add(template)
+        updated.append({
+            "id": template_id,
+            "title": template.title
+        })
+    
+    session.commit()
+    
+    logger.info(f"Bulk update: {len(updated)} updated, {len(errors)} errors")
+    
+    return {
+        "updated_count": len(updated),
+        "updated": updated,
+        "error_count": len(errors),
+        "errors": errors
+    }
 
 
 @app.post("/vulnerability-templates/cleanup-duplicates")
