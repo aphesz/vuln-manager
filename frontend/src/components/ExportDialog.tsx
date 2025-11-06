@@ -28,7 +28,7 @@ interface ExportDialogProps {
 }
 
 export interface ExportOptions {
-  format: 'excel' | 'csv';
+  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf';
   columns: string[];
   filters: {
     risk?: RiskRating[];
@@ -68,7 +68,7 @@ const RISK_COLORS: Record<RiskRating, { bg: string; text: string }> = {
 };
 
 export default function ExportDialog({ open, onClose, onExport, projectId }: ExportDialogProps) {
-  const [format, setFormat] = useState<'excel' | 'csv'>('excel');
+  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf'>('excel');
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
     AVAILABLE_COLUMNS.filter(c => c.defaultChecked).map(c => c.key)
   );
@@ -146,89 +146,106 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
         <FormControl component="fieldset" sx={{ mb: 3 }}>
           <FormLabel component="legend">Export Format</FormLabel>
           <RadioGroup
-            row
             value={format}
-            onChange={(e) => setFormat(e.target.value as 'excel' | 'csv')}
+            onChange={(e) => setFormat(e.target.value as 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf')}
           >
-            <FormControlLabel value="excel" control={<Radio />} label="Excel (.xlsx)" />
-            <FormControlLabel value="csv" control={<Radio />} label="CSV (.csv)" />
+            <FormControlLabel value="excel" control={<Radio />} label="Excel (.xlsx) - Spreadsheet with data analysis" />
+            <FormControlLabel value="csv" control={<Radio />} label="CSV (.csv) - Simple tabular format" />
+            <FormControlLabel value="json" control={<Radio />} label="JSON (.json) - Full data with metadata" />
+            <FormControlLabel value="markdown" control={<Radio />} label="Markdown (.md) - Formatted documentation" />
+            <FormControlLabel value="docx" control={<Radio />} label="Word Document (.docx) - Professional report" />
+            <FormControlLabel value="pdf" control={<Radio />} label="PDF (.pdf) - Print-ready report" />
           </RadioGroup>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            {format === 'json' && '💡 Best for: API integrations, automated processing, CI/CD pipelines'}
+            {format === 'markdown' && '💡 Best for: GitHub/GitLab wikis, technical documentation, sharing with developers'}
+            {format === 'excel' && '💡 Best for: Data analysis, pivot tables, charts, and custom filtering'}
+            {format === 'csv' && '💡 Best for: Importing into other tools, simple spreadsheets, universal compatibility'}
+            {format === 'docx' && '💡 Best for: Client deliverables, executive reports, editable documents'}
+            {format === 'pdf' && '💡 Best for: Final reports, presentations, printing, email distribution'}
+          </Typography>
         </FormControl>
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Column Selection */}
-        <FormControl component="fieldset" sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <FormLabel component="legend">Select Columns</FormLabel>
-            <Box>
-              <Button size="small" onClick={handleSelectAllColumns}>
-                Select All
-              </Button>
-              <Button size="small" onClick={handleDeselectAllColumns}>
-                Deselect All
-              </Button>
-            </Box>
-          </Box>
-          <FormGroup>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
-              {AVAILABLE_COLUMNS.map(col => (
-                <FormControlLabel
-                  key={col.key}
-                  control={
-                    <Checkbox
-                      checked={selectedColumns.includes(col.key)}
-                      onChange={() => handleColumnToggle(col.key)}
+        {/* Column Selection - Only show for data formats */}
+        {['excel', 'csv', 'json', 'markdown'].includes(format) && (
+          <>
+            <FormControl component="fieldset" sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <FormLabel component="legend">Select Columns</FormLabel>
+                <Box>
+                  <Button size="small" onClick={handleSelectAllColumns}>
+                    Select All
+                  </Button>
+                  <Button size="small" onClick={handleDeselectAllColumns}>
+                    Deselect All
+                  </Button>
+                </Box>
+              </Box>
+              <FormGroup>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
+                  {AVAILABLE_COLUMNS.map(col => (
+                    <FormControlLabel
+                      key={col.key}
+                      control={
+                        <Checkbox
+                          checked={selectedColumns.includes(col.key)}
+                          onChange={() => handleColumnToggle(col.key)}
+                        />
+                      }
+                      label={col.label}
                     />
-                  }
-                  label={col.label}
-                />
-              ))}
-            </Box>
+                  ))}
+                </Box>
           </FormGroup>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
             {selectedColumns.length} column{selectedColumns.length !== 1 ? 's' : ''} selected
           </Typography>
         </FormControl>
 
-        <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: 2 }} />
+          </>
+        )}
 
-        {/* Filters */}
-        <Typography variant="subtitle2" sx={{ mb: 2 }}>
-          Filters (optional - leave empty to export all)
-        </Typography>
+        {/* Filters - Only show for data formats */}
+        {['excel', 'csv', 'json', 'markdown'].includes(format) && (
+          <>
+            <Typography variant="subtitle2" sx={{ mb: 2 }}>
+              Filters (optional - leave empty to export all)
+            </Typography>
 
-        {/* Risk Filter */}
-        <FormControl component="fieldset" sx={{ mb: 2 }}>
-          <FormLabel component="legend">Risk Rating</FormLabel>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-            {RISK_LEVELS.map(risk => (
-              <Chip
-                key={risk}
-                label={risk}
-                onClick={() => handleRiskFilterToggle(risk)}
-                variant={riskFilter.includes(risk) ? 'filled' : 'outlined'}
-                sx={{
-                  backgroundColor: riskFilter.includes(risk) 
-                    ? RISK_COLORS[risk].bg 
-                    : 'transparent',
-                  color: riskFilter.includes(risk) 
-                    ? RISK_COLORS[risk].text 
-                    : RISK_COLORS[risk].bg,
-                  borderColor: RISK_COLORS[risk].bg,
-                  '&:hover': {
-                    backgroundColor: riskFilter.includes(risk)
-                      ? RISK_COLORS[risk].bg
-                      : `${RISK_COLORS[risk].bg}20`,
-                  },
-                }}
-              />
-            ))}
-          </Box>
-        </FormControl>
+            {/* Risk Filter */}
+            <FormControl component="fieldset" sx={{ mb: 2 }}>
+              <FormLabel component="legend">Risk Rating</FormLabel>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                {RISK_LEVELS.map(risk => (
+                  <Chip
+                    key={risk}
+                    label={risk}
+                    onClick={() => handleRiskFilterToggle(risk)}
+                    variant={riskFilter.includes(risk) ? 'filled' : 'outlined'}
+                    sx={{
+                      backgroundColor: riskFilter.includes(risk) 
+                        ? RISK_COLORS[risk].bg 
+                        : 'transparent',
+                      color: riskFilter.includes(risk) 
+                        ? RISK_COLORS[risk].text 
+                        : RISK_COLORS[risk].bg,
+                      borderColor: RISK_COLORS[risk].bg,
+                      '&:hover': {
+                        backgroundColor: riskFilter.includes(risk)
+                          ? RISK_COLORS[risk].bg
+                          : `${RISK_COLORS[risk].bg}20`,
+                      },
+                    }}
+                  />
+                ))}
+              </Box>
+            </FormControl>
 
-        {/* Issue Status Filter */}
-        <FormControl component="fieldset" sx={{ mb: 2 }}>
+            {/* Issue Status Filter */}
+            <FormControl component="fieldset" sx={{ mb: 2 }}>
           <FormLabel component="legend">Issue Status</FormLabel>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
             {ISSUE_STATUSES.map(status => (
@@ -243,21 +260,23 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
           </Box>
         </FormControl>
 
-        {/* Review Status Filter */}
-        <FormControl component="fieldset">
-          <FormLabel component="legend">Review Status</FormLabel>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-            {REVIEW_STATUSES.map(status => (
-              <Chip
-                key={status}
-                label={status}
-                onClick={() => handleReviewStatusToggle(status)}
-                color={reviewStatusFilter.includes(status) ? 'primary' : 'default'}
-                variant={reviewStatusFilter.includes(status) ? 'filled' : 'outlined'}
-              />
-            ))}
-          </Box>
-        </FormControl>
+            {/* Review Status Filter */}
+            <FormControl component="fieldset">
+              <FormLabel component="legend">Review Status</FormLabel>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                {REVIEW_STATUSES.map(status => (
+                  <Chip
+                    key={status}
+                    label={status}
+                    onClick={() => handleReviewStatusToggle(status)}
+                    color={reviewStatusFilter.includes(status) ? 'primary' : 'default'}
+                    variant={reviewStatusFilter.includes(status) ? 'filled' : 'outlined'}
+                  />
+                ))}
+              </Box>
+            </FormControl>
+          </>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={handleReset}>Reset</Button>
@@ -266,7 +285,7 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
           onClick={handleExport}
           variant="contained"
           startIcon={<DownloadIcon />}
-          disabled={selectedColumns.length === 0}
+          disabled={['excel', 'csv', 'json', 'markdown'].includes(format) && selectedColumns.length === 0}
         >
           Export
         </Button>

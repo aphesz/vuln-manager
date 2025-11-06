@@ -12,9 +12,12 @@ VulnManager is a comprehensive, full-stack web application designed to help cybe
 * **Professional Reporting:** Export findings tables directly into **DOCX** and **PDF** formats.
 
 ### Advanced Features ✨
-* **� Quick Add Finding:** Rapid finding creation with vulnerability template search and multi-instance support.
-* **📚 Vulnerability Repository:** Searchable library of 100+ vulnerability templates with CWE/CVE mapping.
-* **📤 Export Enhancements:** Export to Excel/CSV with custom column selection and advanced filtering.
+* **🔍 Quick Add Finding:** Rapid finding creation with vulnerability template search and multi-instance support.
+* **📚 Vulnerability Repository:** Searchable library of vulnerability templates with CWE/CVE mapping and external database import.
+* **🗄️ CWE Database Import:** Bulk import MITRE CWE database (900+ weakness entries) for comprehensive vulnerability coverage.
+* **� CVE Import:** Import individual CVEs directly from NIST NVD API with automatic template creation.
+* **📊 Import History:** Track all CWE/CVE database imports with statistics (created, updated, skipped, errors, success rate).
+* **�📤 Export Enhancements:** Export to Excel/CSV with custom column selection and advanced filtering.
 * **📊 Dashboard Widgets:** Real-time metrics cards showing project statistics and risk distribution.
 * **�🔄 Peer Review Workflow:** Complete review system with status tracking (Pending, In Review, Approved, Rejected), reviewer assignment, and collaborative comments.
 * **📊 Issue Status Tracking:** Manage finding lifecycle (Open, Partially Closed, Closed) with status comments and audit trails.
@@ -146,6 +149,29 @@ docker exec -w /code vuln-manager-backend-1 alembic history
 - **Jira Sync:** Create and track Jira issues directly from findings
 - **Report Export:** Generate professional DOCX/PDF reports with customizable templates
 
+### Vulnerability Repository & CWE/CVE Import
+- **Template Library:** 900+ vulnerability templates from MITRE CWE database + NIST NVD CVE data
+- **CWE Import Process:**
+  1. Navigate to **Vulnerability Repository** page
+  2. Click **"Import CWE Database"** button in toolbar
+  3. Download latest CWE XML from https://cwe.mitre.org/data/xml/cwec_latest.xml.zip
+  4. Upload the XML file (supports up to 50MB)
+  5. Review import statistics (parsed, created, skipped, errors)
+  6. Choose to overwrite existing entries or skip duplicates
+- **CVE Import Process:**
+  1. Click **"Import CVE"** button in toolbar
+  2. Enter CVE ID (e.g., CVE-2024-1234 or just 2024-1234)
+  3. Click "Import CVE" to fetch from NIST NVD API
+  4. Review imported CVE details (CVSS score, description, remediation)
+  5. Optional: Check "Overwrite existing" to update existing CVE templates
+- **Import History:**
+  1. Click **"Import History"** button to view all imports
+  2. See statistics: date, source (CWE/NVD), templates created/updated/skipped, errors, success rate
+  3. Filter by source or view all records
+  4. Delete history records (does not affect imported templates)
+- **Auto-Enrichment:** Imported templates include CWE/CVE IDs, weakness descriptions, CVSS scores, remediation strategies, and risk ratings
+- **Smart Matching:** Auto-link findings to CWE/CVE templates during scan uploads
+
 ## 🔧 API Endpoints
 
 Key API endpoints (full documentation at `/docs`):
@@ -168,9 +194,17 @@ Key API endpoints (full documentation at `/docs`):
 ### Vulnerability Templates
 - `GET /vulnerability-templates` - List all templates (search, filter, paginate)
 - `POST /vulnerability-templates` - Create template (rate limited: 30/hour)
+- `POST /vulnerability-templates/import-cwe-database` - Bulk import MITRE CWE database (50MB limit)
+- `POST /vulnerability-templates/import-cve` - Import single CVE from NIST NVD by CVE ID
 - `GET /vulnerability-templates/{id}` - Get template details
+- `GET /cwe/{cwe_id}` - Lookup CWE by ID (local DB or MITRE redirect)
 - `GET /repository/search` - Search templates (fuzzy search)
 - `GET /projects/{id}/template-suggestions` - Get project-specific suggestions
+
+### Import History
+- `GET /import-history` - List all import history records (paginated, filterable by source)
+- `GET /import-history/{id}` - Get import history details
+- `DELETE /import-history/{id}` - Delete import history record
 
 ### Peer Review
 - `GET /findings/{id}/review` - Get review status

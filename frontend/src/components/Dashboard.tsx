@@ -218,6 +218,25 @@ const Dashboard = () => {
     if (!project) return;
 
     try {
+      // Handle DOCX and PDF differently (they use existing endpoints)
+      if (options.format === 'docx') {
+        const link = document.createElement('a');
+        link.href = `${API_BASE_URL}/projects/${projectId}/report.docx`;
+        link.download = `${project.name}_report.docx`;
+        link.click();
+        showSuccess('DOCX report downloaded successfully!');
+        setExportDialogOpen(false);
+        return;
+      }
+
+      if (options.format === 'pdf') {
+        window.open(`${API_BASE_URL}/projects/${projectId}/report.pdf`, '_blank');
+        showSuccess('PDF report opened in new tab!');
+        setExportDialogOpen(false);
+        return;
+      }
+
+      // For data formats (Excel, CSV, JSON, Markdown), use the export endpoint
       // Build query parameters
       const params = new URLSearchParams();
       params.append('format', options.format);
@@ -250,12 +269,20 @@ const Dashboard = () => {
       const link = document.createElement('a');
       link.href = url;
       
-      const extension = options.format === 'excel' ? 'xlsx' : 'csv';
+      // Determine file extension
+      const extensions: Record<string, string> = {
+        excel: 'xlsx',
+        csv: 'csv',
+        json: 'json',
+        markdown: 'md'
+      };
+      const extension = extensions[options.format] || 'xlsx';
       link.download = `${project.name}_findings.${extension}`;
       link.click();
       window.URL.revokeObjectURL(url);
 
       showSuccess(`Export successful! Downloaded ${link.download}`);
+      setExportDialogOpen(false);
     } catch (error) {
       console.error('Export error:', error);
       showError('Failed to export findings. Please try again.');
@@ -905,27 +932,11 @@ const Dashboard = () => {
                 </Button>
                 <Button
                   variant="contained"
+                  color="success"
                   startIcon={<DownloadIcon />}
-                  onClick={exportToExcel}
+                  onClick={() => setExportDialogOpen(true)}
                 >
-                  Export Excel
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<DocxIcon />}
-                  href={`${API_BASE_URL}/projects/${projectId}/report.docx`}
-                  target="_blank"
-                  download
-                >
-                  Export DOCX
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<PdfIcon />}
-                  href={`${API_BASE_URL}/projects/${projectId}/report.pdf`}
-                  target="_blank"
-                >
-                  Export PDF
+                  Export Report
                 </Button>
               </Box>
             </CardContent>

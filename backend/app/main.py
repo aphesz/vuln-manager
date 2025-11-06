@@ -1,6 +1,6 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -32,6 +32,7 @@ from app.models import (
     Project,
     Finding,
     Instance,
+    InstanceRead,
     RiskMapping,
     FindingBase,  # Import FindingBase instead of top-level RiskRating
     ProjectReadWithFindings,
@@ -51,6 +52,8 @@ from app.models import (
     VulnerabilityTemplateVersionRead,
     VulnerabilityMatch,
     VulnerabilityMatchRead,
+    ImportHistory,
+    ImportHistoryRead,
     ProjectMetrics,
     SLAComplianceMetrics,
     ReviewProgressMetrics,
@@ -772,7 +775,7 @@ def read_project(project_id: int, session: Session = Depends(get_session)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Build the response with tags
+    # Build the response with tags and instances
     findings_with_tags = []
     for finding in project.findings:
         # Load tags for this finding
@@ -783,9 +786,11 @@ def read_project(project_id: int, session: Session = Depends(get_session)):
             .order_by(Tag.name)
         ).all()
         
-        # Convert to dict and add tags
+        # Convert to dict and add tags and instances
         finding_dict = finding.model_dump()
         finding_dict['tags'] = [TagRead.model_validate(tag) for tag in finding_tags]
+        # Explicitly include instances from the relationship
+        finding_dict['instances'] = [InstanceRead.model_validate(inst) for inst in finding.instances]
         findings_with_tags.append(FindingReadWithInstances(**finding_dict))
     
     # Build project response
@@ -1191,7 +1196,7 @@ def get_pdf_report(project_id: int, session: Session = Depends(get_session)):
 @app.get("/projects/{project_id}/export")
 def export_findings(
     project_id: int,
-    format: str = "excel",  # 'excel' or 'csv'
+    format: str = "excel",  # 'excel', 'csv', 'json', or 'markdown'
     columns: Optional[str] = None,  # Comma-separated column names
     risk_filter: Optional[str] = None,  # Comma-separated risk levels
     status_filter: Optional[str] = None,  # Comma-separated issue statuses
@@ -1202,7 +1207,7 @@ def export_findings(
     Export findings with customizable columns and filters.
     
     Query Parameters:
-    - format: 'excel' or 'csv' (default: 'excel')
+    - format: 'excel', 'csv', 'json', or 'markdown' (default: 'excel')
     - columns: Comma-separated list of columns to include (default: all)
               Available: title, risk_rating, description, remediation, instance_count,
                         review_status, reviewer_name, jira_issue_key, jira_status,
@@ -1359,8 +1364,147 @@ def export_findings(
             headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_findings.csv"}
         )
     
+    # Generate JSON file
+    elif format.lower() == 'json':
+        # Build full JSON structure with project metadata
+        export_data = {
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "consultant_name": project.consultant_name,
+            },
+            "export_metadata": {
+                "exported_at": get_utc_now().isoformat(),
+                "total_findings": len(filtered_findings),
+                "columns_included": list(column_map.values()),
+                "filters_applied": {
+                    "risk_levels": risk_filter.split(',') if risk_filter else None,
+                    "issue_statuses": status_filter.split(',') if status_filter else None,
+                    "review_statuses": review_filter.split(',') if review_filter else None,
+                }
+            },
+            "findings": []
+        }
+        
+        # Add full finding data
+        for finding in filtered_findings:
+            finding_data = {}
+            for col_key in column_map.keys():
+                if col_key == 'instance_count':
+                    instance_count = session.exec(
+                        select(Instance).where(Instance.finding_id == finding.id)
+                    ).all()
+                    finding_data[col_key] = len(instance_count)
+                else:
+                    value = getattr(finding, col_key, None)
+                    # Convert datetime to ISO format
+                    if hasattr(value, 'isoformat'):
+                        finding_data[col_key] = value.isoformat()
+                    else:
+                        finding_data[col_key] = value
+            
+            # Add instances if needed
+            if 'instance_count' in column_map:
+                instances = session.exec(
+                    select(Instance).where(Instance.finding_id == finding.id)
+                ).all()
+                finding_data['instances'] = [
+                    {
+                        "location": inst.location,
+                        "details": inst.details,
+                        "status": inst.status,
+                        "created_at": inst.created_at.isoformat() if inst.created_at else None
+                    } for inst in instances
+                ]
+            
+            export_data["findings"].append(finding_data)
+        
+        return JSONResponse(
+            content=export_data,
+            headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_findings.json"}
+        )
+    
+    # Generate Markdown file
+    elif format.lower() == 'markdown':
+        output = io.StringIO()
+        
+        # Write header
+        output.write(f"# Vulnerability Assessment Report: {project.name}\n\n")
+        output.write(f"**Consultant:** {project.consultant_name}\n\n")
+        output.write(f"**Generated:** {get_utc_now().strftime('%B %d, %Y at %H:%M UTC')}\n\n")
+        output.write(f"**Total Findings:** {len(filtered_findings)}\n\n")
+        
+        # Write summary table
+        if filtered_findings:
+            output.write("## Summary\n\n")
+            output.write("| Risk Level | Count |\n")
+            output.write("|------------|-------|\n")
+            risk_counts = {}
+            for finding in filtered_findings:
+                risk = finding.risk_rating
+                risk_counts[risk] = risk_counts.get(risk, 0) + 1
+            for risk in ['Critical', 'High', 'Medium', 'Low', 'Informational']:
+                if risk in risk_counts:
+                    output.write(f"| {risk} | {risk_counts[risk]} |\n")
+            output.write("\n")
+        
+        # Write findings
+        output.write("## Findings\n\n")
+        for idx, finding in enumerate(filtered_findings, 1):
+            output.write(f"### {idx}. {finding.title}\n\n")
+            
+            # Risk rating badge
+            risk_emoji = {
+                'Critical': '🔴',
+                'High': '🟠',
+                'Medium': '🟡',
+                'Low': '🟢',
+                'Informational': '🔵'
+            }
+            emoji = risk_emoji.get(finding.risk_rating, '⚪')
+            output.write(f"**Risk Rating:** {emoji} {finding.risk_rating}\n\n")
+            
+            # Add selected fields
+            if 'description' in column_map:
+                output.write(f"**Description:**\n\n{finding.description}\n\n")
+            
+            if 'remediation' in column_map:
+                output.write(f"**Remediation:**\n\n{finding.remediation}\n\n")
+            
+            if 'instance_count' in column_map:
+                instances = session.exec(
+                    select(Instance).where(Instance.finding_id == finding.id)
+                ).all()
+                output.write(f"**Instances Found:** {len(instances)}\n\n")
+                if instances:
+                    output.write("**Instance Details:**\n\n")
+                    for i, inst in enumerate(instances, 1):
+                        output.write(f"{i}. **Location:** `{inst.location}`\n")
+                        output.write(f"   - **Details:** {inst.details}\n")
+                        output.write(f"   - **Status:** {inst.status}\n")
+                    output.write("\n")
+            
+            if 'review_status' in column_map:
+                output.write(f"**Review Status:** {finding.review_status}\n\n")
+            
+            if 'issue_status' in column_map:
+                output.write(f"**Issue Status:** {finding.issue_status}\n\n")
+            
+            if 'jira_issue_key' in column_map and finding.jira_issue_key:
+                output.write(f"**Jira Issue:** {finding.jira_issue_key}\n\n")
+            
+            output.write("---\n\n")
+        
+        output.seek(0)
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type='text/markdown',
+            headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_findings.md"}
+        )
+    
     else:
-        raise HTTPException(status_code=400, detail="Invalid format. Use 'excel' or 'csv'")
+        raise HTTPException(status_code=400, detail="Invalid format. Use 'excel', 'csv', 'json', or 'markdown'")
 
 # --- Peer Review Workflow Endpoints ---
 
@@ -3151,6 +3295,550 @@ async def enrich_template_from_nvd(
         raise HTTPException(
             status_code=500,
             detail=f"Internal error while enriching template: {str(e)}"
+        )
+
+
+# =============================================================================
+# CWE Database Import (v0.7.1)
+# =============================================================================
+
+@app.post("/vulnerability-templates/import-cwe-database")
+async def import_cwe_database(
+    file: UploadFile = File(..., description="CWE XML file (cwec_latest.xml)"),
+    overwrite_existing: bool = Query(False, description="Overwrite existing CWE templates"),
+    session: Session = Depends(get_session)
+):
+    """
+    Bulk import CWE (Common Weakness Enumeration) database from MITRE XML file.
+    
+    Downloads: https://cwe.mitre.org/data/downloads.html
+    Latest: https://cwe.mitre.org/data/xml/cwec_latest.xml.zip
+    
+    Process:
+    1. Upload CWE XML file (cwec_latest.xml)
+    2. Parse all <Weakness> elements (~900 CWEs)
+    3. Create VulnerabilityTemplate for each CWE
+    4. Skip existing CWEs (unless overwrite=true)
+    5. Return import statistics
+    
+    Args:
+        file: CWE XML file upload
+        overwrite_existing: Whether to update existing CWE templates
+        session: Database session
+    
+    Returns:
+        Import statistics: {total_parsed, templates_created, templates_skipped, errors}
+    
+    Example:
+        curl -X POST "http://localhost:8000/api/vulnerability-templates/import-cwe-database" \\
+             -F "file=@cwec_latest.xml" \\
+             -F "overwrite_existing=false"
+    
+    Response:
+        {
+          "total_parsed": 922,
+          "templates_created": 845,
+          "templates_skipped": 77,
+          "errors": 0,
+          "success_rate": 91.65,
+          "imported_at": "2025-11-06T12:34:56.789012"
+        }
+    """
+    from app.cwe import parse_cwe_xml, generate_import_statistics, CWEParseError
+    from app.models import VulnerabilityTemplate
+    import time
+    
+    # Start timing
+    start_time = time.time()
+    error_list = []  # Track errors for history
+    
+    # Validate file type
+    if not file.filename.endswith('.xml'):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be an XML file (.xml extension)"
+        )
+    
+    # Read file content
+    try:
+        logger.info(f"Reading CWE XML file: {file.filename}")
+        xml_content = await file.read()
+        
+        if len(xml_content) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        
+        if len(xml_content) > 50 * 1024 * 1024:  # 50 MB limit
+            raise HTTPException(
+                status_code=413,
+                detail="File too large. Maximum size is 50 MB."
+            )
+    
+    except Exception as e:
+        logger.error(f"Error reading uploaded file: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read uploaded file: {str(e)}"
+        )
+    
+    # Parse CWE XML
+    try:
+        logger.info("Parsing CWE XML content...")
+        cwe_list = parse_cwe_xml(xml_content)
+        total_parsed = len(cwe_list)
+        
+        if total_parsed == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No CWE weaknesses found in XML file. Ensure you uploaded cwec_latest.xml from MITRE."
+            )
+        
+        logger.info(f"Successfully parsed {total_parsed} CWE entries")
+    
+    except CWEParseError as e:
+        logger.error(f"CWE parsing error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to parse CWE XML: {str(e)}"
+        )
+    
+    # Import CWEs into database
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    for cwe_data in cwe_list:
+        try:
+            cwe_id = cwe_data['cwe_id']
+            
+            # Check if CWE template already exists
+            existing = session.exec(
+                select(VulnerabilityTemplate).where(
+                    VulnerabilityTemplate.cwe_id == cwe_id
+                )
+            ).first()
+            
+            if existing:
+                if overwrite_existing:
+                    # Update existing template with CWE data
+                    for key, value in cwe_data.items():
+                        if value is not None:  # Only update non-null values
+                            setattr(existing, key, value)
+                    existing.updated_at = get_utc_now()
+                    session.add(existing)
+                    updated_count += 1
+                    logger.debug(f"Updated existing {cwe_id}")
+                else:
+                    # Skip existing CWE
+                    skipped_count += 1
+                    logger.debug(f"Skipped existing {cwe_id}")
+                continue
+            
+            # Create new template
+            template = VulnerabilityTemplate(**cwe_data)
+            template.created_at = get_utc_now()
+            template.updated_at = get_utc_now()
+            session.add(template)
+            created_count += 1
+            logger.debug(f"Created template for {cwe_id}")
+        
+        except Exception as e:
+            error_count += 1
+            error_msg = f"Failed to import {cwe_data.get('cwe_id', 'unknown')}: {str(e)}"
+            logger.warning(error_msg)
+            error_list.append({
+                "cwe_id": cwe_data.get('cwe_id', 'unknown'),
+                "error": str(e)
+            })
+            continue
+    
+    # Commit all changes
+    try:
+        session.commit()
+        logger.info(
+            f"CWE import complete: {created_count} created, {updated_count} updated, "
+            f"{skipped_count} skipped, {error_count} errors"
+        )
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Database commit failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save CWE templates to database: {str(e)}"
+        )
+    
+    # Generate statistics
+    stats = generate_import_statistics(
+        total_parsed=total_parsed,
+        created=created_count,
+        skipped=skipped_count,
+        errors=error_count
+    )
+    
+    # Calculate duration
+    duration = round(time.time() - start_time, 2)
+    
+    # Track import in history
+    try:
+        import json
+        import_record = ImportHistory(
+            source="cwe",
+            import_type="bulk_cwe",
+            file_name=file.filename,
+            file_size=len(xml_content),
+            templates_created=created_count,
+            templates_updated=updated_count,
+            templates_skipped=skipped_count,
+            errors=error_count,
+            total_parsed=total_parsed,
+            imported_by="system",  # TODO: Get from auth context when auth is implemented
+            imported_at=get_utc_now(),
+            duration_seconds=duration,
+            error_details=json.dumps(error_list) if error_list else None
+        )
+        session.add(import_record)
+        session.commit()
+        logger.info(f"Import history record created: ID {import_record.id}, duration: {duration}s")
+    except Exception as e:
+        # Don't fail the whole import if history tracking fails
+        logger.warning(f"Failed to create import history record: {str(e)}")
+        session.rollback()
+    
+    return stats
+
+
+@app.get("/cwe/{cwe_id}")
+def get_cwe_details(
+    cwe_id: str = Path(..., description="CWE ID (e.g., CWE-79 or just 79)"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get details for a specific CWE from local database or MITRE website.
+    
+    Searches local vulnerability templates first. If not found locally,
+    redirects to official MITRE CWE page.
+    
+    Args:
+        cwe_id: CWE identifier (CWE-79 or 79)
+        session: Database session
+    
+    Returns:
+        CWE template details or redirect to MITRE
+    
+    Example:
+        GET /api/cwe/79
+        GET /api/cwe/CWE-79
+    """
+    from app.models import VulnerabilityTemplate
+    
+    # Normalize CWE ID format
+    if not cwe_id.upper().startswith('CWE-'):
+        cwe_id = f"CWE-{cwe_id}"
+    else:
+        cwe_id = cwe_id.upper()
+    
+    # Search local database
+    template = session.exec(
+        select(VulnerabilityTemplate).where(
+            VulnerabilityTemplate.cwe_id == cwe_id
+        )
+    ).first()
+    
+    if template:
+        return VulnerabilityTemplateRead.model_validate(template)
+    
+    # If not found locally, return MITRE URL
+    cwe_number = cwe_id.replace('CWE-', '')
+    mitre_url = f"https://cwe.mitre.org/data/definitions/{cwe_number}.html"
+    
+    return {
+        "cwe_id": cwe_id,
+        "found_locally": False,
+        "mitre_url": mitre_url,
+        "message": f"{cwe_id} not found in local database. Import CWE database or visit MITRE URL."
+    }
+
+
+# =============================================================================
+# Import History Endpoints (v0.7.2)
+# =============================================================================
+
+@app.get("/import-history", response_model=List[ImportHistoryRead])
+def list_import_history(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of records to return"),
+    source: Optional[str] = Query(None, description="Filter by source (cwe, nvd, manual)"),
+    session: Session = Depends(get_session)
+):
+    """
+    List all vulnerability database import history records.
+    
+    Returns a paginated list of import operations (CWE/CVE imports) with statistics.
+    
+    Args:
+        skip: Pagination offset (default: 0)
+        limit: Maximum records to return (default: 50, max: 200)
+        source: Filter by import source (optional)
+        session: Database session
+    
+    Returns:
+        List of import history records with statistics
+    
+    Example:
+        GET /api/import-history
+        GET /api/import-history?source=cwe
+        GET /api/import-history?limit=10&skip=0
+    """
+    # Build query
+    query = select(ImportHistory).order_by(ImportHistory.imported_at.desc())
+    
+    # Apply source filter if provided
+    if source:
+        query = query.where(ImportHistory.source == source)
+    
+    # Apply pagination
+    query = query.offset(skip).limit(limit)
+    
+    # Execute query
+    history_records = session.exec(query).all()
+    
+    return [ImportHistoryRead.model_validate(record) for record in history_records]
+
+
+@app.get("/import-history/{history_id}", response_model=ImportHistoryRead)
+def get_import_history(
+    history_id: int = Path(..., description="Import history record ID"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get details for a specific import history record.
+    
+    Args:
+        history_id: Import history record ID
+        session: Database session
+    
+    Returns:
+        Import history record with full details
+    
+    Example:
+        GET /api/import-history/1
+    """
+    history = session.get(ImportHistory, history_id)
+    
+    if not history:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Import history record {history_id} not found"
+        )
+    
+    return ImportHistoryRead.model_validate(history)
+
+
+@app.delete("/import-history/{history_id}")
+def delete_import_history(
+    history_id: int = Path(..., description="Import history record ID"),
+    session: Session = Depends(get_session)
+):
+    """
+    Delete an import history record.
+    
+    Note: This only deletes the history record, not the imported templates.
+    
+    Args:
+        history_id: Import history record ID
+        session: Database session
+    
+    Returns:
+        Success message
+    
+    Example:
+        DELETE /api/import-history/1
+    """
+    history = session.get(ImportHistory, history_id)
+    
+    if not history:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Import history record {history_id} not found"
+        )
+    
+    session.delete(history)
+    session.commit()
+    
+    logger.info(f"Deleted import history record {history_id}")
+    
+    return {
+        "message": f"Import history record {history_id} deleted successfully",
+        "deleted_id": history_id
+    }
+
+
+@app.post("/vulnerability-templates/import-cve", response_model=VulnerabilityTemplateRead)
+async def import_cve_by_id(
+    cve_id: str = Query(..., description="CVE ID to import (e.g., CVE-2024-1234)"),
+    overwrite_existing: bool = Query(False, description="Overwrite existing CVE template if found"),
+    session: Session = Depends(get_session)
+):
+    """
+    Import a single CVE directly from NVD API by CVE ID.
+    
+    Fetches CVE data from NIST National Vulnerability Database and creates
+    a vulnerability template. If CVE already exists, optionally overwrites it.
+    
+    Args:
+        cve_id: CVE identifier (e.g., CVE-2024-1234, CVE-2021-44228)
+        overwrite_existing: Update existing template if CVE already imported
+        session: Database session
+    
+    Returns:
+        Created or updated VulnerabilityTemplate
+    
+    Example:
+        POST /api/vulnerability-templates/import-cve?cve_id=CVE-2021-44228
+        
+    Response:
+        {
+          "id": 123,
+          "title": "Log4j RCE Vulnerability",
+          "cve_id": "CVE-2021-44228",
+          "cvss_score": 10.0,
+          ...
+        }
+    """
+    from app.nvd import fetch_cve_data, NVDAPIError
+    from app.models import VulnerabilityTemplate
+    import time
+    import json
+    
+    start_time = time.time()
+    error_details = []
+    
+    # Normalize CVE ID
+    cve_id = cve_id.upper().strip()
+    if not cve_id.startswith('CVE-'):
+        cve_id = f"CVE-{cve_id}"
+    
+    # Check if CVE already exists
+    existing = session.exec(
+        select(VulnerabilityTemplate).where(
+            VulnerabilityTemplate.cve_id == cve_id
+        )
+    ).first()
+    
+    if existing and not overwrite_existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{cve_id} already exists in database (ID: {existing.id}). Use overwrite_existing=true to update."
+        )
+    
+    # Fetch from NVD API
+    try:
+        logger.info(f"Fetching {cve_id} from NVD API...")
+        cve_data = await fetch_cve_data(cve_id, use_cache=False)
+        
+        if not cve_data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"{cve_id} not found in NIST NVD database. Verify CVE ID is correct."
+            )
+    
+    except NVDAPIError as e:
+        logger.error(f"NVD API error for {cve_id}: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch from NVD API: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error fetching {cve_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to import CVE: {str(e)}"
+        )
+    
+    # Create or update template
+    try:
+        if existing:
+            # Update existing template
+            for key, value in cve_data.items():
+                if value is not None:
+                    setattr(existing, key, value)
+            existing.updated_at = get_utc_now()
+            existing.source = "nvd"
+            existing.is_verified = True
+            session.add(existing)
+            session.commit()
+            session.refresh(existing)
+            
+            duration = time.time() - start_time
+            logger.info(f"Updated existing template for {cve_id} (ID: {existing.id}) in {duration:.2f}s")
+            
+            # Track in import history
+            try:
+                import_record = ImportHistory(
+                    source="nvd",
+                    import_type="single_cve",
+                    file_name=None,
+                    file_size=None,
+                    templates_created=0,
+                    templates_updated=1,
+                    templates_skipped=0,
+                    errors=0,
+                    total_parsed=1,
+                    imported_by="system",  # TODO: Get from auth context when auth is implemented
+                    imported_at=get_utc_now(),
+                    duration_seconds=round(duration, 2),
+                    error_details=None
+                )
+                session.add(import_record)
+                session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to create import history: {str(e)}")
+            
+            return VulnerabilityTemplateRead.model_validate(existing)
+        else:
+            # Create new template
+            template = VulnerabilityTemplate(**cve_data)
+            template.created_at = get_utc_now()
+            template.updated_at = get_utc_now()
+            template.source = "nvd"
+            template.is_verified = True
+            session.add(template)
+            session.commit()
+            session.refresh(template)
+            
+            duration = time.time() - start_time
+            logger.info(f"Created new template for {cve_id} (ID: {template.id}) in {duration:.2f}s")
+            
+            # Track in import history
+            try:
+                import_record = ImportHistory(
+                    source="nvd",
+                    import_type="single_cve",
+                    file_name=None,
+                    file_size=None,
+                    templates_created=1,
+                    templates_updated=0,
+                    templates_skipped=0,
+                    errors=0,
+                    total_parsed=1,
+                    imported_by="system",  # TODO: Get from auth context when auth is implemented
+                    imported_at=get_utc_now(),
+                    duration_seconds=round(duration, 2),
+                    error_details=None
+                )
+                session.add(import_record)
+                session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to create import history: {str(e)}")
+            
+            return VulnerabilityTemplateRead.model_validate(template)
+    
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Database error creating template for {cve_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save CVE template: {str(e)}"
         )
 
 

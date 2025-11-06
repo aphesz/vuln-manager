@@ -125,8 +125,10 @@ def parse_nvd_vulnerability(vuln_data: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Parsed data ready for VulnerabilityTemplate
     """
+    # Build result dictionary
     result = {
         'cve_id': vuln_data.get('id'),
+        'title': None,  # Will be generated from CVE ID + description
         'description': None,
         'cvss_score': None,
         'cvss_vector': None,
@@ -137,12 +139,24 @@ def parse_nvd_vulnerability(vuln_data: Dict[str, Any]) -> Dict[str, Any]:
         'last_modified': None,
     }
     
-    # Extract description (prefer English)
+    # Extract description (English only)
     descriptions = vuln_data.get('descriptions', [])
     for desc in descriptions:
         if desc.get('lang') == 'en':
-            result['description'] = desc.get('value')
+            result['description'] = desc.get('value', '')
             break
+    
+    # Generate title from CVE ID + first sentence of description
+    cve_id = result['cve_id'] or 'Unknown CVE'
+    if result['description']:
+        # Extract first sentence (up to first period or 100 chars)
+        first_sentence = result['description'].split('.')[0]
+        if len(first_sentence) > 100:
+            first_sentence = first_sentence[:97] + '...'
+        result['title'] = f"{cve_id} - {first_sentence}"
+    else:
+        # Fallback if no description available
+        result['title'] = cve_id
     
     # Extract CVSS 3.1 metrics (prefer CVSS v3.1 over v3.0 over v2.0)
     metrics = vuln_data.get('metrics', {})

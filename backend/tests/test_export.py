@@ -304,3 +304,187 @@ def test_export_filters_no_matches(client: TestClient, sample_project: Project):
     
     # No findings should match
     assert len(rows) == 0
+
+
+def test_export_json_format(client: TestClient, sample_project: Project):
+    """Test JSON export with full data structure."""
+    response = client.get(f"/projects/{sample_project.id}/export?format=json")
+    
+    assert response.status_code == 200
+    assert response.headers['content-type'] == 'application/json'
+    
+    data = response.json()
+    
+    # Check structure
+    assert 'project' in data
+    assert 'export_metadata' in data
+    assert 'findings' in data
+    
+    # Check project metadata
+    assert data['project']['id'] == sample_project.id
+    assert data['project']['name'] == sample_project.name
+    
+    # Check export metadata
+    assert 'exported_at' in data['export_metadata']
+    assert data['export_metadata']['total_findings'] > 0
+    assert 'columns_included' in data['export_metadata']
+    
+    # Check findings data
+    assert len(data['findings']) > 0
+    finding = data['findings'][0]
+    assert 'title' in finding
+    assert 'risk_rating' in finding
+
+
+def test_export_json_with_filters(client: TestClient, sample_project: Project):
+    """Test JSON export with risk filter."""
+    response = client.get(
+        f"/projects/{sample_project.id}/export?format=json&risk_filter=Critical"
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Check filters applied
+    assert data['export_metadata']['filters_applied']['risk_levels'] == ['Critical']
+    
+    # All findings should be Critical
+    for finding in data['findings']:
+        assert finding['risk_rating'] == 'Critical'
+
+
+def test_export_json_with_column_selection(client: TestClient, sample_project: Project):
+    """Test JSON export with selected columns only."""
+    response = client.get(
+        f"/projects/{sample_project.id}/export?format=json&columns=title,risk_rating"
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Check only selected columns present
+    if data['findings']:
+        finding = data['findings'][0]
+        assert 'title' in finding
+        assert 'risk_rating' in finding
+        # Other columns should not be present
+        assert 'description' not in finding or finding['description'] is None
+
+
+def test_export_markdown_format(client: TestClient, sample_project: Project):
+    """Test Markdown export format."""
+    response = client.get(f"/projects/{sample_project.id}/export?format=markdown")
+    
+    assert response.status_code == 200
+    assert 'text/markdown' in response.headers['content-type']
+    
+    content = response.content.decode('utf-8')
+    
+    # Check markdown structure
+    assert f"# Vulnerability Assessment Report: {sample_project.name}" in content
+    assert f"**Consultant:** {sample_project.consultant_name}" in content
+    assert "## Summary" in content
+    assert "## Findings" in content
+    
+    # Check for risk level table
+    assert "| Risk Level | Count |" in content
+    
+    # Check for findings sections
+    assert "### 1." in content  # First finding
+    assert "**Risk Rating:**" in content
+
+
+def test_export_markdown_with_instances(client: TestClient, sample_project: Project, session: Session):
+    """Test Markdown export includes instance details."""
+    # Add instances to a finding
+    finding = session.exec(
+        select(Finding).where(Finding.project_id == sample_project.id)
+    ).first()
+    
+    instance1 = Instance(
+        finding_id=finding.id,
+        url="https://example.com/page1",
+        parameter="username",
+        evidence="<script>alert(1)</script>"
+    )
+    instance2 = Instance(
+        finding_id=finding.id,
+        url="https://example.com/page2",
+        parameter="search",
+        evidence="' OR '1'='1"
+    )
+    session.add(instance1)
+    session.add(instance2)
+    session.commit()
+    
+    response = client.get(
+        f"/projects/{sample_project.id}/export?format=markdown&columns=title,risk_rating,instance_count"
+    )
+    
+    assert response.status_code == 200
+    content = response.content.decode('utf-8')
+    
+    # Check instance details
+    assert "**Instances Found:**" in content
+    assert "**Instance Details:**" in content
+    assert "https://example.com/page1" in content
+    assert "https://example.com/page2" in content
+    assert "username" in content
+    assert "search" in content
+
+
+def test_export_markdown_with_filters(client: TestClient, sample_project: Project):
+    """Test Markdown export with risk filter."""
+    response = client.get(
+        f"/projects/{sample_project.id}/export?format=markdown&risk_filter=Critical,High"
+    )
+    
+    assert response.status_code == 200
+    content = response.content.decode('utf-8')
+    
+    # Should only contain Critical and High findings
+    assert "🔴 Critical" in content or "🟠 High" in content
+    # Should not contain Medium or Low
+    assert "🟡 Medium" not in content or content.count("### ") <= 2
+
+
+def test_export_markdown_emoji_risk_badges(client: TestClient, sample_project: Project):
+    """Test Markdown export includes emoji risk badges."""
+    response = client.get(f"/projects/{sample_project.id}/export?format=markdown")
+    
+    assert response.status_code == 200
+    content = response.content.decode('utf-8')
+    
+    # Check for risk emoji badges
+    risk_emojis = {
+        'Critical': '🔴',
+        'High': '🟠',
+        'Medium': '🟡',
+        'Low': '🟢',
+        'Informational': '🔵'
+    }
+    
+    # At least one emoji should be present
+    found_emoji = False
+    for emoji in risk_emojis.values():
+        if emoji in content:
+            found_emoji = True
+            break
+    assert found_emoji
+
+
+def test_export_format_filenames(client: TestClient, sample_project: Project):
+    """Test that different formats have correct file extensions."""
+    formats = {
+        'excel': '.xlsx',
+        'csv': '.csv',
+        'json': '.json',
+        'markdown': '.md'
+    }
+    
+    for format_type, extension in formats.items():
+        response = client.get(f"/projects/{sample_project.id}/export?format={format_type}")
+        assert response.status_code == 200
+        
+        content_disposition = response.headers.get('content-disposition', '')
+        assert extension in content_disposition

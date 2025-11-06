@@ -302,6 +302,48 @@ class VulnerabilityMatch(VulnerabilityMatchBase, table=True):
     # Relationships
     template: Optional[VulnerabilityTemplate] = Relationship(back_populates="matches")
 
+# --- Import History Models ---
+
+class ImportHistoryBase(SQLModel):
+    """Base model for tracking vulnerability database imports (CWE/CVE)."""
+    # Import metadata
+    source: str = Field(..., max_length=50, index=True)  # "cwe", "nvd", "manual"
+    import_type: str = Field(..., max_length=50)  # "bulk_cwe", "bulk_nvd", "single_cve", "sync"
+    
+    # File information
+    file_name: Optional[str] = Field(default=None, max_length=255)
+    file_size: Optional[int] = Field(default=None)  # bytes
+    
+    # Import results
+    templates_created: int = Field(default=0)
+    templates_updated: int = Field(default=0)
+    templates_skipped: int = Field(default=0)
+    errors: int = Field(default=0)
+    total_parsed: int = Field(default=0)
+    
+    # Calculated field
+    @computed_field  # type: ignore[misc]
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate as percentage."""
+        if self.total_parsed == 0:
+            return 0.0
+        return round((self.templates_created + self.templates_updated) / self.total_parsed * 100, 2)
+    
+    # Metadata
+    imported_by: str = Field(default="system", max_length=100)  # username or "system"
+    imported_at: datetime = Field(default=None, index=True)
+    duration_seconds: Optional[float] = Field(default=None)  # import duration
+    
+    # Error details (JSON stored as text)
+    error_details: Optional[str] = Field(default=None)  # JSON array of error messages
+
+class ImportHistory(ImportHistoryBase, table=True):
+    """Database model for ImportHistory."""
+    __tablename__ = "import_history"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+
 # --- Read Models (For FastAPI Responses) ---
 
 # 1. Instance Read Model
@@ -405,7 +447,30 @@ class VulnerabilityMatchRead(VulnerabilityMatchBase):
             return value.isoformat()
         return value
 
-# 12. VulnerabilityTemplate with Matches
+# 12. ImportHistory Read Model
+class ImportHistoryRead(ImportHistoryBase):
+    """Used to read ImportHistory with all fields."""
+    id: int
+    
+    @computed_field  # type: ignore[misc]
+    @property
+    def error_details_parsed(self) -> Optional[List[str]]:
+        """Parse error_details JSON on demand"""
+        if self.error_details:
+            try:
+                return json.loads(self.error_details)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
+    
+    @field_serializer('imported_at')
+    def serialize_imported_at(self, value: datetime, _info):
+        """Serialize datetime with timezone info"""
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
+
+# 13. VulnerabilityTemplate with Matches
 class VulnerabilityTemplateWithMatches(VulnerabilityTemplateBase):
     """Used to read a VulnerabilityTemplate with its matches."""
     id: int

@@ -1,6 +1,6 @@
-# Test Suite for VulnManager Tier 1 Features
+# Test Suite for VulnManager
 
-This directory contains automated tests for the VulnManager v0.3.0 Tier 1 features.
+This directory contains automated tests for VulnManager features across all versions.
 
 ## 📦 Test Structure
 
@@ -12,10 +12,33 @@ This directory contains automated tests for the VulnManager v0.3.0 Tier 1 featur
   - `SLAService.test.ts` - SLA tracking API calls
 
 ### Backend Tests (`backend/tests/`)
+
+#### Core Feature Tests (v0.1-v0.3)
 - **`conftest.py`** - Pytest fixtures and test database setup
-- **`test_peer_review.py`** - Peer review workflow endpoints
-- **`test_jira_integration.py`** - Jira integration endpoints
-- **`test_sla_tracking.py`** - SLA tracking and remediation endpoints
+- **`test_peer_review.py`** - Peer review workflow endpoints (6 tests)
+- **`test_jira_integration.py`** - Jira integration endpoints (7 tests)
+- **`test_sla_tracking.py`** - SLA tracking and remediation endpoints (6 tests)
+
+#### Scoring & Calculators (v0.4)
+- **`test_scoring.py`** - CVSS 3.1 and OWASP Risk Rating calculations (47 tests)
+- **`test_scoring_calculators.py`** - Detailed calculator tests (17 tests)
+- **`test_api_endpoints.py`** - Scoring API endpoint tests (19 tests)
+
+#### Custom Tagging System (v0.5)
+- **`test_tagging_system.py`** - Tag CRUD, finding associations, usage tracking (23 tests)
+
+#### Enhanced Features (v0.6)
+- **`test_export.py`** - Export system (Excel, CSV, JSON, Markdown) (23 tests)
+- **`test_quick_add.py`** - Quick-add vulnerability search (8 tests)
+
+#### Vulnerability Repository (v0.7)
+- **`test_vulnerability_templates.py`** - Template CRUD, validation, CWE import (45+ tests)
+- **`test_versioning.py`** - Template version history and rollback (9 tests)
+- **`test_matching.py`** - Auto-matching and fuzzy search (19 tests)
+- **`test_import_history.py`** - Import history tracking (v0.7.3, 36 tests) ⭐ **NEW**
+- **`test_cve_import.py`** - CVE direct import from NVD (v0.7.3, 30 tests) ⭐ **NEW**
+
+**Total Backend Tests:** ~260+ tests (including v0.7.3 additions)
 
 ## 🚀 Running Tests
 
@@ -81,7 +104,37 @@ docker exec vuln-manager-frontend-1 npm test
 
 ## 📊 Test Coverage
 
-### Frontend Services
+### v0.7.3 New Features ⭐
+- ✅ **Import History Tracking** (36 test cases in `test_import_history.py`)
+  - GET /import-history (list with pagination/filtering)
+  - GET /import-history/{id} (retrieve specific record)
+  - DELETE /import-history/{id} (cleanup)
+  - ImportHistory model computed fields (success_rate, error_details_parsed)
+  - Auto-creation on CWE/CVE imports
+  - Statistics validation (created, updated, skipped, errors)
+  - Duration tracking validation
+  - Error details JSON parsing
+
+- ✅ **CVE Direct Import** (30 test cases in `test_cve_import.py`)
+  - POST /vulnerability-templates/import-cve
+  - CVE ID normalization (with/without "CVE-" prefix, case-insensitive)
+  - Duplicate handling (409 conflict, overwrite mode)
+  - CVE not found (404 error)
+  - NVD API error handling (502 bad gateway, timeouts)
+  - ImportHistory auto-creation and tracking
+  - Duration tracking for imports
+  - Real-world CVE examples (Log4Shell, Heartbleed)
+
+- ✅ **CWE Import Validation** (12 test cases in `test_vulnerability_templates.py`)
+  - File type validation (XML only)
+  - Empty file rejection
+  - File size limits (50MB max)
+  - Invalid XML handling
+  - Empty CWE list detection
+  - CWE lookup endpoint (with/without prefix)
+  - MITRE redirect for non-existent CWEs
+
+### Frontend Services (v0.3.0)
 - ✅ **PeerReviewService** (15 test cases)
   - Update review status (success/error)
   - Add comments with validation
@@ -100,7 +153,8 @@ docker exec vuln-manager-frontend-1 npm test
   - Update remediation deadline/owner
   - Validate date formats
 
-### Backend Endpoints
+### Backend Endpoints (v0.3.0)
+### Backend Endpoints (v0.3.0)
 - ✅ **Peer Review** (6 test cases)
   - PATCH `/api/findings/{id}/review` - Update status
   - POST `/api/findings/{id}/comments` - Add comment
@@ -121,6 +175,41 @@ docker exec vuln-manager-frontend-1 npm test
   - PATCH `/api/findings/{id}/remediation` - Update deadline
   - SLA status calculation logic
   - Date validation
+
+### Backend Endpoints (v0.4-v0.7)
+- ✅ **Scoring & Calculators** (83 test cases across 3 files)
+  - CVSS 3.1 vector parsing and calculation
+  - OWASP Risk Rating matrix
+  - API endpoints for score calculations
+  - Boundary value testing
+  - Real-world vulnerability examples
+
+- ✅ **Custom Tagging System** (23 test cases)
+  - Tag CRUD operations
+  - Finding-tag associations
+  - Usage count tracking
+  - Cascade deletion
+  - Color validation
+
+- ✅ **Export System** (23 test cases)
+  - Excel, CSV, JSON, Markdown formats
+  - Column selection and filtering
+  - Risk/status/review filters
+  - Empty state handling
+  - Filename validation
+
+- ✅ **Vulnerability Templates** (45+ test cases)
+  - Template CRUD operations
+  - CVSS/OWASP validation
+  - Search and filtering
+  - Duplicate detection
+  - CWE import validation
+
+- ✅ **Matching & Versioning** (28 test cases)
+  - Fuzzy title/description matching
+  - Exact CWE/CVE matching
+  - Template version history
+  - Rollback functionality
 
 ## 🔧 Test Configuration
 
@@ -192,6 +281,9 @@ When adding new features, ensure:
 - [ ] **Integration tests** - Database updates, audit logs created
 - [ ] **Edge cases** - Empty data, null values, invalid formats
 - [ ] **Error handling** - Network errors, 404s, validation failures
+- [ ] **Model computed fields** - Test @computed_field properties (v0.7.3+)
+- [ ] **Pagination & filtering** - Test skip/limit and filter params (v0.7.3+)
+- [ ] **Duration tracking** - Verify timing measurements (v0.7.3+)
 
 ## 🐛 Debugging Tests
 
@@ -244,9 +336,10 @@ Tests are designed to run in CI/CD pipelines:
 
 ## 🔍 Known Issues
 
-1. **Frontend lint errors in tests** - Expected in editor, resolve during build
+1. **Editor lint errors in tests** - Expected in editor (packages in Docker), resolve during test execution
 2. **SQLite date format** - Some datetime comparisons may need adjustments
 3. **Async timing** - Use `await` properly for all async operations
+4. **Mock NVD API** - v0.7.3 CVE tests use mocked NVD responses (don't hit real API)
 
 ## 📚 Resources
 
@@ -254,9 +347,12 @@ Tests are designed to run in CI/CD pipelines:
 - [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/)
 - [Pytest Documentation](https://docs.pytest.org/)
 - [FastAPI Testing](https://fastapi.tiangolo.com/tutorial/testing/)
+- [unittest.mock](https://docs.python.org/3/library/unittest.mock.html) - For mocking NVD API calls
 
 ---
 
-**Last Updated**: November 1, 2025  
-**Version**: 0.3.0  
-**Test Coverage**: ~85% (services + endpoints)
+**Last Updated**: November 6, 2025  
+**Version**: 0.7.3  
+**Test Coverage**: ~260+ tests across all features  
+**Backend Coverage**: ~95% for core endpoints (v0.7.3)  
+**New in v0.7.3**: +66 tests for import history and CVE import
