@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -42,6 +42,7 @@ import {
   Description as DocxIcon,
   PictureAsPdf as PdfIcon,
   AutoAwesome as AutoAwesomeIcon,
+  TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -56,7 +57,9 @@ import MatchReviewDialog from './MatchReviewDialog';
 import SLAComplianceWidget from './SLAComplianceWidget';
 import ReviewProgressWidget from './ReviewProgressWidget';
 import TopVulnerabilitiesWidget from './TopVulnerabilitiesWidget';
-import KeyMetricsOverview from './KeyMetricsOverview';
+import AttackMatrixWidget from './AttackMatrixWidget';
+import OWASPTop10Widget from './OWASPTop10Widget';
+import CWETop25Widget from './CWETop25Widget';
 import { DashboardSkeleton } from './LoadingSkeletons';
 import { useThemeContext } from '../theme/ThemeProvider';
 import WebSocketService from '../services/WebSocketService';
@@ -71,6 +74,7 @@ const API_BASE_URL = '/api';
 
 const Dashboard = () => {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const { showSuccess, showError } = useNotification();
   const [project, setProject] = useState<Project | null>(null);
   const [metrics, setMetrics] = useState<ProjectMetrics | null>(null);
@@ -691,22 +695,11 @@ const Dashboard = () => {
 
       {/* Dashboard Grid */}
       <Grid container spacing={3}>
-        {/* Key Metrics Overview */}
-        {metrics && (
-          <Grid item xs={12}>
-            <KeyMetricsOverview
-              totalFindings={metrics.total_findings}
-              totalInstances={metrics.total_instances}
-              jiraSyncRate={metrics.jira_sync_rate}
-              findingsWithJira={metrics.findings_with_jira}
-            />
-          </Grid>
-        )}
-
         {/* Dashboard Widgets Row */}
         {metrics && (
           <Grid item xs={12}>
             <Grid container spacing={2}>
+              {/* First Row - 3 widgets */}
               <Grid item xs={12} md={4}>
                 <SLAComplianceWidget
                   onTrack={metrics.sla_compliance.on_track}
@@ -729,6 +722,23 @@ const Dashboard = () => {
               <Grid item xs={12} md={4}>
                 <TopVulnerabilitiesWidget
                   vulnerabilities={metrics.top_vulnerabilities}
+                />
+              </Grid>
+              
+              {/* Second Row - 3 widgets */}
+              <Grid item xs={12} md={4}>
+                <AttackMatrixWidget
+                  projectId={Number(projectId)}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <OWASPTop10Widget
+                  projectId={Number(projectId)}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <CWETop25Widget
+                  projectId={Number(projectId)}
                 />
               </Grid>
             </Grid>
@@ -915,6 +925,14 @@ const Dashboard = () => {
                   onClick={() => setMatchReviewDialogOpen(true)}
                 >
                   Auto-Match Findings
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<TrendingUpIcon />}
+                  onClick={() => navigate(`/projects/${projectId}/trends`)}
+                  color="info"
+                >
+                  View Trends
                 </Button>
                 <Button
                   variant="contained"

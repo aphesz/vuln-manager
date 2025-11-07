@@ -70,6 +70,8 @@ from app.models import (
 RiskRating = FindingBase.RiskRating
 from app.parsers import parse_xml_content
 from app import scoring
+from app import owasp
+from app import cwe_top25
 from app.reports import generate_report_docx, generate_report_pdf
 from app.sla import (
     calculate_sla_deadline,
@@ -535,14 +537,30 @@ async def process_and_save_issue(session: Session, project_id: int, issue_data: 
             finding.template_id = template_id
             session.add(finding)
     else:
-        # 3. Create a new Finding with template link
+        # 3. Create a new Finding with template link and timeline tracking
+        
+        # Auto-detect OWASP category (v0.8.3)
+        cwe_int = owasp.extract_cwe_from_text(description) if description else None
+        vulnerability_type = _extract_vulnerability_type(title)
+        owasp_category = owasp.detect_owasp_category(
+            title=title,
+            description=description,
+            cwe_id=cwe_int,
+            vulnerability_type=vulnerability_type
+        )
+        
+        if owasp_category:
+            logger.debug(f"Auto-detected OWASP category: {owasp_category}")
+        
         finding = Finding(
             project_id=project_id,
             title=title,
             risk_rating=standard_risk,
             description=description,
             remediation=remediation,
-            template_id=template_id
+            template_id=template_id,
+            discovered_at=get_utc_now(),  # Track when finding was first detected (v0.8.1)
+            owasp_category=owasp_category  # Auto-detect OWASP category (v0.8.3)
         )
         session.add(finding)
         session.flush() # Flushes to get the finding.id for the instance
@@ -1141,6 +1159,323 @@ def get_project_metrics(project_id: int, session: Session = Depends(get_session)
         average_time_to_approval=average_time_to_approval
     )
 
+# --- Trend Analysis Endpoints (v0.8.1) ---
+
+@app.get("/projects/{project_id}/trends/findings")
+@limiter.limit("60/minute")
+def get_findings_trend(
+    request: Request,
+    project_id: int,
+    start_date: Optional[str] = Query(None, description="Start date (ISO format: YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format: YYYY-MM-DD)"),
+    granularity: str = Query("daily", regex="^(daily|weekly|monthly)$"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get time-series data of finding counts by risk rating.
+    
+    Returns trend data for visualizing finding discovery over time.
+    
+    Parameters:
+    - start_date: Start of date range (default: 30 days ago)
+    - end_date: End of date range (default: now)
+    - granularity: Time grouping - 'daily', 'weekly', or 'monthly' (default: daily)
+    
+    Returns:
+    - labels: Array of date labels
+    - datasets: Finding counts by risk rating
+    - totals: Total counts by risk rating
+    """
+    from app.trends import get_findings_timeline
+    from datetime import datetime
+    
+    # Parse dates
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+    
+    try:
+        result = get_findings_timeline(
+            session=session,
+            project_id=project_id,
+            start_date=start,
+            end_date=end,
+            granularity=granularity  # type: ignore
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/projects/{project_id}/trends/remediation")
+@limiter.limit("60/minute")
+def get_remediation_trend(
+    request: Request,
+    project_id: int,
+    start_date: Optional[str] = Query(None, description="Start date (ISO format: YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format: YYYY-MM-DD)"),
+    granularity: str = Query("daily", regex="^(daily|weekly|monthly)$"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get remediation progress metrics over time.
+    
+    Returns trend data showing open vs. closed findings, remediation velocity,
+    and mean time to remediate (MTTR) by risk level.
+    
+    Parameters:
+    - start_date: Start of date range (default: 30 days ago)
+    - end_date: End of date range (default: now)
+    - granularity: Time grouping - 'daily', 'weekly', or 'monthly' (default: daily)
+    
+    Returns:
+    - labels: Array of date labels
+    - open_findings: Count of open findings at each point
+    - closed_findings: Count of closed findings at each point
+    - remediation_velocity: Findings closed per week
+    - mean_time_to_remediate: MTTR in days by risk level
+    - by_risk: Current open/closed counts by risk level
+    """
+    from app.trends import get_remediation_progress
+    from datetime import datetime
+    
+    # Parse dates
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+    
+    try:
+        result = get_remediation_progress(
+            session=session,
+            project_id=project_id,
+            start_date=start,
+            end_date=end,
+            granularity=granularity  # type: ignore
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/projects/{project_id}/trends/risk-score")
+@limiter.limit("60/minute")
+def get_risk_score_trend(
+    request: Request,
+    project_id: int,
+    start_date: Optional[str] = Query(None, description="Start date (ISO format: YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format: YYYY-MM-DD)"),
+    granularity: str = Query("daily", regex="^(daily|weekly|monthly)$"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get aggregate risk score evolution over time.
+    
+    Risk score is calculated as weighted sum:
+    - Critical = 10 points
+    - High = 5 points  
+    - Medium = 3 points
+    - Low = 1 point
+    - Informational = 0 points
+    
+    Parameters:
+    - start_date: Start of date range (default: 30 days ago)
+    - end_date: End of date range (default: now)
+    - granularity: Time grouping - 'daily', 'weekly', or 'monthly' (default: daily)
+    
+    Returns:
+    - labels: Array of date labels
+    - risk_scores: Risk score at each point
+    - trend: Overall trend ('improving', 'stable', 'worsening')
+    - change_percent: Percentage change from start to end
+    - current_score: Most recent risk score
+    - start_score: Initial risk score
+    """
+    from app.trends import get_risk_score_trend
+    from datetime import datetime
+    
+    # Parse dates
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+    
+    try:
+        result = get_risk_score_trend(
+            session=session,
+            project_id=project_id,
+            start_date=start,
+            end_date=end,
+            granularity=granularity  # type: ignore
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/projects/{project_id}/trends/uploads")
+@limiter.limit("60/minute")
+def get_upload_history_trend(
+    request: Request,
+    project_id: int,
+    start_date: Optional[str] = Query(None, description="Start date (ISO format: YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format: YYYY-MM-DD)"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get timeline of scan uploads with findings discovered per upload.
+    
+    Groups findings by discovery time to approximate upload events.
+    Findings discovered within 1 hour are considered part of the same upload.
+    
+    Parameters:
+    - start_date: Start of date range (default: 90 days ago)
+    - end_date: End of date range (default: now)
+    
+    Returns:
+    - uploads: Array of upload events with finding counts
+    - total_uploads: Number of upload events
+    - average_findings_per_upload: Average findings discovered per upload
+    """
+    from app.trends import get_upload_history
+    from datetime import datetime
+    
+    # Parse dates
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+    
+    try:
+        result = get_upload_history(
+            session=session,
+            project_id=project_id,
+            start_date=start,
+            end_date=end
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+# --- Compliance Endpoints ---
+
+@app.get("/projects/{project_id}/compliance/owasp-top-10")
+@limiter.limit("60/minute")
+def get_owasp_top_10_coverage(
+    request: Request,
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Get OWASP Top 10 2021 coverage statistics for a project.
+    
+    Returns finding counts per OWASP category, coverage percentage,
+    and category details.
+    
+    Returns:
+    - categories: Dict mapping category ID (A01-A10) to finding count and details
+    - statistics: Overall coverage statistics
+    """
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all findings for the project
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # Count findings per OWASP category
+    findings_by_category: Dict[str, int] = {
+        category_id: 0 for category_id in owasp.get_owasp_categories().keys()
+    }
+    
+    unmapped_findings = 0
+    
+    for finding in findings:
+        if finding.owasp_category and finding.owasp_category in findings_by_category:
+            findings_by_category[finding.owasp_category] += 1
+        else:
+            unmapped_findings += 1
+    
+    # Calculate coverage statistics
+    statistics = owasp.calculate_coverage_statistics(findings_by_category)
+    statistics["unmapped_findings"] = unmapped_findings
+    statistics["total_findings_in_project"] = len(findings)
+    
+    # Build category details
+    categories = {}
+    for category_id, count in findings_by_category.items():
+        category_info = owasp.get_category_description(category_id)
+        categories[category_id] = {
+            "name": category_info["name"],
+            "description": category_info["description"],
+            "finding_count": count,
+            "has_findings": count > 0
+        }
+    
+    return {
+        "categories": categories,
+        "statistics": statistics
+    }
+
+@app.get("/projects/{project_id}/compliance/cwe-top-25")
+@limiter.limit("60/minute")
+def get_cwe_top_25_coverage(
+    request: Request,
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Get CWE Top 25 2024 coverage statistics for a project.
+    
+    Returns finding counts per CWE weakness, coverage percentage,
+    and weakness details with severity.
+    
+    Returns:
+    - weaknesses: List of top 10 CWE entries sorted by finding count
+    - all_weaknesses: Dict mapping CWE ID to finding count
+    - statistics: Overall coverage statistics
+    """
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all findings for the project
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # Count findings per CWE ID (extract from description)
+    findings_by_cwe: Dict[int, int] = {}
+    
+    for finding in findings:
+        # Try to extract CWE ID from description
+        cwe_id = owasp.extract_cwe_from_text(finding.description) if finding.description else None
+        
+        if cwe_id and cwe_top25.is_in_top_25(cwe_id):
+            findings_by_cwe[cwe_id] = findings_by_cwe.get(cwe_id, 0) + 1
+    
+    # Calculate coverage statistics
+    statistics = cwe_top25.calculate_top25_statistics(findings_by_cwe)
+    
+    # Get top 10 weaknesses by finding count
+    top_weaknesses = cwe_top25.get_top_10_by_findings(findings_by_cwe)
+    
+    # Get all CWE Top 25 with finding counts
+    all_weaknesses = {}
+    for rank, cwe_data in cwe_top25.get_cwe_top_25().items():
+        cwe_id = cwe_data["cwe_id"]
+        all_weaknesses[cwe_id] = {
+            "rank": cwe_data["rank"],
+            "name": cwe_data["name"],
+            "severity": cwe_data["severity"],
+            "score": cwe_data["score"],
+            "finding_count": findings_by_cwe.get(cwe_id, 0),
+            "has_findings": cwe_id in findings_by_cwe
+        }
+    
+    return {
+        "weaknesses": top_weaknesses,
+        "all_weaknesses": all_weaknesses,
+        "statistics": statistics
+    }
+
 # --- Endpoint: Report Generation ---
 
 @app.get("/projects/{project_id}/report.docx", response_class=FileResponse)
@@ -1699,7 +2034,9 @@ async def create_finding_manually(
             description=description,
             remediation=remediation,
             template_id=template_id,
-            issue_status=status
+            issue_status=status,
+            discovered_at=get_utc_now(),  # Track discovery time (v0.8.1)
+            resolved_at=get_utc_now() if status == FindingBase.IssueStatus.Closed else None  # Track resolution (v0.8.1)
         )
         session.add(finding)
         session.flush()  # Get finding.id
@@ -2258,6 +2595,41 @@ def update_finding(
         changes["description"] = {
             "old": old_desc[:100] if old_desc else None,  # Truncate for audit log
             "new": data["description"][:100] if data["description"] else None
+        }
+    
+    # Update issue_status if provided (v0.8.1 - Track resolved_at)
+    if "issue_status" in data:
+        old_status = finding.issue_status.value if finding.issue_status else None
+        new_status = data["issue_status"]
+        
+        # Validate issue status
+        valid_statuses = ["Open", "Partially Closed", "Closed"]
+        if new_status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid issue status. Must be one of: {', '.join(valid_statuses)}"
+            )
+        
+        finding.issue_status = FindingBase.IssueStatus(new_status)
+        
+        # Set resolved_at when status changes to Closed
+        if new_status == "Closed" and finding.resolved_at is None:
+            finding.resolved_at = get_utc_now()
+            changes["resolved_at"] = {
+                "old": None,
+                "new": "Set to current time"
+            }
+        # Clear resolved_at if reopened
+        elif new_status != "Closed" and finding.resolved_at is not None:
+            finding.resolved_at = None
+            changes["resolved_at"] = {
+                "old": "Previously resolved",
+                "new": None
+            }
+        
+        changes["issue_status"] = {
+            "old": old_status,
+            "new": new_status
         }
     
     session.add(finding)

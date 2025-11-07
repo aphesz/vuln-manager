@@ -72,6 +72,13 @@ class FindingBase(SQLModel):
     sla_status: Optional[SLAStatus] = Field(default=None, index=True)
     remediation_owner: Optional[str] = None
     
+    # Timeline Tracking fields (v0.8.1 - Trend Analysis)
+    discovered_at: Optional[datetime] = Field(default=None, index=True)  # When finding was first detected
+    resolved_at: Optional[datetime] = Field(default=None, index=True)  # When finding was marked as resolved (null if open)
+    
+    # Compliance Mapping fields (v0.8.3)
+    owasp_category: Optional[str] = Field(default=None, max_length=10, index=True)  # OWASP Top 10 2021 category (A01-A10)
+    
     # Vulnerability Repository link
     template_id: Optional[int] = Field(default=None, index=True)  # Foreign key to VulnerabilityTemplate
 

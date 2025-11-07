@@ -9,6 +9,8 @@ import VulnerabilityTemplateManager from './components/VulnerabilityTemplateMana
 import TagManager from './components/TagManager'
 import CVSSCalculatorPage from './components/CVSSCalculatorPage'
 import OWASPCalculatorPage from './components/OWASPCalculatorPage'
+import TrendAnalysisPage from './components/TrendAnalysisPage'
+import AttackSurfacePage from './components/AttackSurfacePage'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
 import { NotificationProvider } from './contexts/NotificationContext'
 
@@ -44,6 +46,10 @@ const App = () => {
             <Route path="/" element={<ProjectsLists />} />
             {/* The project ID is passed as a route parameter */}
             <Route path="/projects/:projectId" element={<Dashboard />} />
+            {/* Trend Analysis route */}
+            <Route path="/projects/:projectId/trends" element={<TrendAnalysisPage />} />
+            {/* MITRE ATT&CK Attack Surface route */}
+            <Route path="/projects/:projectId/attack-surface" element={<AttackSurfacePage />} />
             {/* SLA Dashboard route */}
             <Route path="/sla" element={<SLADashboard />} />
             {/* Vulnerability Repository route */}
