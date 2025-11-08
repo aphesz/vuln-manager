@@ -712,5 +712,50 @@ class ReportGenerationRequest(SQLModel):
     email_subject: Optional[str] = None
     email_body: Optional[str] = None
 
+# --- Predictive Analytics Models (v0.8.5) ---
+
+class RemediationTimeEstimate(SQLModel):
+    """Remediation time prediction for a finding by risk level."""
+    risk_level: str
+    estimated_days: float
+    confidence_interval_low: float
+    confidence_interval_high: float
+    sample_size: int  # Number of historical findings used
+
+class RiskForecastPoint(SQLModel):
+    """Single point in risk forecast timeline."""
+    date: str  # ISO date
+    predicted_risk_score: float
+    lower_bound: float
+    upper_bound: float
+
+class RiskForecast(SQLModel):
+    """Risk score forecast for 30/60/90 days ahead."""
+    current_risk_score: float
+    forecast_30_days: RiskForecastPoint
+    forecast_60_days: RiskForecastPoint
+    forecast_90_days: RiskForecastPoint
+    trend: str  # "improving", "stable", "worsening"
+    confidence: float  # 0.0 - 1.0
+
+class Anomaly(SQLModel):
+    """Detected anomaly in security metrics."""
+    anomaly_type: str  # "spike_in_findings", "remediation_slowdown", "regression"
+    severity: str  # "low", "medium", "high", "critical"
+    detected_at: str  # ISO datetime
+    description: str
+    affected_findings: List[int]  # Finding IDs
+    recommendation: str
+
+class Recommendation(SQLModel):
+    """Actionable recommendation based on project analysis."""
+    priority: str  # "critical", "high", "medium", "low"
+    category: str  # "quick_wins", "stale_findings", "sla_at_risk", "resource_allocation"
+    title: str
+    description: str
+    affected_findings: List[int]  # Finding IDs
+    estimated_effort: Optional[str]  # "1 day", "1 week", etc.
+    potential_impact: str
+
 # Rebuild models to resolve forward references
 FindingReadWithInstances.model_rebuild()

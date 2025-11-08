@@ -1350,6 +1350,217 @@ def get_upload_history_trend(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+# --- Predictive Analytics Endpoints (v0.8.5) ---
+
+@app.get("/projects/{project_id}/predict/remediation-time")
+@limiter.limit("60/minute")
+def predict_remediation_time(
+    request: Request,
+    project_id: int,
+    risk_level: Optional[str] = Query(None, description="Filter by risk level (Critical, High, Medium, Low, Informational)"),
+    session: Session = Depends(get_session)
+):
+    """
+    Estimate remediation time based on historical data.
+    
+    Uses median time-to-remediate from resolved findings to predict
+    how long it will take to fix current open findings.
+    
+    Parameters:
+    - risk_level: Optional filter for specific risk level
+    
+    Returns:
+    - List of RemediationTimeEstimate per risk level
+    - estimated_days: Median days to remediate
+    - confidence_interval_low/high: 95% confidence bounds
+    - sample_size: Number of historical findings used
+    
+    Example:
+        GET /api/projects/1/predict/remediation-time
+        GET /api/projects/1/predict/remediation-time?risk_level=Critical
+    """
+    from app.predict import estimate_remediation_time
+    from app.models import RemediationTimeEstimate
+    
+    # Verify project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    try:
+        estimates = estimate_remediation_time(session, project_id, risk_level)
+        return {
+            "project_id": project_id,
+            "project_name": project.name,
+            "estimates": [e.model_dump() for e in estimates]
+        }
+    except Exception as e:
+        logger.error(f"Error estimating remediation time: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+
+@app.get("/projects/{project_id}/predict/risk-forecast")
+@limiter.limit("60/minute")
+def forecast_project_risk(
+    request: Request,
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Forecast risk score 30/60/90 days ahead using historical trend analysis.
+    
+    Uses simple linear regression on historical risk scores to predict
+    future trajectory. Helps identify if security posture is improving
+    or worsening.
+    
+    Returns:
+    - current_risk_score: Current aggregate risk
+    - forecast_30_days/60_days/90_days: Predicted risk scores
+    - trend: "improving", "stable", or "worsening"
+    - confidence: 0.0-1.0 prediction confidence
+    
+    Example:
+        GET /api/projects/1/predict/risk-forecast
+        
+    Response:
+        {
+          "current_risk_score": 45.0,
+          "forecast_30_days": {"predicted_risk_score": 38.5, ...},
+          "trend": "improving",
+          "confidence": 0.85
+        }
+    """
+    from app.predict import forecast_risk_score
+    
+    # Verify project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    try:
+        forecast = forecast_risk_score(session, project_id)
+        return {
+            "project_id": project_id,
+            "project_name": project.name,
+            **forecast.model_dump()
+        }
+    except Exception as e:
+        logger.error(f"Error forecasting risk: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+
+@app.get("/projects/{project_id}/predict/anomalies")
+@limiter.limit("60/minute")
+def detect_security_anomalies(
+    request: Request,
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Detect anomalies in security metrics using statistical analysis.
+    
+    Automatically identifies:
+    - Sudden spike in findings (possible security incident)
+    - Remediation slowdown (team capacity issues)
+    - Regression (resolved findings reopened)
+    
+    Returns:
+    - List of detected anomalies with severity and recommendations
+    - Empty list if no anomalies detected
+    
+    Example:
+        GET /api/projects/1/predict/anomalies
+        
+    Response:
+        {
+          "project_id": 1,
+          "anomalies": [
+            {
+              "anomaly_type": "spike_in_findings",
+              "severity": "high",
+              "description": "15 findings in last 7 days (avg: 3/week)",
+              "recommendation": "Review recent scans for false positives..."
+            }
+          ]
+        }
+    """
+    from app.predict import detect_anomalies
+    
+    # Verify project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    try:
+        anomalies = detect_anomalies(session, project_id)
+        return {
+            "project_id": project_id,
+            "project_name": project.name,
+            "anomaly_count": len(anomalies),
+            "anomalies": [a.model_dump() for a in anomalies]
+        }
+    except Exception as e:
+        logger.error(f"Error detecting anomalies: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+
+@app.get("/projects/{project_id}/predict/recommendations")
+@limiter.limit("60/minute")
+def generate_security_recommendations(
+    request: Request,
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Generate actionable recommendations based on project analysis.
+    
+    Automatically identifies:
+    - Quick wins (low-effort, high-impact fixes)
+    - Stale findings (>90 days open)
+    - SLA at-risk findings
+    - Resource allocation issues (overloaded owners)
+    
+    Returns:
+    - List of prioritized recommendations with estimated effort
+    - Recommendations sorted by priority (critical → high → medium → low)
+    
+    Example:
+        GET /api/projects/1/predict/recommendations
+        
+    Response:
+        {
+          "project_id": 1,
+          "recommendation_count": 3,
+          "recommendations": [
+            {
+              "priority": "high",
+              "category": "quick_wins",
+              "title": "5 low/medium findings with 5+ instances each",
+              "description": "Fix root cause to remediate 45 instances",
+              "estimated_effort": "1-2 days"
+            }
+          ]
+        }
+    """
+    from app.predict import generate_recommendations
+    
+    # Verify project exists
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    try:
+        recommendations = generate_recommendations(session, project_id)
+        return {
+            "project_id": project_id,
+            "project_name": project.name,
+            "recommendation_count": len(recommendations),
+            "recommendations": [r.model_dump() for r in recommendations]
+        }
+    except Exception as e:
+        logger.error(f"Error generating recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
 # --- Compliance Endpoints ---
 
 @app.get("/projects/{project_id}/compliance/owasp-top-10")
