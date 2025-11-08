@@ -40,6 +40,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import PageBreadcrumbs from './PageBreadcrumbs';
 import ReportService, { ReportGenerationRequest } from '../services/ReportService';
+import CustomTemplateService, { CustomReportTemplate } from '../services/CustomTemplateService';
 
 interface Project {
   id: number;
@@ -50,6 +51,7 @@ const TEMPLATE_TYPES = [
   { value: 'Executive Summary', label: 'Executive Summary', description: 'High-level overview with KPIs and risk metrics ✅ Available' },
   { value: 'Technical Findings', label: 'Technical Findings', description: 'Detailed technical vulnerability analysis ✅ Available' },
   { value: 'Risk Assessment', label: 'Risk Assessment', description: 'Comprehensive risk scoring and prioritization ✅ Available' },
+  { value: 'Custom Template', label: '🎨 Custom Template', description: 'Use your own custom-designed report template ✅ Available' },
   { value: 'Remediation Status', label: 'Remediation Status', description: '🚧 Coming Soon - Current status of vulnerability fixes' },
   { value: 'Portfolio Overview', label: 'Portfolio Overview', description: '🚧 Coming Soon - Multi-project security posture summary' },
   { value: 'Compliance - OWASP Top 10', label: 'OWASP Compliance', description: '🚧 Coming Soon - OWASP Top 10 compliance mapping' },
@@ -67,6 +69,7 @@ const FORMATS = [
 const ReportBuilderPage: React.FC = () => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [customTemplates, setCustomTemplates] = useState<CustomReportTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +77,7 @@ const ReportBuilderPage: React.FC = () => {
   
   // Form state
   const [templateType, setTemplateType] = useState('Executive Summary');
+  const [customTemplateId, setCustomTemplateId] = useState<number | null>(null);
   const [format, setFormat] = useState('html');
   const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
   const [startDate, setStartDate] = useState('');
@@ -89,6 +93,7 @@ const ReportBuilderPage: React.FC = () => {
 
   useEffect(() => {
     loadProjects();
+    loadCustomTemplates();
     checkEmailSettings();
   }, []);
 
@@ -103,6 +108,15 @@ const ReportBuilderPage: React.FC = () => {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCustomTemplates = async () => {
+    try {
+      const templates = await CustomTemplateService.listTemplates();
+      setCustomTemplates(templates);
+    } catch (err) {
+      console.error('Failed to load custom templates:', err);
     }
   };
 
@@ -122,9 +136,16 @@ const ReportBuilderPage: React.FC = () => {
 
     try {
       // Validate template availability
-      const availableTemplates = ['Executive Summary', 'Technical Findings', 'Risk Assessment'];
+      const availableTemplates = ['Executive Summary', 'Technical Findings', 'Risk Assessment', 'Custom Template'];
       if (!availableTemplates.includes(templateType)) {
-        setError('Selected template is not yet available. Please choose Executive Summary, Technical Findings, or Risk Assessment.');
+        setError('Selected template is not yet available. Please choose Executive Summary, Technical Findings, Risk Assessment, or Custom Template.');
+        setGenerating(false);
+        return;
+      }
+
+      // Validate custom template selection
+      if (templateType === 'Custom Template' && !customTemplateId) {
+        setError('Please select a custom template');
         setGenerating(false);
         return;
       }
@@ -161,6 +182,7 @@ const ReportBuilderPage: React.FC = () => {
         email_cc: sendEmail && emailCc ? parseEmails(emailCc) : undefined,
         email_bcc: sendEmail && emailBcc ? parseEmails(emailBcc) : undefined,
         email_subject: sendEmail && emailSubject ? emailSubject : undefined,
+        custom_template_id: templateType === 'Custom Template' ? customTemplateId || undefined : undefined,
       };
 
       // Use axios directly to get access to response headers for both email and download
@@ -299,6 +321,41 @@ const ReportBuilderPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+
+            {/* Custom Template Selector - only shown when Custom Template is selected */}
+            {templateType === 'Custom Template' && (
+              <FormControl fullWidth sx={{ mb: 3 }}>
+                <InputLabel>Select Custom Template</InputLabel>
+                <Select
+                  value={customTemplateId || ''}
+                  label="Select Custom Template"
+                  onChange={(e) => setCustomTemplateId(e.target.value as number)}
+                  required
+                >
+                  {customTemplates.length === 0 ? (
+                    <MenuItem disabled>
+                      <Typography variant="body2" color="text.secondary">
+                        No custom templates available. Create one in the Templates page.
+                      </Typography>
+                    </MenuItem>
+                  ) : (
+                    customTemplates.map((template) => (
+                      <MenuItem key={template.id} value={template.id}>
+                        <Box>
+                          <Typography variant="body1">{template.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {template.description || 'No description'} • {JSON.parse(template.template_json).sections.length} sections • Used {template.usage_count} times
+                          </Typography>
+                        </Box>
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, ml: 1 }}>
+                  Can't find your template? <a href="/custom-templates" style={{ color: 'inherit', textDecoration: 'underline' }}>Create a new one</a>
+                </Typography>
+              </FormControl>
+            )}
 
             {/* Format Selection */}
             <FormControl component="fieldset" sx={{ mb: 3 }}>

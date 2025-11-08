@@ -1,7 +1,7 @@
 // frontend/src/services/ReportService.ts
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = '/api';
 
 export interface ReportGenerationRequest {
   template_type: string;
@@ -15,6 +15,7 @@ export interface ReportGenerationRequest {
   email_cc?: string[];
   email_bcc?: string[];
   email_subject?: string;
+  custom_template_id?: number;
 }
 
 export interface EmailSettings {
