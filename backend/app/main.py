@@ -4858,6 +4858,59 @@ def get_project_template_suggestions(
 
 
 # ============================================================================
+# EXECUTIVE DASHBOARD ENDPOINTS
+# ============================================================================
+
+from app.executive import ExecutiveMetrics
+
+
+@app.get("/api/executive/summary")
+def get_executive_summary(session: Session = Depends(get_session)):
+    """
+    Executive Summary Dashboard - High-level KPIs for C-level stakeholders.
+    
+    Returns:
+    - Total projects (active)
+    - Total findings with breakdown by severity
+    - MTTR (Mean Time To Remediation) in days
+    - Trend direction (improving/worsening/stable)
+    - Compliance coverage (OWASP, CWE, ATT&CK)
+    - Open critical/high findings count
+    - Top 5 risky projects
+    """
+    try:
+        summary = ExecutiveMetrics.get_executive_summary(session)
+        logger.info("Generated executive summary")
+        return summary
+    except Exception as e:
+        logger.error(f"Error generating executive summary: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate executive summary: {str(e)}")
+
+
+@app.get("/api/executive/risk-heatmap")
+def get_risk_heatmap(session: Session = Depends(get_session)):
+    """
+    Risk Heat Map - Visual grid showing risk scores across all projects.
+    
+    Returns list of projects with:
+    - project_id, project_name
+    - risk_score (weighted by severity)
+    - severity_counts (critical, high, medium, low, informational)
+    - color coding (red/orange/yellow/green)
+    - total_findings, open_critical_high count
+    
+    Projects are sorted by risk_score descending.
+    """
+    try:
+        heat_map = ExecutiveMetrics.get_risk_heat_map(session)
+        logger.info(f"Generated risk heat map for {len(heat_map)} projects")
+        return heat_map
+    except Exception as e:
+        logger.error(f"Error generating risk heat map: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate risk heat map: {str(e)}")
+
+
+# ============================================================================
 # SCORING CALCULATORS ENDPOINTS
 # ============================================================================
 

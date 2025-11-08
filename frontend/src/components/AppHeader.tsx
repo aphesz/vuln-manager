@@ -9,6 +9,7 @@ import {
   Calculate as CalculateIcon,
   KeyboardArrowDown as ArrowDownIcon,
   LocalOffer as TagIcon,
+  Dashboard as ExecutiveIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
 
@@ -59,7 +60,7 @@ const AppHeader = () => {
         </Box>
       </Link>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Button
+                <Button
           component={Link}
           to="/tags"
           variant="outlined"
@@ -72,9 +73,26 @@ const AppHeader = () => {
               backgroundColor: 'rgba(255, 255, 255, 0.1)',
             },
           }}
-          aria-label="Manage tags"
+          aria-label="View tag manager"
         >
           Tags
+        </Button>
+        <Button
+          component={Link}
+          to="/executive"
+          variant="outlined"
+          startIcon={<ExecutiveIcon />}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="View executive dashboard"
+        >
+          Executive
         </Button>
         <Button
           component={Link}

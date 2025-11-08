@@ -74,6 +74,11 @@ const PageBreadcrumbs: React.FC<PageBreadcrumbsProps> = ({
     if (path === '/') {
       // Home page - no breadcrumb needed (we're already there)
       return breadcrumbs;
+    } else if (path === '/executive') {
+      breadcrumbs.push({
+        label: 'Executive Dashboard',
+        icon: <DashboardIcon fontSize="small" />
+      });
     } else if (path === '/sla') {
       breadcrumbs.push({
         label: 'SLA & Remediation Tracking',

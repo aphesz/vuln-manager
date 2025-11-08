@@ -11,6 +11,7 @@ import CVSSCalculatorPage from './components/CVSSCalculatorPage'
 import OWASPCalculatorPage from './components/OWASPCalculatorPage'
 import TrendAnalysisPage from './components/TrendAnalysisPage'
 import AttackSurfacePage from './components/AttackSurfacePage'
+import ExecutiveDashboard from './components/ExecutiveDashboard'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
 import { NotificationProvider } from './contexts/NotificationContext'
 
@@ -44,6 +45,8 @@ const App = () => {
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, md: 4, lg: 6 }, pb: 4 }}>
           <Routes>
             <Route path="/" element={<ProjectsLists />} />
+            {/* Executive Dashboard route */}
+            <Route path="/executive" element={<ExecutiveDashboard />} />
             {/* The project ID is passed as a route parameter */}
             <Route path="/projects/:projectId" element={<Dashboard />} />
             {/* Trend Analysis route */}
