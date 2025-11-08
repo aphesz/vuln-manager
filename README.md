@@ -18,6 +18,7 @@ VulnManager is a comprehensive, full-stack web application designed to help cybe
 * **� CVE Import:** Import individual CVEs directly from NIST NVD API with automatic template creation.
 * **📊 Import History:** Track all CWE/CVE database imports with statistics (created, updated, skipped, errors, success rate).
 * **�📤 Export Enhancements:** Export to Excel/CSV with custom column selection and advanced filtering.
+* **🎨 Custom Template Builder (NEW):** Design professional reports with drag-and-drop sections, multi-format export (HTML/DOCX/PDF), and template library management.
 * **📊 Dashboard Widgets:** Real-time metrics cards showing project statistics and risk distribution.
 * **�🔄 Peer Review Workflow:** Complete review system with status tracking (Pending, In Review, Approved, Rejected), reviewer assignment, and collaborative comments.
 * **📊 Issue Status Tracking:** Manage finding lifecycle (Open, Partially Closed, Closed) with status comments and audit trails.
@@ -148,6 +149,18 @@ docker exec -w /code vuln-manager-backend-1 alembic history
 ### Integrations
 - **Jira Sync:** Create and track Jira issues directly from findings
 - **Report Export:** Generate professional DOCX/PDF reports with customizable templates
+
+### Professional Reporting (v0.9.0)
+- **📊 Report Templates:** Executive Summary, Technical Findings, Risk Assessment, and more
+- **🎨 Custom Template Builder:** Design your own report layouts with drag-and-drop section editor
+  - **Section Types:** Text, metrics, charts, filtered findings, tables
+  - **Layout Control:** Page size (Letter/A4), orientation, margins
+  - **Widget Library:** Key metrics, risk distribution, remediation rates, SLA compliance
+  - **Smart Filters:** Risk rating, status, date range filters for findings
+  - **Template Library:** Save, search, duplicate, and manage custom templates
+  - **Multi-Format:** Export to HTML, DOCX, or PDF from the same template
+  - **Usage Tracking:** Popularity metrics to identify most-used templates
+- **Report Generation:** One-click reports with project filtering and email delivery
 
 ### Vulnerability Repository & CWE/CVE Import
 - **Template Library:** 900+ vulnerability templates from MITRE CWE database + NIST NVD CVE data
