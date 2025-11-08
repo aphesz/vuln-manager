@@ -8,7 +8,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Container,
   Typography,
   Box,
   Grid,
@@ -105,14 +104,14 @@ const AttackSurfacePage: React.FC = () => {
 
   if (loading) {
     return (
-      <Container maxWidth="xl" sx={{ mt: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
         <CircularProgress size={60} />
-      </Container>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ mt: 4, mb: 4 }}>
       {/* Breadcrumb Navigation */}
       <PageBreadcrumbs 
         projectId={projectId}
@@ -275,7 +274,7 @@ const AttackSurfacePage: React.FC = () => {
           </Link>
         </Box>
       </Paper>
-    </Container>
+    </Box>
   );
 };
 

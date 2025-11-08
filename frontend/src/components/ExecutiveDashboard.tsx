@@ -13,7 +13,6 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Container,
   Typography,
   Grid,
   Card,
@@ -122,39 +121,39 @@ const ExecutiveDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ mt: 4, mb: 4 }}>
         <PageBreadcrumbs />
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
           <CircularProgress size={60} />
         </Box>
-      </Container>
+      </Box>
     );
   }
 
   if (error) {
     return (
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ mt: 4, mb: 4 }}>
         <PageBreadcrumbs />
         <Alert severity="error" sx={{ mt: 2 }}>
           {error}
         </Alert>
-      </Container>
+      </Box>
     );
   }
 
   if (!summary) {
     return (
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ mt: 4, mb: 4 }}>
         <PageBreadcrumbs />
         <Alert severity="info" sx={{ mt: 2 }}>
           No executive data available.
         </Alert>
-      </Container>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ mt: 4, mb: 4 }}>
       <PageBreadcrumbs />
 
       <Typography variant="h4" gutterBottom sx={{ mt: 2, mb: 3, fontWeight: 'bold' }}>
@@ -512,7 +511,7 @@ const ExecutiveDashboard: React.FC = () => {
           Generated at: {new Date(summary.generated_at).toLocaleString()}
         </Typography>
       </Box>
-    </Container>
+    </Box>
   );
 };
 
