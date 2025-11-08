@@ -1391,8 +1391,744 @@ class ReportTemplateEngine:
         pdf_doc.build(story)
     
     def _generate_risk_assessment(self, format: ReportFormat, projects: List[Project]) -> str:
-        """Generate Risk Assessment report (placeholder)."""
-        return "/tmp/risk_assessment_placeholder.pdf"
+        """Generate Risk Assessment report with risk scoring and analysis."""
+        # Gather all findings with comprehensive risk data
+        findings_data = []
+        risk_scores = {
+            'Critical': 10,
+            'High': 7,
+            'Medium': 4,
+            'Low': 2,
+            'Informational': 0
+        }
+        
+        total_risk_score = 0
+        severity_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0, 'Informational': 0}
+        status_counts = {'Open': 0, 'Partially Closed': 0, 'Closed': 0}
+        sla_counts = {'On Track': 0, 'At Risk': 0, 'Overdue': 0, 'Not Set': 0}
+        
+        # Track project-level metrics
+        project_metrics = {}
+        
+        for project in projects:
+            project_findings = self.session.exec(
+                select(Finding).where(Finding.project_id == project.id)
+            ).all()
+            
+            project_risk_score = 0
+            project_open_count = 0
+            
+            for finding in project_findings:
+                instances = self.session.exec(
+                    select(Instance).where(Instance.finding_id == finding.id)
+                ).all()
+                
+                severity = finding.risk_rating.value
+                severity_counts[severity] = severity_counts.get(severity, 0) + 1
+                
+                # Calculate risk score (severity × instance count)
+                finding_score = risk_scores[severity] * len(instances) if instances else risk_scores[severity]
+                project_risk_score += finding_score
+                total_risk_score += finding_score
+                
+                # Track status
+                status = finding.issue_status.value if finding.issue_status else 'Open'
+                status_counts[status] = status_counts.get(status, 0) + 1
+                if status == 'Open':
+                    project_open_count += 1
+                
+                # Track SLA status
+                if finding.sla_status:
+                    sla_counts[finding.sla_status.value] = sla_counts.get(finding.sla_status.value, 0) + 1
+                else:
+                    sla_counts['Not Set'] += 1
+                
+                findings_data.append({
+                    'project_name': project.name,
+                    'project_id': project.id,
+                    'finding': finding,
+                    'instances': instances,
+                    'instance_count': len(instances),
+                    'risk_score': finding_score
+                })
+            
+            # Store project-level metrics in dictionary
+            project_metrics[project.id] = {
+                'project': project,
+                'risk_score': project_risk_score,
+                'open_findings': project_open_count
+            }
+        
+        # Sort findings by risk score (highest first)
+        findings_data.sort(key=lambda x: x['risk_score'], reverse=True)
+        
+        # Calculate overall risk level
+        total_findings = sum(severity_counts.values())
+        if total_findings == 0:
+            overall_risk_level = "None"
+        elif severity_counts['Critical'] > 0 or severity_counts['High'] >= 5:
+            overall_risk_level = "Critical"
+        elif severity_counts['High'] > 0 or severity_counts['Medium'] >= 10:
+            overall_risk_level = "High"
+        elif severity_counts['Medium'] > 0:
+            overall_risk_level = "Medium"
+        else:
+            overall_risk_level = "Low"
+        
+        # Prepare summary data
+        summary_data = {
+            'total_findings': total_findings,
+            'total_risk_score': total_risk_score,
+            'overall_risk_level': overall_risk_level,
+            'severity_counts': severity_counts,
+            'status_counts': status_counts,
+            'sla_counts': sla_counts,
+            'open_findings': status_counts.get('Open', 0),
+            'closed_findings': status_counts.get('Closed', 0),
+        }
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        if format == ReportFormat.HTML:
+            file_path = f"/tmp/risk_assessment_{timestamp}.html"
+            self._generate_risk_assessment_html(findings_data, project_metrics, summary_data, file_path)
+        elif format == ReportFormat.DOCX:
+            file_path = f"/tmp/risk_assessment_{timestamp}.docx"
+            self._generate_risk_assessment_docx(findings_data, project_metrics, summary_data, file_path)
+        elif format == ReportFormat.PDF:
+            file_path = f"/tmp/risk_assessment_{timestamp}.pdf"
+            self._generate_risk_assessment_pdf(findings_data, project_metrics, summary_data, file_path)
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+        
+        return file_path
+    
+    def _generate_risk_assessment_html(
+        self,
+        findings_data: List[Dict],
+        project_metrics: Dict,
+        summary_data: Dict,
+        file_path: str
+    ):
+        """Generate interactive HTML Risk Assessment report."""
+        # Prepare chart data
+        severity_labels = list(summary_data['severity_counts'].keys())
+        severity_values = list(summary_data['severity_counts'].values())
+        
+        # Risk level color
+        risk_level_colors = {
+            'Critical': '#d32f2f',
+            'High': '#f57c00',
+            'Medium': '#fbc02d',
+            'Low': '#388e3c',
+            'None': '#9e9e9e'
+        }
+        overall_risk_color = risk_level_colors.get(summary_data['overall_risk_level'], '#666')
+        
+        # Top 10 highest risk findings
+        top_risks_html = ""
+        for idx, item in enumerate(findings_data[:10], 1):
+            finding = item['finding']
+            severity_class = finding.risk_rating.value.lower()
+            severity_badge_color = {
+                'critical': '#d32f2f',
+                'high': '#f57c00',
+                'medium': '#fbc02d',
+                'low': '#388e3c',
+                'informational': '#0288d1'
+            }.get(severity_class, '#666')
+            
+            top_risks_html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td><span class="badge" style="background: {severity_badge_color};">{finding.risk_rating.value}</span></td>
+                <td>{html.escape(finding.title)}</td>
+                <td>{html.escape(item['project_name'])}</td>
+                <td>{item['instance_count']}</td>
+                <td><strong>{item['risk_score']}</strong></td>
+            </tr>
+            """
+        
+        # Project risk ranking
+        project_ranking_html = ""
+        projects_sorted_metrics = sorted(project_metrics.values(), key=lambda p: p['risk_score'], reverse=True)
+        for idx, proj_data in enumerate(projects_sorted_metrics[:10], 1):
+            project = proj_data['project']
+            risk_score = proj_data['risk_score']
+            open_count = proj_data['open_findings']
+            
+            # Risk level indicator
+            if risk_score >= 70:
+                risk_level = 'Critical'
+                risk_color = '#d32f2f'
+            elif risk_score >= 40:
+                risk_level = 'High'
+                risk_color = '#f57c00'
+            elif risk_score >= 20:
+                risk_level = 'Medium'
+                risk_color = '#fbc02d'
+            else:
+                risk_level = 'Low'
+                risk_color = '#388e3c'
+            
+            project_ranking_html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td>{html.escape(project.name)}</td>
+                <td><span class="badge" style="background: {risk_color};">{risk_level}</span></td>
+                <td>{open_count}</td>
+                <td><strong>{risk_score}</strong></td>
+            </tr>
+            """
+        
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Assessment - Security Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+        }}
+        header {{
+            background: {self.branding.primary_color};
+            color: white;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        h1 {{
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }}
+        .subtitle {{
+            font-size: 1.2em;
+            opacity: 0.9;
+        }}
+        .meta {{
+            background: #f9f9f9;
+            padding: 15px;
+            border-left: 4px solid {self.branding.primary_color};
+            margin-bottom: 30px;
+        }}
+        .risk-level-banner {{
+            background: {overall_risk_color};
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 1.5em;
+            font-weight: bold;
+        }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }}
+        .stat-card {{
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }}
+        .stat-value {{
+            font-size: 2.5em;
+            font-weight: bold;
+            color: {self.branding.primary_color};
+        }}
+        .stat-label {{
+            color: #666;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }}
+        .chart-section {{
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }}
+        .chart-title {{
+            font-size: 1.3em;
+            color: {self.branding.primary_color};
+            margin-bottom: 20px;
+            font-weight: 600;
+        }}
+        .chart-container {{
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }}
+        th, td {{
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }}
+        th {{
+            background: {self.branding.primary_color};
+            color: white;
+            font-weight: 600;
+        }}
+        tr:hover {{
+            background: #f9f9f9;
+        }}
+        .badge {{
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+            color: white;
+        }}
+        footer {{
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            border-top: 1px solid #ddd;
+            margin-top: 40px;
+        }}
+        @media print {{
+            body {{ background: white; }}
+            .chart-container {{ height: 250px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Risk Assessment Report</h1>
+            <div class="subtitle">Comprehensive Risk Analysis & Scoring</div>
+        </header>
+        
+        <div class="meta">
+            <strong>Report Generated:</strong> {get_utc_now().isoformat()}<br>
+            <strong>Company:</strong> {html.escape(self.branding.company_name or 'VulnManager')}<br>
+            <strong>Coverage:</strong> {len(project_metrics)} Project(s) | {summary_data['total_findings']} Finding(s)
+        </div>
+        
+        <div class="risk-level-banner">
+            Overall Risk Level: {summary_data['overall_risk_level']} (Score: {summary_data['total_risk_score']})
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{summary_data['total_findings']}</div>
+                <div class="stat-label">Total Findings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{summary_data['open_findings']}</div>
+                <div class="stat-label">Open Findings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{summary_data['severity_counts'].get('Critical', 0)}</div>
+                <div class="stat-label">Critical Risk</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{summary_data['severity_counts'].get('High', 0)}</div>
+                <div class="stat-label">High Risk</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{summary_data['total_risk_score']}</div>
+                <div class="stat-label">Total Risk Score</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{summary_data['sla_counts'].get('Overdue', 0)}</div>
+                <div class="stat-label">Overdue SLAs</div>
+            </div>
+        </div>
+        
+        <div class="chart-section">
+            <div class="chart-title">Risk Distribution by Severity</div>
+            <div class="chart-container">
+                <canvas id="severityChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="chart-section">
+            <div class="chart-title">Issue Status Breakdown</div>
+            <div class="chart-container">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="chart-section">
+            <div class="chart-title">Top 10 Highest Risk Findings</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th style="width: 120px;">Severity</th>
+                        <th>Finding</th>
+                        <th style="width: 200px;">Project</th>
+                        <th style="width: 100px;">Instances</th>
+                        <th style="width: 100px;">Risk Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {top_risks_html if top_risks_html else '<tr><td colspan="6" style="text-align: center; color: #666;">No findings to display</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="chart-section">
+            <div class="chart-title">Project Risk Ranking</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Project</th>
+                        <th style="width: 150px;">Risk Level</th>
+                        <th style="width: 150px;">Open Findings</th>
+                        <th style="width: 150px;">Risk Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {project_ranking_html if project_ranking_html else '<tr><td colspan="5" style="text-align: center; color: #666;">No projects to display</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+        
+        <footer>
+            <p>{html.escape(self.branding.footer_text or 'Confidential - Security Assessment Report')}</p>
+            <p style="font-size: 0.85em; margin-top: 10px;">Generated by {html.escape(self.branding.company_name or 'VulnManager')} - Advanced Security Assessment Platform</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Severity Distribution Chart
+        const severityCtx = document.getElementById('severityChart').getContext('2d');
+        new Chart(severityCtx, {{
+            type: 'doughnut',
+            data: {{
+                labels: {severity_labels},
+                datasets: [{{
+                    data: {severity_values},
+                    backgroundColor: ['#d32f2f', '#f57c00', '#fbc02d', '#388e3c', '#0288d1'],
+                    borderWidth: 2
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{
+                        position: 'right'
+                    }}
+                }}
+            }}
+        }});
+        
+        // Status Distribution Chart
+        const statusCtx = document.getElementById('statusChart').getContext('2d');
+        new Chart(statusCtx, {{
+            type: 'bar',
+            data: {{
+                labels: {list(summary_data['status_counts'].keys())},
+                datasets: [{{
+                    label: 'Findings',
+                    data: {list(summary_data['status_counts'].values())},
+                    backgroundColor: '{self.branding.primary_color}',
+                    borderWidth: 1
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{
+                        display: false
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        beginAtZero: true,
+                        ticks: {{
+                            precision: 0
+                        }}
+                    }}
+                }}
+            }}
+        }});
+    </script>
+</body>
+</html>
+"""
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+    
+    def _generate_risk_assessment_docx(
+        self,
+        findings_data: List[Dict],
+        project_metrics: Dict,
+        summary_data: Dict,
+        file_path: str
+    ):
+        """Generate DOCX Risk Assessment report."""
+        doc = Document()
+        
+        # Title
+        title = doc.add_heading('Risk Assessment Report', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Metadata
+        doc.add_paragraph(f"Report Generated: {get_utc_now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        doc.add_paragraph(f"Company: {self.branding.company_name or 'VulnManager'}")
+        doc.add_paragraph(f"Coverage: {len(project_metrics)} Project(s) | {summary_data['total_findings']} Finding(s)")
+        doc.add_paragraph("")
+        
+        # Overall Risk Level
+        risk_para = doc.add_paragraph()
+        risk_run = risk_para.add_run(f"Overall Risk Level: {summary_data['overall_risk_level']} (Score: {summary_data['total_risk_score']})")
+        risk_run.bold = True
+        risk_run.font.size = Pt(16)
+        doc.add_paragraph("")
+        
+        # Summary Statistics
+        doc.add_heading('Summary Statistics', 1)
+        summary_table = doc.add_table(rows=1, cols=2)
+        summary_table.style = 'Light Grid Accent 1'
+        hdr_cells = summary_table.rows[0].cells
+        hdr_cells[0].text = 'Metric'
+        hdr_cells[1].text = 'Value'
+        
+        summary_metrics = [
+            ('Total Findings', str(summary_data['total_findings'])),
+            ('Open Findings', str(summary_data['open_findings'])),
+            ('Closed Findings', str(summary_data['closed_findings'])),
+            ('Critical Findings', str(summary_data['severity_counts'].get('Critical', 0))),
+            ('High Findings', str(summary_data['severity_counts'].get('High', 0))),
+            ('Medium Findings', str(summary_data['severity_counts'].get('Medium', 0))),
+            ('Low Findings', str(summary_data['severity_counts'].get('Low', 0))),
+            ('Total Risk Score', str(summary_data['total_risk_score'])),
+            ('Overdue SLAs', str(summary_data['sla_counts'].get('Overdue', 0))),
+        ]
+        
+        for metric, value in summary_metrics:
+            row_cells = summary_table.add_row().cells
+            row_cells[0].text = metric
+            row_cells[1].text = value
+        
+        doc.add_paragraph("")
+        
+        # Top 10 Highest Risk Findings
+        doc.add_heading('Top 10 Highest Risk Findings', 1)
+        if findings_data:
+            risk_table = doc.add_table(rows=1, cols=6)
+            risk_table.style = 'Light Grid Accent 1'
+            hdr_cells = risk_table.rows[0].cells
+            hdr_cells[0].text = '#'
+            hdr_cells[1].text = 'Severity'
+            hdr_cells[2].text = 'Finding'
+            hdr_cells[3].text = 'Project'
+            hdr_cells[4].text = 'Instances'
+            hdr_cells[5].text = 'Risk Score'
+            
+            for idx, item in enumerate(findings_data[:10], 1):
+                finding = item['finding']
+                row_cells = risk_table.add_row().cells
+                row_cells[0].text = str(idx)
+                row_cells[1].text = finding.risk_rating.value
+                row_cells[2].text = finding.title
+                row_cells[3].text = item['project_name']
+                row_cells[4].text = str(item['instance_count'])
+                row_cells[5].text = str(item['risk_score'])
+        else:
+            doc.add_paragraph("No findings to display.")
+        
+        doc.add_paragraph("")
+        
+        # Project Risk Ranking
+        doc.add_heading('Project Risk Ranking', 1)
+        projects_sorted_metrics = sorted(project_metrics.values(), key=lambda p: p['risk_score'], reverse=True)
+        
+        if projects_sorted_metrics:
+            project_table = doc.add_table(rows=1, cols=4)
+            project_table.style = 'Light Grid Accent 1'
+            hdr_cells = project_table.rows[0].cells
+            hdr_cells[0].text = 'Project'
+            hdr_cells[1].text = 'Risk Level'
+            hdr_cells[2].text = 'Open Findings'
+            hdr_cells[3].text = 'Risk Score'
+            
+            for proj_data in projects_sorted_metrics[:10]:
+                project = proj_data['project']
+                risk_score = proj_data['risk_score']
+                open_count = proj_data['open_findings']
+                
+                if risk_score >= 70:
+                    risk_level = 'Critical'
+                elif risk_score >= 40:
+                    risk_level = 'High'
+                elif risk_score >= 20:
+                    risk_level = 'Medium'
+                else:
+                    risk_level = 'Low'
+                
+                row_cells = project_table.add_row().cells
+                row_cells[0].text = project.name
+                row_cells[1].text = risk_level
+                row_cells[2].text = str(open_count)
+                row_cells[3].text = str(risk_score)
+        else:
+            doc.add_paragraph("No projects to display.")
+        
+        doc.add_paragraph("")
+        
+        # Recommendations
+        doc.add_heading('Recommendations', 1)
+        if summary_data['severity_counts'].get('Critical', 0) > 0:
+            doc.add_paragraph("• Immediate action required: Address all Critical findings within 24-48 hours", style='List Bullet')
+        if summary_data['severity_counts'].get('High', 0) > 0:
+            doc.add_paragraph("• High priority: Remediate all High severity findings within 1-2 weeks", style='List Bullet')
+        if summary_data['sla_counts'].get('Overdue', 0) > 0:
+            doc.add_paragraph(f"• SLA Alert: {summary_data['sla_counts']['Overdue']} findings are overdue for remediation", style='List Bullet')
+        if summary_data['open_findings'] > 0:
+            remediation_rate = (summary_data['closed_findings'] / summary_data['total_findings'] * 100) if summary_data['total_findings'] > 0 else 0
+            doc.add_paragraph(f"• Current remediation rate: {remediation_rate:.1f}% - Continue remediation efforts", style='List Bullet')
+        
+        # Footer
+        footer_section = doc.sections[0]
+        footer = footer_section.footer
+        footer_para = footer.paragraphs[0]
+        footer_para.text = self.branding.footer_text or 'Confidential - Security Assessment Report'
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.save(file_path)
+    
+    def _generate_risk_assessment_pdf(
+        self,
+        findings_data: List[Dict],
+        project_metrics: Dict,
+        summary_data: Dict,
+        file_path: str
+    ):
+        """Generate PDF Risk Assessment report."""
+        pdf_doc = SimpleDocTemplate(file_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor(self.branding.primary_color),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor(self.branding.primary_color),
+            spaceAfter=12
+        )
+        
+        # Title
+        story.append(Paragraph("Risk Assessment Report", title_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Metadata
+        story.append(Paragraph(f"<b>Report Generated:</b> {get_utc_now().strftime('%Y-%m-%d %H:%M:%S UTC')}", styles['Normal']))
+        story.append(Paragraph(f"<b>Company:</b> {self.branding.company_name or 'VulnManager'}", styles['Normal']))
+        story.append(Paragraph(f"<b>Coverage:</b> {len(project_metrics)} Project(s) | {summary_data['total_findings']} Finding(s)", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Overall Risk Level
+        story.append(Paragraph(f"<b>Overall Risk Level: {summary_data['overall_risk_level']} (Score: {summary_data['total_risk_score']})</b>", heading_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Summary Statistics
+        story.append(Paragraph("Summary Statistics", heading_style))
+        summary_data_table = [
+            ['Metric', 'Value'],
+            ['Total Findings', str(summary_data['total_findings'])],
+            ['Open Findings', str(summary_data['open_findings'])],
+            ['Critical', str(summary_data['severity_counts'].get('Critical', 0))],
+            ['High', str(summary_data['severity_counts'].get('High', 0))],
+            ['Medium', str(summary_data['severity_counts'].get('Medium', 0))],
+            ['Total Risk Score', str(summary_data['total_risk_score'])],
+            ['Overdue SLAs', str(summary_data['sla_counts'].get('Overdue', 0))],
+        ]
+        
+        summary_table = Table(summary_data_table, colWidths=[3*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(self.branding.primary_color)),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Top 10 Highest Risk Findings
+        story.append(Paragraph("Top 10 Highest Risk Findings", heading_style))
+        if findings_data:
+            risk_data = [['#', 'Severity', 'Finding', 'Project', 'Score']]
+            for idx, item in enumerate(findings_data[:10], 1):
+                finding = item['finding']
+                risk_data.append([
+                    str(idx),
+                    finding.risk_rating.value,
+                    finding.title[:40] + '...' if len(finding.title) > 40 else finding.title,
+                    item['project_name'][:20] + '...' if len(item['project_name']) > 20 else item['project_name'],
+                    str(item['risk_score'])
+                ])
+            
+            risk_table = Table(risk_data, colWidths=[0.4*inch, 0.8*inch, 2.5*inch, 1.5*inch, 0.8*inch])
+            risk_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(self.branding.primary_color)),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+            ]))
+            story.append(risk_table)
+        else:
+            story.append(Paragraph("No findings to display.", styles['Normal']))
+        
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Footer
+        footer_text = self.branding.footer_text or 'Confidential - Security Assessment Report'
+        story.append(Spacer(1, 0.5*inch))
+        story.append(Paragraph(footer_text, styles['Normal']))
+        
+        pdf_doc.build(story)
     
     def _generate_remediation_status(self, format: ReportFormat, projects: List[Project]) -> str:
         """Generate Remediation Status report (placeholder)."""

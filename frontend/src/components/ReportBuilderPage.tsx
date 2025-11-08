@@ -49,7 +49,7 @@ interface Project {
 const TEMPLATE_TYPES = [
   { value: 'Executive Summary', label: 'Executive Summary', description: 'High-level overview with KPIs and risk metrics ✅ Available' },
   { value: 'Technical Findings', label: 'Technical Findings', description: 'Detailed technical vulnerability analysis ✅ Available' },
-  { value: 'Risk Assessment', label: 'Risk Assessment', description: '🚧 Coming Soon - Comprehensive risk scoring and prioritization' },
+  { value: 'Risk Assessment', label: 'Risk Assessment', description: 'Comprehensive risk scoring and prioritization ✅ Available' },
   { value: 'Remediation Status', label: 'Remediation Status', description: '🚧 Coming Soon - Current status of vulnerability fixes' },
   { value: 'Portfolio Overview', label: 'Portfolio Overview', description: '🚧 Coming Soon - Multi-project security posture summary' },
   { value: 'Compliance - OWASP Top 10', label: 'OWASP Compliance', description: '🚧 Coming Soon - OWASP Top 10 compliance mapping' },
@@ -122,9 +122,9 @@ const ReportBuilderPage: React.FC = () => {
 
     try {
       // Validate template availability
-      const availableTemplates = ['Executive Summary', 'Technical Findings'];
+      const availableTemplates = ['Executive Summary', 'Technical Findings', 'Risk Assessment'];
       if (!availableTemplates.includes(templateType)) {
-        setError('Selected template is not yet available. Please choose Executive Summary or Technical Findings.');
+        setError('Selected template is not yet available. Please choose Executive Summary, Technical Findings, or Risk Assessment.');
         setGenerating(false);
         return;
       }
