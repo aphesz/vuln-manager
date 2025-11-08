@@ -158,10 +158,14 @@ def forecast_risk_score(
     Returns:
         RiskForecast with predictions
     """
-    from app.trends import calculate_risk_score
-    
     # Get current risk score
-    current_score = calculate_risk_score(session, project_id)
+    current_findings = session.exec(
+        select(Finding).where(
+            Finding.project_id == project_id,
+            Finding.resolved_at.is_(None),
+        )
+    ).all()
+    current_score = sum(RISK_WEIGHTS.get(f.risk_rating, 0) for f in current_findings)
     
     # Get historical risk scores (last 90 days, weekly)
     now = get_utc_now()
