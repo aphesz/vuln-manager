@@ -2193,6 +2193,10 @@ class ReportTemplateEngine:
         """Generate HTML from custom template sections."""
         html_parts = [
             f"<html><head><title>{template_name}</title>",
+            "<meta charset='utf-8'>",
+            "<meta name='viewport' content='width=device-width, initial-scale=1.0'>",
+            "<!-- Chart.js CDN -->",
+            "<script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>",
             "<style>",
             "body { font-family: Arial, sans-serif; margin: 40px; }",
             "h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }",
@@ -2209,7 +2213,7 @@ class ReportTemplateEngine:
             ".risk-high { background: #e67e22; color: white; padding: 4px 8px; border-radius: 4px; }",
             ".risk-medium { background: #f39c12; color: white; padding: 4px 8px; border-radius: 4px; }",
             ".risk-low { background: #95a5a6; color: white; padding: 4px 8px; border-radius: 4px; }",
-            ".chart-container { margin: 30px 0; }",
+            ".chart-container { margin: 30px 0; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }",
             "</style></head><body>",
             f"<h1>{template_name}</h1>"
         ]
@@ -2291,14 +2295,203 @@ class ReportTemplateEngine:
         return parts
     
     def _generate_chart_html(self, section: dict, projects: List[Project]) -> List[str]:
-        """Generate chart section HTML with placeholder."""
+        """Generate chart section HTML with Chart.js implementation."""
+        from app.models import Finding
+        import json
+        from datetime import datetime, timedelta
+        
+        chart_type = section.get('chart_type', 'risk_over_time')
+        chart_id = f"chart_{hash(section.get('title', 'chart'))}"
+        
         parts = [
             f"<h2>{section.get('title', 'Chart')}</h2>",
             "<div class='chart-container'>",
-            f"<p><em>Chart: {section.get('chart_type', 'N/A')}</em></p>",
-            "<p>Note: Interactive charts require JavaScript rendering in production.</p>",
-            "</div>"
+            f"<canvas id='{chart_id}' style='max-height: 400px;'></canvas>",
+            "</div>",
+            "<script>"
         ]
+        
+        # Generate chart data based on type
+        with Session(engine) as session:
+            if chart_type == 'risk_distribution':
+                # Pie chart of risk distribution
+                critical = high = medium = low = info = 0
+                for project in projects:
+                    findings = session.exec(
+                        select(Finding).where(Finding.project_id == project.id)
+                    ).all()
+                    for finding in findings:
+                        if finding.risk_rating == 'Critical':
+                            critical += 1
+                        elif finding.risk_rating == 'High':
+                            high += 1
+                        elif finding.risk_rating == 'Medium':
+                            medium += 1
+                        elif finding.risk_rating == 'Low':
+                            low += 1
+                        else:
+                            info += 1
+                
+                chart_config = {
+                    'type': 'pie',
+                    'data': {
+                        'labels': ['Critical', 'High', 'Medium', 'Low', 'Info'],
+                        'datasets': [{
+                            'data': [critical, high, medium, low, info],
+                            'backgroundColor': [
+                                '#e74c3c',  # Critical - red
+                                '#e67e22',  # High - orange
+                                '#f39c12',  # Medium - yellow
+                                '#95a5a6',  # Low - gray
+                                '#3498db'   # Info - blue
+                            ]
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'maintainAspectRatio': True,
+                        'plugins': {
+                            'legend': {'position': 'right'},
+                            'title': {'display': True, 'text': section.get('title', 'Risk Distribution')}
+                        }
+                    }
+                }
+            
+            elif chart_type == 'risk_over_time' or chart_type == 'findings_timeline':
+                # Line chart of findings over time
+                # Get findings with discovered_at dates
+                finding_dates = []
+                for project in projects:
+                    findings = session.exec(
+                        select(Finding).where(Finding.project_id == project.id)
+                    ).all()
+                    for finding in findings:
+                        if finding.discovered_at:
+                            finding_dates.append(finding.discovered_at)
+                
+                # Group by week
+                if finding_dates:
+                    min_date = min(finding_dates)
+                    max_date = max(finding_dates)
+                    weeks = []
+                    counts = []
+                    current = min_date
+                    while current <= max_date:
+                        week_end = current + timedelta(days=7)
+                        count = sum(1 for d in finding_dates if current <= d < week_end)
+                        weeks.append(current.strftime('%Y-%m-%d'))
+                        counts.append(count)
+                        current = week_end
+                else:
+                    weeks = ['No data']
+                    counts = [0]
+                
+                chart_config = {
+                    'type': 'line',
+                    'data': {
+                        'labels': weeks,
+                        'datasets': [{
+                            'label': 'Findings Discovered',
+                            'data': counts,
+                            'borderColor': '#3498db',
+                            'backgroundColor': 'rgba(52, 152, 219, 0.2)',
+                            'tension': 0.4
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'maintainAspectRatio': True,
+                        'plugins': {
+                            'legend': {'display': True},
+                            'title': {'display': True, 'text': section.get('title', 'Findings Over Time')}
+                        },
+                        'scales': {
+                            'y': {'beginAtZero': True, 'ticks': {'precision': 0}}
+                        }
+                    }
+                }
+            
+            elif chart_type == 'remediation_progress':
+                # Bar chart of status distribution
+                open_count = partial = closed = 0
+                for project in projects:
+                    findings = session.exec(
+                        select(Finding).where(Finding.project_id == project.id)
+                    ).all()
+                    for finding in findings:
+                        if finding.issue_status == 'Open':
+                            open_count += 1
+                        elif finding.issue_status == 'Partially Closed':
+                            partial += 1
+                        elif finding.issue_status == 'Closed':
+                            closed += 1
+                
+                chart_config = {
+                    'type': 'bar',
+                    'data': {
+                        'labels': ['Open', 'Partially Closed', 'Closed'],
+                        'datasets': [{
+                            'label': 'Finding Status',
+                            'data': [open_count, partial, closed],
+                            'backgroundColor': ['#e74c3c', '#f39c12', '#27ae60']
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'maintainAspectRatio': True,
+                        'plugins': {
+                            'legend': {'display': False},
+                            'title': {'display': True, 'text': section.get('title', 'Remediation Progress')}
+                        },
+                        'scales': {
+                            'y': {'beginAtZero': True, 'ticks': {'precision': 0}}
+                        }
+                    }
+                }
+            
+            else:
+                # Default: bar chart of findings per project
+                labels = []
+                data = []
+                for project in projects:
+                    count = session.exec(
+                        select(Finding).where(Finding.project_id == project.id)
+                    ).all()
+                    labels.append(project.name[:20])
+                    data.append(len(count))
+                
+                chart_config = {
+                    'type': 'bar',
+                    'data': {
+                        'labels': labels or ['No data'],
+                        'datasets': [{
+                            'label': 'Findings',
+                            'data': data or [0],
+                            'backgroundColor': '#3498db'
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'maintainAspectRatio': True,
+                        'plugins': {
+                            'legend': {'display': False},
+                            'title': {'display': True, 'text': section.get('title', 'Chart')}
+                        },
+                        'scales': {
+                            'y': {'beginAtZero': True, 'ticks': {'precision': 0}}
+                        }
+                    }
+                }
+        
+        # Add Chart.js rendering script
+        parts.append(f"""
+            (function() {{
+                var ctx = document.getElementById('{chart_id}').getContext('2d');
+                new Chart(ctx, {json.dumps(chart_config)});
+            }})();
+        """)
+        parts.append("</script>")
+        
         return parts
     
     def _generate_findings_html(self, section: dict, projects: List[Project]) -> List[str]:
