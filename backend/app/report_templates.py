@@ -11,6 +11,7 @@ from app.models import (
     Project, Finding, Instance, ReportTemplateType, 
     ReportFormat, ReportBranding, FindingBase
 )
+from app.db import engine
 from app.executive import ExecutiveMetrics
 from app.timezone_utils import get_utc_now
 from docx import Document
@@ -92,7 +93,8 @@ class ReportTemplateEngine:
         project_ids: List[int] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        include_sections: Optional[List[str]] = None
+        include_sections: Optional[List[str]] = None,
+        custom_template_id: Optional[int] = None
     ) -> str:
         """
         Generate a report based on template type and format.
@@ -121,6 +123,11 @@ class ReportTemplateEngine:
             return self._generate_remediation_status(format, projects)
         elif template_type == ReportTemplateType.PortfolioOverview:
             return self._generate_portfolio_overview(format, projects)
+        elif template_type == ReportTemplateType.Custom:
+            # Custom templates require custom_template_id
+            if not custom_template_id:
+                raise ValueError("custom_template_id is required for Custom template type")
+            return self._generate_custom_template(format, projects, custom_template_id)
         else:
             raise ValueError(f"Unsupported template type: {template_type}")
     
@@ -2137,3 +2144,408 @@ class ReportTemplateEngine:
     def _generate_portfolio_overview(self, format: ReportFormat, projects: List[Project]) -> str:
         """Generate Portfolio Overview report (placeholder)."""
         return "/tmp/portfolio_overview_placeholder.pdf"
+    
+    def _generate_custom_template(
+        self,
+        format: ReportFormat,
+        projects: List[Project],
+        custom_template_id: int
+    ) -> str:
+        """Generate report from custom template JSON."""
+        from app.models import CustomReportTemplate
+        import json
+        
+        # Load template from database
+        with Session(engine) as session:
+            template = session.get(CustomReportTemplate, custom_template_id)
+            if not template:
+                raise ValueError(f"Custom template {custom_template_id} not found")
+            
+            # Parse template JSON
+            template_data = json.loads(template.template_json)
+            sections = template_data.get('sections', [])
+            layout = template_data.get('layout', {})
+            
+            # Update usage tracking
+            template.usage_count += 1
+            template.last_used_at = datetime.utcnow()
+            session.add(template)
+            session.commit()
+        
+        # Generate based on format
+        if format == ReportFormat.HTML:
+            return self._generate_custom_html(template.name, sections, layout, projects)
+        elif format == ReportFormat.DOCX:
+            return self._generate_custom_docx(template.name, sections, layout, projects)
+        elif format == ReportFormat.PDF:
+            return self._generate_custom_pdf(template.name, sections, layout, projects)
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+    
+    def _generate_custom_html(
+        self,
+        template_name: str,
+        sections: List[dict],
+        layout: dict,
+        projects: List[Project]
+    ) -> str:
+        """Generate HTML from custom template sections."""
+        html_parts = [
+            f"<html><head><title>{template_name}</title>",
+            "<style>",
+            "body { font-family: Arial, sans-serif; margin: 40px; }",
+            "h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }",
+            "h2 { color: #34495e; margin-top: 30px; border-bottom: 2px solid #95a5a6; padding-bottom: 8px; }",
+            ".metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }",
+            ".metric-card { background: #ecf0f1; padding: 20px; border-radius: 8px; text-align: center; }",
+            ".metric-value { font-size: 32px; font-weight: bold; color: #2c3e50; }",
+            ".metric-label { color: #7f8c8d; margin-top: 5px; }",
+            "table { width: 100%; border-collapse: collapse; margin: 20px 0; }",
+            "th { background: #3498db; color: white; padding: 12px; text-align: left; }",
+            "td { padding: 10px; border-bottom: 1px solid #ddd; }",
+            "tr:hover { background: #f5f5f5; }",
+            ".risk-critical { background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; }",
+            ".risk-high { background: #e67e22; color: white; padding: 4px 8px; border-radius: 4px; }",
+            ".risk-medium { background: #f39c12; color: white; padding: 4px 8px; border-radius: 4px; }",
+            ".risk-low { background: #95a5a6; color: white; padding: 4px 8px; border-radius: 4px; }",
+            ".chart-container { margin: 30px 0; }",
+            "</style></head><body>",
+            f"<h1>{template_name}</h1>"
+        ]
+        
+        # Process each section
+        for section in sections:
+            section_type = section.get('type')
+            
+            if section_type == 'text':
+                html_parts.append(f"<div>{section.get('content', '')}</div>")
+            
+            elif section_type == 'metrics':
+                html_parts.extend(self._generate_metrics_html(section, projects))
+            
+            elif section_type == 'chart':
+                html_parts.extend(self._generate_chart_html(section, projects))
+            
+            elif section_type == 'findings':
+                html_parts.extend(self._generate_findings_html(section, projects))
+            
+            elif section_type == 'table':
+                html_parts.extend(self._generate_table_html(section, projects))
+        
+        html_parts.append("</body></html>")
+        
+        # Write to file
+        output_path = f"/tmp/custom_template_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(html_parts))
+        
+        return output_path
+    
+    def _generate_metrics_html(self, section: dict, projects: List[Project]) -> List[str]:
+        """Generate metrics section HTML."""
+        from app.models import Finding, Instance
+        
+        parts = [f"<h2>{section.get('title', 'Metrics')}</h2>", "<div class='metrics-grid'>"]
+        
+        # Calculate metrics
+        with Session(engine) as session:
+            total_findings = 0
+            critical_count = high_count = medium_count = low_count = 0
+            
+            for project in projects:
+                findings = session.exec(
+                    select(Finding).where(Finding.project_id == project.id)
+                ).all()
+                total_findings += len(findings)
+                
+                for finding in findings:
+                    if finding.risk_rating == 'Critical':
+                        critical_count += 1
+                    elif finding.risk_rating == 'High':
+                        high_count += 1
+                    elif finding.risk_rating == 'Medium':
+                        medium_count += 1
+                    elif finding.risk_rating == 'Low':
+                        low_count += 1
+        
+        # Render metric widgets
+        widgets = section.get('widgets', [])
+        if 'key_metrics' in widgets or not widgets:
+            parts.append(
+                f"<div class='metric-card'>"
+                f"<div class='metric-value'>{total_findings}</div>"
+                f"<div class='metric-label'>Total Findings</div>"
+                f"</div>"
+            )
+        
+        if 'risk_distribution' in widgets or not widgets:
+            parts.extend([
+                f"<div class='metric-card'><div class='metric-value'>{critical_count}</div><div class='metric-label'>Critical</div></div>",
+                f"<div class='metric-card'><div class='metric-value'>{high_count}</div><div class='metric-label'>High</div></div>",
+                f"<div class='metric-card'><div class='metric-value'>{medium_count}</div><div class='metric-label'>Medium</div></div>",
+                f"<div class='metric-card'><div class='metric-value'>{low_count}</div><div class='metric-label'>Low</div></div>"
+            ])
+        
+        parts.append("</div>")
+        return parts
+    
+    def _generate_chart_html(self, section: dict, projects: List[Project]) -> List[str]:
+        """Generate chart section HTML with placeholder."""
+        parts = [
+            f"<h2>{section.get('title', 'Chart')}</h2>",
+            "<div class='chart-container'>",
+            f"<p><em>Chart: {section.get('chart_type', 'N/A')}</em></p>",
+            "<p>Note: Interactive charts require JavaScript rendering in production.</p>",
+            "</div>"
+        ]
+        return parts
+    
+    def _generate_findings_html(self, section: dict, projects: List[Project]) -> List[str]:
+        """Generate findings table HTML."""
+        from app.models import Finding
+        
+        parts = [f"<h2>{section.get('title', 'Findings')}</h2>", "<table>", "<thead><tr>"]
+        parts.extend(["<th>Title</th>", "<th>Risk</th>", "<th>Status</th>", "<th>Project</th>"])
+        parts.append("</tr></thead><tbody>")
+        
+        # Get filtered findings
+        filters = section.get('filters', {})
+        risk_filter = filters.get('risk_rating', [])
+        
+        with Session(engine) as session:
+            for project in projects:
+                query = select(Finding).where(Finding.project_id == project.id)
+                
+                if risk_filter:
+                    query = query.where(Finding.risk_rating.in_(risk_filter))
+                
+                findings = session.exec(query).all()
+                
+                for finding in findings:
+                    risk_class = f"risk-{finding.risk_rating.lower()}"
+                    parts.append(
+                        f"<tr>"
+                        f"<td>{finding.title}</td>"
+                        f"<td><span class='{risk_class}'>{finding.risk_rating}</span></td>"
+                        f"<td>{finding.issue_status}</td>"
+                        f"<td>{project.name}</td>"
+                        f"</tr>"
+                    )
+        
+        parts.extend(["</tbody></table>"])
+        return parts
+    
+    def _generate_table_html(self, section: dict, projects: List[Project]) -> List[str]:
+        """Generate generic table HTML."""
+        parts = [
+            f"<h2>{section.get('title', 'Table')}</h2>",
+            "<table>",
+            "<thead><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr></thead>",
+            "<tbody>",
+            "<tr><td>Data</td><td>Data</td><td>Data</td></tr>",
+            "</tbody></table>"
+        ]
+        return parts
+    
+    def _generate_custom_docx(
+        self,
+        template_name: str,
+        sections: List[dict],
+        layout: dict,
+        projects: List[Project]
+    ) -> str:
+        """Generate DOCX from custom template sections."""
+        from docx import Document
+        from docx.shared import Inches, Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from app.models import Finding
+        
+        doc = Document()
+        
+        # Add title
+        title = doc.add_heading(template_name, 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Process each section
+        for section in sections:
+            section_type = section.get('type')
+            title_text = section.get('title', 'Section')
+            
+            doc.add_heading(title_text, level=1)
+            
+            if section_type == 'text':
+                doc.add_paragraph(section.get('content', ''))
+            
+            elif section_type == 'metrics':
+                self._add_metrics_docx(doc, section, projects)
+            
+            elif section_type == 'findings':
+                self._add_findings_docx(doc, section, projects)
+            
+            elif section_type == 'chart':
+                doc.add_paragraph(f"[Chart: {section.get('chart_type', 'N/A')}]")
+            
+            elif section_type == 'table':
+                doc.add_paragraph("[Table placeholder]")
+        
+        # Save
+        output_path = f"/tmp/custom_template_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        doc.save(output_path)
+        return output_path
+    
+    def _add_metrics_docx(self, doc, section: dict, projects: List[Project]):
+        """Add metrics to DOCX."""
+        from app.models import Finding
+        
+        with Session(engine) as session:
+            total_findings = 0
+            critical = high = medium = low = 0
+            
+            for project in projects:
+                findings = session.exec(
+                    select(Finding).where(Finding.project_id == project.id)
+                ).all()
+                total_findings += len(findings)
+                
+                for finding in findings:
+                    if finding.risk_rating == 'Critical':
+                        critical += 1
+                    elif finding.risk_rating == 'High':
+                        high += 1
+                    elif finding.risk_rating == 'Medium':
+                        medium += 1
+                    elif finding.risk_rating == 'Low':
+                        low += 1
+        
+        doc.add_paragraph(f"Total Findings: {total_findings}")
+        doc.add_paragraph(f"Critical: {critical}, High: {high}, Medium: {medium}, Low: {low}")
+    
+    def _add_findings_docx(self, doc, section: dict, projects: List[Project]):
+        """Add findings table to DOCX."""
+        from app.models import Finding
+        
+        table = doc.add_table(rows=1, cols=4)
+        table.style = 'Light Grid Accent 1'
+        
+        # Header
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Title'
+        hdr_cells[1].text = 'Risk'
+        hdr_cells[2].text = 'Status'
+        hdr_cells[3].text = 'Project'
+        
+        # Get filtered findings
+        filters = section.get('filters', {})
+        risk_filter = filters.get('risk_rating', [])
+        
+        with Session(engine) as session:
+            for project in projects:
+                query = select(Finding).where(Finding.project_id == project.id)
+                
+                if risk_filter:
+                    query = query.where(Finding.risk_rating.in_(risk_filter))
+                
+                findings = session.exec(query).all()
+                
+                for finding in findings:
+                    row_cells = table.add_row().cells
+                    row_cells[0].text = finding.title
+                    row_cells[1].text = finding.risk_rating
+                    row_cells[2].text = finding.issue_status
+                    row_cells[3].text = project.name
+    
+    def _generate_custom_pdf(
+        self,
+        template_name: str,
+        sections: List[dict],
+        layout: dict,
+        projects: List[Project]
+    ) -> str:
+        """Generate PDF from custom template sections."""
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.units import inch
+        from reportlab.lib import colors
+        from app.models import Finding
+        
+        output_path = f"/tmp/custom_template_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        # Determine page size
+        page_size = A4 if layout.get('page_size') == 'a4' else letter
+        
+        pdf_doc = SimpleDocTemplate(output_path, pagesize=page_size)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        story.append(Paragraph(template_name, styles['Title']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Process sections
+        for section in sections:
+            section_type = section.get('type')
+            title_text = section.get('title', 'Section')
+            
+            story.append(Paragraph(title_text, styles['Heading1']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            if section_type == 'text':
+                story.append(Paragraph(section.get('content', ''), styles['Normal']))
+            
+            elif section_type == 'metrics':
+                story.append(Paragraph("[Metrics Summary]", styles['Normal']))
+            
+            elif section_type == 'findings':
+                self._add_findings_pdf(story, section, projects, styles)
+            
+            elif section_type == 'chart':
+                story.append(Paragraph(f"[Chart: {section.get('chart_type', 'N/A')}]", styles['Normal']))
+            
+            story.append(Spacer(1, 0.2*inch))
+        
+        pdf_doc.build(story)
+        return output_path
+    
+    def _add_findings_pdf(self, story, section: dict, projects: List[Project], styles):
+        """Add findings table to PDF."""
+        from app.models import Finding
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors
+        
+        data = [['Title', 'Risk', 'Status', 'Project']]
+        
+        filters = section.get('filters', {})
+        risk_filter = filters.get('risk_rating', [])
+        
+        with Session(engine) as session:
+            for project in projects:
+                query = select(Finding).where(Finding.project_id == project.id)
+                
+                if risk_filter:
+                    query = query.where(Finding.risk_rating.in_(risk_filter))
+                
+                findings = session.exec(query).all()
+                
+                for finding in findings[:20]:  # Limit for PDF
+                    data.append([
+                        finding.title[:50],
+                        finding.risk_rating,
+                        finding.issue_status,
+                        project.name[:30]
+                    ])
+        
+        if len(data) > 1:
+            table = Table(data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+            ]))
+            story.append(table)
+        else:
+            story.append(Paragraph("No findings to display.", styles['Normal']))

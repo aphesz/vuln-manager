@@ -5421,7 +5421,8 @@ def generate_advanced_report(
             project_ids=request.project_ids,
             start_date=request.start_date,
             end_date=request.end_date,
-            include_sections=request.include_sections
+            include_sections=request.include_sections,
+            custom_template_id=request.custom_template_id
         )
         
         # Handle email delivery if requested
