@@ -2161,7 +2161,8 @@ class ReportTemplateEngine:
             if not template:
                 raise ValueError(f"Custom template {custom_template_id} not found")
             
-            # Parse template JSON
+            # Parse template JSON and extract data while in session
+            template_name = template.name
             template_data = json.loads(template.template_json)
             sections = template_data.get('sections', [])
             layout = template_data.get('layout', {})
@@ -2172,13 +2173,13 @@ class ReportTemplateEngine:
             session.add(template)
             session.commit()
         
-        # Generate based on format
+        # Generate based on format (outside session with extracted data)
         if format == ReportFormat.HTML:
-            return self._generate_custom_html(template.name, sections, layout, projects)
+            return self._generate_custom_html(template_name, sections, layout, projects)
         elif format == ReportFormat.DOCX:
-            return self._generate_custom_docx(template.name, sections, layout, projects)
+            return self._generate_custom_docx(template_name, sections, layout, projects)
         elif format == ReportFormat.PDF:
-            return self._generate_custom_pdf(template.name, sections, layout, projects)
+            return self._generate_custom_pdf(template_name, sections, layout, projects)
         else:
             raise ValueError(f"Unsupported format: {format}")
     
