@@ -104,14 +104,14 @@ const AttackSurfacePage: React.FC = () => {
 
   if (loading) {
     return (
-      <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <Box sx={{ p: { xs: 1, sm: 2, md: 3 }, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
         <CircularProgress size={60} />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
       {/* Breadcrumb Navigation */}
       <PageBreadcrumbs 
         projectId={projectId}

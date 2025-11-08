@@ -4911,6 +4911,234 @@ def get_risk_heatmap(session: Session = Depends(get_session)):
 
 
 # ============================================================================
+# ADVANCED REPORTING ENDPOINTS
+# ============================================================================
+
+from app.report_templates import ReportTemplateEngine
+from app.email_service import EmailService
+from app.models import (
+    EmailSettings,
+    EmailSettingsRead,
+    EmailSettingsCreate,
+    EmailSettingsUpdate,
+    ReportBranding,
+    ReportBrandingRead,
+    ReportBrandingUpdate,
+    ReportGenerationRequest,
+    ReportTemplateType,
+    ReportFormat
+)
+
+
+@app.post("/reports/generate")
+def generate_advanced_report(
+    request: ReportGenerationRequest,
+    session: Session = Depends(get_session)
+):
+    """
+    Generate advanced report with template selection and multi-format support.
+    
+    Supports:
+    - Multiple template types (Executive Summary, Technical Findings, etc.)
+    - Multiple formats (DOCX, PDF, HTML)
+    - Project filtering
+    - Date range filtering
+    - Optional email delivery
+    - Branding customization
+    """
+    try:
+        logger.info(f"Generating report: {request.template_type} in {request.format}")
+        
+        # Get branding settings
+        branding = session.exec(select(ReportBranding)).first()
+        
+        # Create template engine
+        engine = ReportTemplateEngine(session, branding)
+        
+        # Generate report
+        file_path = engine.generate_report(
+            template_type=request.template_type,
+            format=request.format,
+            project_ids=request.project_ids,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            include_sections=request.include_sections
+        )
+        
+        # Handle email delivery if requested
+        if request.send_email and request.email_to:
+            email_service = EmailService(session)
+            
+            # Get project names for email
+            if request.project_ids:
+                projects = session.exec(
+                    select(Project).where(Project.id.in_(request.project_ids))
+                ).all()
+                project_names = [p.name for p in projects]
+            else:
+                project_names = ["All Projects"]
+            
+            # Generate email body
+            plain_text, html_body = email_service.generate_report_email_body(
+                report_name=f"{request.template_type.value} Report",
+                project_names=project_names
+            )
+            
+            # Send email
+            email_sent = email_service.send_report(
+                to_emails=request.email_to,
+                subject=request.email_subject or f"{request.template_type.value} Report - {datetime.now().strftime('%Y-%m-%d')}",
+                body_text=plain_text,
+                body_html=html_body,
+                attachment_paths=[file_path],
+                cc_emails=request.email_cc,
+                bcc_emails=request.email_bcc
+            )
+            
+            if email_sent:
+                logger.info(f"Report emailed successfully to {', '.join(request.email_to)}")
+                return {
+                    "success": True,
+                    "message": "Report generated and emailed successfully",
+                    "file_path": file_path,
+                    "email_sent": True
+                }
+            else:
+                logger.warning("Report generated but email delivery failed")
+                return {
+                    "success": True,
+                    "message": "Report generated but email delivery failed",
+                    "file_path": file_path,
+                    "email_sent": False
+                }
+        
+        # Return file download if no email
+        logger.info(f"Report generated: {file_path}")
+        return FileResponse(
+            path=file_path,
+            media_type="application/octet-stream",
+            filename=os.path.basename(file_path)
+        )
+    
+    except Exception as e:
+        logger.error(f"Error generating report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+
+
+# Email Settings Endpoints
+
+@app.get("/settings/email", response_model=Optional[EmailSettingsRead])
+def get_email_settings(session: Session = Depends(get_session)):
+    """Get active email settings."""
+    settings = session.exec(select(EmailSettings).where(EmailSettings.is_active == True)).first()
+    return settings
+
+
+@app.post("/settings/email", response_model=EmailSettingsRead)
+def create_email_settings(
+    settings: EmailSettingsCreate,
+    session: Session = Depends(get_session)
+):
+    """Create new email settings (deactivates others)."""
+    # Deactivate all existing settings
+    existing = session.exec(select(EmailSettings)).all()
+    for s in existing:
+        s.is_active = False
+        session.add(s)
+    
+    # Create new settings
+    new_settings = EmailSettings(
+        **settings.model_dump(),
+        created_at=get_utc_now(),
+        updated_at=get_utc_now()
+    )
+    session.add(new_settings)
+    session.commit()
+    session.refresh(new_settings)
+    
+    logger.info("Email settings created successfully")
+    return new_settings
+
+
+@app.put("/settings/email/{settings_id}", response_model=EmailSettingsRead)
+def update_email_settings(
+    settings_id: int,
+    settings: EmailSettingsUpdate,
+    session: Session = Depends(get_session)
+):
+    """Update existing email settings."""
+    db_settings = session.get(EmailSettings, settings_id)
+    if not db_settings:
+        raise HTTPException(status_code=404, detail="Email settings not found")
+    
+    update_data = settings.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_settings, key, value)
+    
+    db_settings.updated_at = get_utc_now()
+    session.add(db_settings)
+    session.commit()
+    session.refresh(db_settings)
+    
+    logger.info(f"Email settings {settings_id} updated")
+    return db_settings
+
+
+@app.post("/settings/email/test")
+def test_email_connection(session: Session = Depends(get_session)):
+    """Test email SMTP connection."""
+    email_service = EmailService(session)
+    result = email_service.test_connection()
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+
+# Report Branding Endpoints
+
+@app.get("/settings/branding", response_model=Optional[ReportBrandingRead])
+def get_branding_settings(session: Session = Depends(get_session)):
+    """Get report branding settings."""
+    branding = session.exec(select(ReportBranding)).first()
+    return branding
+
+
+@app.post("/settings/branding", response_model=ReportBrandingRead)
+def create_branding_settings(
+    branding: ReportBrandingUpdate,
+    session: Session = Depends(get_session)
+):
+    """Create or update branding settings."""
+    existing = session.exec(select(ReportBranding)).first()
+    
+    if existing:
+        # Update existing
+        update_data = branding.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(existing, key, value)
+        existing.updated_at = get_utc_now()
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        logger.info("Branding settings updated")
+        return existing
+    else:
+        # Create new
+        new_branding = ReportBranding(
+            **branding.model_dump(),
+            created_at=get_utc_now(),
+            updated_at=get_utc_now()
+        )
+        session.add(new_branding)
+        session.commit()
+        session.refresh(new_branding)
+        logger.info("Branding settings created")
+        return new_branding
+
+
+# ============================================================================
 # SCORING CALCULATORS ENDPOINTS
 # ============================================================================
 

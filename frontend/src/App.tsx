@@ -12,6 +12,8 @@ import OWASPCalculatorPage from './components/OWASPCalculatorPage'
 import TrendAnalysisPage from './components/TrendAnalysisPage'
 import AttackSurfacePage from './components/AttackSurfacePage'
 import ExecutiveDashboard from './components/ExecutiveDashboard'
+import ReportBuilderPage from './components/ReportBuilderPage'
+import BrandingSettingsPage from './components/BrandingSettingsPage'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
 import { NotificationProvider } from './contexts/NotificationContext'
 
@@ -47,6 +49,10 @@ const App = () => {
             <Route path="/" element={<ProjectsLists />} />
             {/* Executive Dashboard route */}
             <Route path="/executive" element={<ExecutiveDashboard />} />
+            {/* Report Builder route */}
+            <Route path="/reports" element={<ReportBuilderPage />} />
+            {/* Branding Settings route */}
+            <Route path="/settings/branding" element={<BrandingSettingsPage />} />
             {/* The project ID is passed as a route parameter */}
             <Route path="/projects/:projectId" element={<Dashboard />} />
             {/* Trend Analysis route */}

@@ -598,5 +598,119 @@ class TagUpdate(SQLModel):
     description: Optional[str] = Field(default=None, max_length=200)
     average_time_to_approval: Optional[float] = None  # Days, if available
 
+# --- Report Template & Email Settings Models ---
+
+class ReportTemplateType(str, Enum):
+    """Enum for report template types."""
+    ExecutiveSummary = "Executive Summary"
+    TechnicalFindings = "Technical Findings"
+    RiskAssessment = "Risk Assessment"
+    RemediationStatus = "Remediation Status"
+    PortfolioOverview = "Portfolio Overview"
+    ComplianceOWASP = "Compliance - OWASP Top 10"
+    ComplianceCWE = "Compliance - CWE Top 25"
+    ComplianceATTACK = "Compliance - MITRE ATT&CK"
+    ComplianceSLA = "Compliance - SLA Report"
+
+class ReportFormat(str, Enum):
+    """Enum for report output formats."""
+    DOCX = "docx"
+    PDF = "pdf"
+    HTML = "html"
+
+class EmailSettingsBase(SQLModel):
+    """Base model for email/SMTP settings."""
+    smtp_host: str = Field(..., max_length=255)
+    smtp_port: int = Field(default=587)
+    smtp_username: str = Field(..., max_length=255)
+    smtp_password: str = Field(..., max_length=255)  # Should be encrypted in production
+    smtp_use_tls: bool = Field(default=True)
+    smtp_use_ssl: bool = Field(default=False)
+    from_email: str = Field(..., max_length=255)
+    from_name: Optional[str] = Field(default="VulnManager Reports", max_length=255)
+    is_active: bool = Field(default=False)
+
+class EmailSettings(EmailSettingsBase, table=True):
+    """Database model for email/SMTP settings."""
+    __tablename__ = "email_settings"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default=None)
+    updated_at: datetime = Field(default=None)
+
+class EmailSettingsRead(EmailSettingsBase):
+    """Read model for email settings (excludes password)."""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    smtp_password: str = Field(default="********")  # Masked for security
+
+class EmailSettingsCreate(EmailSettingsBase):
+    """Model for creating email settings."""
+    pass
+
+class EmailSettingsUpdate(SQLModel):
+    """Model for updating email settings (all optional)."""
+    smtp_host: Optional[str] = Field(default=None, max_length=255)
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = Field(default=None, max_length=255)
+    smtp_password: Optional[str] = Field(default=None, max_length=255)
+    smtp_use_tls: Optional[bool] = None
+    smtp_use_ssl: Optional[bool] = None
+    from_email: Optional[str] = Field(default=None, max_length=255)
+    from_name: Optional[str] = Field(default=None, max_length=255)
+    is_active: Optional[bool] = None
+
+class ReportBrandingBase(SQLModel):
+    """Base model for report branding/customization."""
+    company_name: Optional[str] = Field(default=None, max_length=255)
+    company_address: Optional[str] = Field(default=None, max_length=500)
+    company_phone: Optional[str] = Field(default=None, max_length=50)
+    company_email: Optional[str] = Field(default=None, max_length=255)
+    company_website: Optional[str] = Field(default=None, max_length=255)
+    logo_path: Optional[str] = Field(default=None, max_length=500)  # Path to uploaded logo
+    primary_color: str = Field(default="#1976d2", max_length=7)  # Hex color
+    secondary_color: str = Field(default="#dc004e", max_length=7)
+    footer_text: Optional[str] = Field(default=None, max_length=500)
+
+class ReportBranding(ReportBrandingBase, table=True):
+    """Database model for report branding."""
+    __tablename__ = "report_branding"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default=None)
+    updated_at: datetime = Field(default=None)
+
+class ReportBrandingRead(ReportBrandingBase):
+    """Read model for report branding."""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+class ReportBrandingUpdate(SQLModel):
+    """Model for updating report branding (all optional)."""
+    company_name: Optional[str] = Field(default=None, max_length=255)
+    company_address: Optional[str] = Field(default=None, max_length=500)
+    company_phone: Optional[str] = Field(default=None, max_length=50)
+    company_email: Optional[str] = Field(default=None, max_length=255)
+    company_website: Optional[str] = Field(default=None, max_length=255)
+    logo_path: Optional[str] = Field(default=None, max_length=500)
+    primary_color: Optional[str] = Field(default=None, max_length=7)
+    secondary_color: Optional[str] = Field(default=None, max_length=7)
+    footer_text: Optional[str] = Field(default=None, max_length=500)
+
+class ReportGenerationRequest(SQLModel):
+    """Model for report generation request."""
+    template_type: ReportTemplateType
+    format: ReportFormat = Field(default=ReportFormat.PDF)
+    project_ids: List[int] = Field(default_factory=list)  # Empty = all projects
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    include_sections: Optional[List[str]] = Field(default=None)  # Section names to include
+    send_email: bool = Field(default=False)  # Whether to send via email
+    email_to: Optional[List[str]] = Field(default=None)  # Email addresses for delivery
+    email_cc: Optional[List[str]] = Field(default=None)  # CC recipients
+    email_bcc: Optional[List[str]] = Field(default=None)  # BCC recipients
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
+
 # Rebuild models to resolve forward references
 FindingReadWithInstances.model_rebuild()

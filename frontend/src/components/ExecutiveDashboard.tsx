@@ -121,7 +121,7 @@ const ExecutiveDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <Box sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
         <PageBreadcrumbs />
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
           <CircularProgress size={60} />
@@ -132,7 +132,7 @@ const ExecutiveDashboard: React.FC = () => {
 
   if (error) {
     return (
-      <Box sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
         <PageBreadcrumbs />
         <Alert severity="error" sx={{ mt: 2 }}>
           {error}
@@ -143,7 +143,7 @@ const ExecutiveDashboard: React.FC = () => {
 
   if (!summary) {
     return (
-      <Box sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
         <PageBreadcrumbs />
         <Alert severity="info" sx={{ mt: 2 }}>
           No executive data available.
@@ -153,7 +153,7 @@ const ExecutiveDashboard: React.FC = () => {
   }
 
   return (
-    <Box sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
       <PageBreadcrumbs />
 
       <Typography variant="h4" gutterBottom sx={{ mt: 2, mb: 3, fontWeight: 'bold' }}>

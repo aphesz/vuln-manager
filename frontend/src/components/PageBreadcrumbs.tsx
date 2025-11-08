@@ -26,7 +26,9 @@ import {
   Shield as ShieldIcon,
   Article as ArticleIcon,
   LocalOffer as TagIcon,
-  Schedule as ScheduleIcon
+  Schedule as ScheduleIcon,
+  Description as ReportIcon,
+  Palette as PaletteIcon
 } from '@mui/icons-material';
 
 interface BreadcrumbItem {
@@ -79,6 +81,11 @@ const PageBreadcrumbs: React.FC<PageBreadcrumbsProps> = ({
         label: 'Executive Dashboard',
         icon: <DashboardIcon fontSize="small" />
       });
+    } else if (path === '/reports') {
+      breadcrumbs.push({
+        label: 'Report Builder',
+        icon: <ReportIcon fontSize="small" />
+      });
     } else if (path === '/sla') {
       breadcrumbs.push({
         label: 'SLA & Remediation Tracking',
@@ -103,6 +110,11 @@ const PageBreadcrumbs: React.FC<PageBreadcrumbsProps> = ({
       breadcrumbs.push({
         label: 'OWASP Risk Calculator',
         icon: <CalculateIcon fontSize="small" />
+      });
+    } else if (path === '/settings/branding') {
+      breadcrumbs.push({
+        label: 'Report Branding',
+        icon: <PaletteIcon fontSize="small" />
       });
     } else if (path.includes('/attack-surface')) {
       breadcrumbs.push({

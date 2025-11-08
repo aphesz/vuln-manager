@@ -10,6 +10,7 @@ import {
   KeyboardArrowDown as ArrowDownIcon,
   LocalOffer as TagIcon,
   Dashboard as ExecutiveIcon,
+  Description as ReportIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
 
@@ -93,6 +94,23 @@ const AppHeader = () => {
           aria-label="View executive dashboard"
         >
           Executive
+        </Button>
+        <Button
+          component={Link}
+          to="/reports"
+          variant="outlined"
+          startIcon={<ReportIcon />}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="Generate reports"
+        >
+          Reports
         </Button>
         <Button
           component={Link}
