@@ -49,10 +49,61 @@
 ## 📏 Project‑Specific Conventions
 - **Risk Rating Normalization** – always use `get_risk_rating` to map raw scanner values to the exact ENUM strings stored in PostgreSQL (`Critical`, `High`, `Medium`, `Low`, `None`).
 - **Read Models** – API responses must use the `*ReadWith*` models defined in `models.py`; never return raw ORM objects.
-- **Deduplication Logic** – `process_and_save_issue` first searches for an existing `Finding` by `project_id` + `title`. If found, only a new `Instance` is added.
-- **File Upload Size** – the parser enforces a 10 MiB limit (hard‑coded in `parsers.py`).
+- **Deduplication Logic** – `process_and_save_issue` first searches for an existing `Finding` by `project_id` + `title`. If found, only a new `Instance` is added.
+- **File Upload Size** – the parser enforces a 10 MiB limit (hard‑coded in `parsers.py`).
 - **SQLModel Imports** – all DB models live in `backend/app/models.py`; import them via `from app.models import …`.
 - **Docker Environment Variables** – `DATABASE_URL` defaults to `postgresql+psycopg2://user:password@db:5432/vuln_db`. Override in `.env` for local dev.
+- **Breadcrumb Navigation** – **ALL new pages MUST include breadcrumb navigation** using the `PageBreadcrumbs` component from `frontend/src/components/PageBreadcrumbs.tsx`. Add it at the top of every page component for consistent navigation UX.
+
+## 🎨 Frontend Component Guidelines
+
+### Required: Breadcrumb Navigation
+**Every new page component MUST include breadcrumbs** at the top for consistent navigation:
+
+```tsx
+import PageBreadcrumbs from './PageBreadcrumbs';
+
+const MyNewPage: React.FC = () => {
+  const { projectId } = useParams();
+  
+  return (
+    <Container>
+      {/* REQUIRED: Breadcrumb navigation */}
+      <PageBreadcrumbs projectId={projectId} />
+      
+      {/* Page content */}
+      <Typography variant="h4">My Page</Typography>
+      {/* ... */}
+    </Container>
+  );
+};
+```
+
+**Custom breadcrumb items** (optional):
+```tsx
+<PageBreadcrumbs 
+  projectId={projectId}
+  projectName="My Project"
+  items={[
+    { label: 'Projects', path: '/', icon: <HomeIcon fontSize="small" /> },
+    { label: 'Project Name', path: `/projects/${projectId}` },
+    { label: 'Current Page', icon: <CustomIcon fontSize="small" /> }
+  ]}
+/>
+```
+
+**Auto-detection** (default behavior):
+- If no `items` prop provided, breadcrumbs are auto-generated from URL path
+- Automatically recognizes: dashboard, attack-surface, trends, findings, templates, sla-policy, compliance, calculators, reports
+- Shows appropriate icons for each page type
+
+### Breadcrumb Requirements
+✅ **DO**: Include `<PageBreadcrumbs />` at the top of every page  
+✅ **DO**: Pass `projectId` when available  
+✅ **DO**: Use auto-detection for standard pages  
+✅ **DO**: Customize `items` only for special cases  
+❌ **DON'T**: Create pages without breadcrumbs  
+❌ **DON'T**: Implement custom breadcrumb UI (use the component)
 
 ## 🔗 Integration Points & External Dependencies
 
@@ -87,7 +138,12 @@
 ## 📚 How to Extend
 1. **Add a new scanner**: create a parser function in `parsers.py`, update the `upload_report` endpoint to accept the new `scanner_type`, and extend `get_risk_rating` if needed.
 2. **New API endpoint**: follow the pattern in `main.py` – declare a route, use `Depends(get_session)`, and return a read model.
-3. **Frontend component**: add a React component under `src/components/`, expose it via a route in `App.js`, and consume the corresponding backend JSON.
+3. **New frontend page**: 
+   - Create component under `src/components/`
+   - **ALWAYS include `<PageBreadcrumbs />` at the top**
+   - Add route in `App.tsx`
+   - Consume backend API via service layer
+   - Follow Material-UI design patterns
 
 ---
 *These instructions are intended for AI agents (Copilot, Claude, etc.) to quickly understand the codebase, run common commands, and follow project conventions.*

@@ -5,10 +5,14 @@
 import React from 'react';
 import { Box, Paper, Typography } from '@mui/material';
 import OWASPRiskCalculator from './OWASPRiskCalculator';
+import PageBreadcrumbs from './PageBreadcrumbs';
 
 const OWASPCalculatorPage: React.FC = () => {
   return (
     <Box sx={{ p: 3 }}>
+      {/* Breadcrumbs */}
+      <PageBreadcrumbs />
+      
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h4" gutterBottom fontWeight="600">
           OWASP Risk Rating Calculator

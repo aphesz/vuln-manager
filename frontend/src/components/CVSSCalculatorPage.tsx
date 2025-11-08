@@ -5,10 +5,14 @@
 import React from 'react';
 import { Box, Paper, Typography } from '@mui/material';
 import CVSSCalculator from './CVSSCalculator';
+import PageBreadcrumbs from './PageBreadcrumbs';
 
 const CVSSCalculatorPage: React.FC = () => {
   return (
     <Box sx={{ p: 3 }}>
+      {/* Breadcrumbs */}
+      <PageBreadcrumbs />
+      
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h4" gutterBottom fontWeight="600">
           CVSS 3.1 Calculator

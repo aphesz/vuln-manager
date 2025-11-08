@@ -30,6 +30,7 @@ import {
   Shield as ShieldIcon
 } from '@mui/icons-material';
 import AttackTechniqueService, { AttackTechnique, TechniquesByTactic } from '../services/AttackTechniqueService';
+import PageBreadcrumbs from './PageBreadcrumbs';
 import AttackTechniqueCard from './AttackTechniqueCard';
 
 const AttackSurfacePage: React.FC = () => {
@@ -113,32 +114,14 @@ const AttackSurfacePage: React.FC = () => {
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       {/* Breadcrumb Navigation */}
-      <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 3 }}>
-        <Link
-          underline="hover"
-          sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
-          color="inherit"
-          onClick={() => navigate('/')}
-        >
-          <HomeIcon sx={{ mr: 0.5 }} fontSize="small" />
-          Projects
-        </Link>
-        <Link
-          underline="hover"
-          sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
-          color="inherit"
-          onClick={() => navigate(`/projects/${projectId}`)}
-        >
-          Project {projectId}
-        </Link>
-        <Typography
-          sx={{ display: 'flex', alignItems: 'center' }}
-          color="text.primary"
-        >
-          <SecurityIcon sx={{ mr: 0.5 }} fontSize="small" />
-          MITRE ATT&CK Matrix
-        </Typography>
-      </Breadcrumbs>
+      <PageBreadcrumbs 
+        projectId={projectId}
+        items={[
+          { label: 'Projects', path: '/', icon: <HomeIcon fontSize="small" /> },
+          { label: `Project ${projectId}`, path: `/projects/${projectId}` },
+          { label: 'MITRE ATT&CK Matrix', icon: <SecurityIcon fontSize="small" /> }
+        ]}
+      />
 
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>

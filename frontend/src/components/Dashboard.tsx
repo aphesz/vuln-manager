@@ -60,6 +60,7 @@ import TopVulnerabilitiesWidget from './TopVulnerabilitiesWidget';
 import AttackMatrixWidget from './AttackMatrixWidget';
 import OWASPTop10Widget from './OWASPTop10Widget';
 import CWETop25Widget from './CWETop25Widget';
+import PageBreadcrumbs from './PageBreadcrumbs';
 import { DashboardSkeleton } from './LoadingSkeletons';
 import { useThemeContext } from '../theme/ThemeProvider';
 import WebSocketService from '../services/WebSocketService';
@@ -390,6 +391,9 @@ const Dashboard = () => {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }} role="main">
+      {/* Breadcrumb Navigation */}
+      <PageBreadcrumbs projectId={projectId} projectName={project.name} />
+      
       {/* Header */}
       <Box sx={{ 
         mb: 3, 

@@ -36,6 +36,7 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import { useNotification } from '../contexts/NotificationContext';
 import { getErrorMessage, retryWithBackoff } from '../utils/errorHandler';
 import { ProjectCardSkeleton } from './LoadingSkeletons';
+import PageBreadcrumbs from './PageBreadcrumbs';
 
 // Use relative path for API calls - proxied through Nginx in Docker
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
@@ -325,6 +326,9 @@ const ProjectsLists: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }} role="main">
+      {/* Breadcrumbs */}
+      <PageBreadcrumbs />
+      
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">Assessment Projects</Typography>
         <Button
