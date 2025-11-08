@@ -1,7 +1,7 @@
 """Add report templates and email settings tables
 
 Revision ID: 016_add_report_settings
-Revises: 0cb8a3b4a6b6, 8f7f56672c50
+Revises: 014_add_owasp_category, 8f7f56672c50
 Create Date: 2025-06-05 15:45:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = '016_add_report_settings'
-down_revision: Union[str, None] = ('0cb8a3b4a6b6', '8f7f56672c50')
+down_revision: Union[str, None] = ('014_add_owasp_category', '8f7f56672c50')
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

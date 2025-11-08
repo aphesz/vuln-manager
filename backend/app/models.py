@@ -611,6 +611,7 @@ class ReportTemplateType(str, Enum):
     ComplianceCWE = "Compliance - CWE Top 25"
     ComplianceATTACK = "Compliance - MITRE ATT&CK"
     ComplianceSLA = "Compliance - SLA Report"
+    Custom = "Custom Template"  # User-defined templates
 
 class ReportFormat(str, Enum):
     """Enum for report output formats."""
@@ -697,6 +698,46 @@ class ReportBrandingUpdate(SQLModel):
     secondary_color: Optional[str] = Field(default=None, max_length=7)
     footer_text: Optional[str] = Field(default=None, max_length=500)
 
+class CustomReportTemplateBase(SQLModel):
+    """Base model for custom report templates."""
+    name: str = Field(..., max_length=255, index=True)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    template_json: str = Field(...)  # JSON string containing template structure
+    is_public: bool = Field(default=False)  # Whether template is shared with all users
+    created_by: Optional[str] = Field(default=None, max_length=255)  # Username/email
+
+class CustomReportTemplate(CustomReportTemplateBase, table=True):
+    """Database model for custom report templates."""
+    __tablename__ = "custom_report_templates"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default=None, index=True)
+    updated_at: datetime = Field(default=None)
+    last_used_at: Optional[datetime] = Field(default=None)
+    usage_count: int = Field(default=0)
+
+class CustomReportTemplateRead(CustomReportTemplateBase):
+    """Read model for custom report templates."""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    last_used_at: Optional[datetime]
+    usage_count: int
+
+class CustomReportTemplateCreate(SQLModel):
+    """Model for creating custom report templates."""
+    name: str = Field(..., max_length=255)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    template_json: str = Field(...)
+    is_public: bool = Field(default=False)
+    created_by: Optional[str] = Field(default=None, max_length=255)
+
+class CustomReportTemplateUpdate(SQLModel):
+    """Model for updating custom report templates (all optional)."""
+    name: Optional[str] = Field(default=None, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    template_json: Optional[str] = Field(default=None)
+    is_public: Optional[bool] = Field(default=None)
+
 class ReportGenerationRequest(SQLModel):
     """Model for report generation request."""
     template_type: ReportTemplateType
@@ -711,6 +752,7 @@ class ReportGenerationRequest(SQLModel):
     email_bcc: Optional[List[str]] = Field(default=None)  # BCC recipients
     email_subject: Optional[str] = None
     email_body: Optional[str] = None
+    custom_template_id: Optional[int] = Field(default=None)  # ID of custom template to use
 
 # --- Predictive Analytics Models (v0.8.5) ---
 

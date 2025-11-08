@@ -5137,8 +5137,256 @@ from app.models import (
     ReportBrandingUpdate,
     ReportGenerationRequest,
     ReportTemplateType,
-    ReportFormat
+    ReportFormat,
+    CustomReportTemplate,
+    CustomReportTemplateRead,
+    CustomReportTemplateCreate,
+    CustomReportTemplateUpdate
 )
+
+
+# --- Custom Report Template CRUD ---
+
+@app.post("/custom-templates", response_model=CustomReportTemplateRead)
+@limiter.limit("30/minute")
+def create_custom_template(
+    request: Request,
+    template: CustomReportTemplateCreate,
+    session: Session = Depends(get_session)
+):
+    """
+    Create a new custom report template.
+    
+    Template JSON structure should follow this schema:
+    {
+        "sections": [
+            {
+                "type": "text|table|chart|metrics|findings",
+                "title": "Section Title",
+                "content": "...",  # For text sections
+                "widget": "...",   # For chart/metrics widgets
+                "filters": {...},  # For data sections
+                "layout": {...}    # Layout options
+            }
+        ],
+        "layout": {
+            "page_size": "letter|a4",
+            "orientation": "portrait|landscape",
+            "margins": {...}
+        }
+    }
+    """
+    try:
+        # Validate JSON structure
+        import json
+        template_data = json.loads(template.template_json)
+        
+        if "sections" not in template_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Template JSON must contain 'sections' array"
+            )
+        
+        # Create template
+        db_template = CustomReportTemplate(
+            name=template.name,
+            description=template.description,
+            template_json=template.template_json,
+            is_public=template.is_public,
+            created_by=template.created_by,
+            created_at=get_utc_now(),
+            updated_at=get_utc_now(),
+            usage_count=0
+        )
+        
+        session.add(db_template)
+        session.commit()
+        session.refresh(db_template)
+        
+        logger.info(f"Created custom template: {db_template.name} (ID: {db_template.id})")
+        return db_template
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid JSON in template_json: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error creating custom template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+
+
+@app.get("/custom-templates", response_model=List[CustomReportTemplateRead])
+@limiter.limit("60/minute")
+def list_custom_templates(
+    request: Request,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    is_public: Optional[bool] = Query(None),
+    created_by: Optional[str] = Query(None),
+    session: Session = Depends(get_session)
+):
+    """
+    List all custom report templates with optional filtering.
+    """
+    try:
+        query = select(CustomReportTemplate)
+        
+        # Apply filters
+        if search:
+            query = query.where(
+                CustomReportTemplate.name.ilike(f"%{search}%") |
+                CustomReportTemplate.description.ilike(f"%{search}%")
+            )
+        
+        if is_public is not None:
+            query = query.where(CustomReportTemplate.is_public == is_public)
+        
+        if created_by:
+            query = query.where(CustomReportTemplate.created_by == created_by)
+        
+        # Order by most recently used, then by name
+        query = query.order_by(
+            CustomReportTemplate.last_used_at.desc().nullslast(),
+            CustomReportTemplate.name
+        )
+        
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
+        
+        templates = session.exec(query).all()
+        return templates
+        
+    except Exception as e:
+        logger.error(f"Error listing custom templates: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+
+
+@app.get("/custom-templates/{template_id}", response_model=CustomReportTemplateRead)
+@limiter.limit("60/minute")
+def get_custom_template(
+    request: Request,
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get a specific custom report template by ID."""
+    template = session.get(CustomReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template
+
+
+@app.patch("/custom-templates/{template_id}", response_model=CustomReportTemplateRead)
+@limiter.limit("30/minute")
+def update_custom_template(
+    request: Request,
+    template_id: int,
+    updates: CustomReportTemplateUpdate,
+    session: Session = Depends(get_session)
+):
+    """Update a custom report template."""
+    try:
+        template = session.get(CustomReportTemplate, template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Validate JSON if provided
+        if updates.template_json:
+            import json
+            template_data = json.loads(updates.template_json)
+            if "sections" not in template_data:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Template JSON must contain 'sections' array"
+                )
+        
+        # Apply updates
+        update_data = updates.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(template, field, value)
+        
+        template.updated_at = get_utc_now()
+        
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+        
+        logger.info(f"Updated custom template: {template.name} (ID: {template_id})")
+        return template
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid JSON in template_json: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error updating custom template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+
+
+@app.delete("/custom-templates/{template_id}", status_code=204)
+@limiter.limit("30/minute")
+def delete_custom_template(
+    request: Request,
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """Delete a custom report template."""
+    try:
+        template = session.get(CustomReportTemplate, template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        session.delete(template)
+        session.commit()
+        
+        logger.info(f"Deleted custom template: {template.name} (ID: {template_id})")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error deleting custom template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
+
+
+@app.post("/custom-templates/{template_id}/duplicate", response_model=CustomReportTemplateRead)
+@limiter.limit("30/minute")
+def duplicate_custom_template(
+    request: Request,
+    template_id: int,
+    new_name: Optional[str] = Query(None),
+    session: Session = Depends(get_session)
+):
+    """Duplicate an existing custom report template."""
+    try:
+        original = session.get(CustomReportTemplate, template_id)
+        if not original:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Create duplicate
+        duplicate_name = new_name or f"{original.name} (Copy)"
+        
+        duplicate = CustomReportTemplate(
+            name=duplicate_name,
+            description=original.description,
+            template_json=original.template_json,
+            is_public=False,  # Always private by default
+            created_by=original.created_by,
+            created_at=get_utc_now(),
+            updated_at=get_utc_now(),
+            usage_count=0
+        )
+        
+        session.add(duplicate)
+        session.commit()
+        session.refresh(duplicate)
+        
+        logger.info(f"Duplicated template {template_id} as {duplicate.id}: {duplicate.name}")
+        return duplicate
+        
+    except Exception as e:
+        logger.error(f"Error duplicating custom template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to duplicate template: {str(e)}")
 
 
 @app.post("/reports/generate")
