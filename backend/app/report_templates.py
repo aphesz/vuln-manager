@@ -27,6 +27,42 @@ import re
 import base64
 
 
+# --- HTML sanitization utilities (kept local to avoid importing FastAPI app) ---
+def _sanitize_html_fragment(value: str) -> str:
+    """Allow basic formatting tags while stripping scripts and dangerous attrs.
+    This mirrors the intent of sanitize_html_input in main.py without importing it.
+    """
+    if not value:
+        return value
+    # Remove script tags and their content
+    value = re.sub(r'<script[^>]*>.*?</script>', '', value, flags=re.DOTALL | re.IGNORECASE)
+    # Strip common XSS vectors (event handlers, javascript: URLs, embedded objects)
+    dangerous_patterns = [
+        r'javascript:',
+        r'on\w+\s*=\s*"[^"]*"',
+        r'on\w+\s*=\s*\'[^\']*\'',
+        r'on\w+\s*=\s*[^\s>]+',
+        r'<iframe[^>]*>.*?</iframe>',
+        r'<embed[^>]*>.*?</embed>',
+        r'<object[^>]*>.*?</object>',
+    ]
+    for pattern in dangerous_patterns:
+        value = re.sub(pattern, '', value, flags=re.IGNORECASE | re.DOTALL)
+    return value
+
+
+def _strip_html_tags(value: str) -> str:
+    """Remove all HTML tags to produce plain text for DOCX/PDF."""
+    if not value:
+        return value
+    # Remove tags
+    value = re.sub(r'<[^>]+>', '', value)
+    # Collapse multiple spaces/newlines
+    value = re.sub(r'\s+\n', '\n', value)
+    value = re.sub(r'\n{3,}', '\n\n', value)
+    return value.strip()
+
+
 class ReportTemplateEngine:
     """Engine for generating reports from templates with customization."""
     
@@ -757,11 +793,11 @@ class ReportTemplateEngine:
                 <div class="finding-details" id="details-{idx}" style="display: none;">
                     <div class="section">
                         <h4>📝 Description</h4>
-                        <div class="description">{html.escape(finding.description)}</div>
+                        <div class="description">{_sanitize_html_fragment(finding.description)}</div>
                     </div>
                     <div class="section">
                         <h4>🛠️ Remediation</h4>
-                        <div class="remediation">{html.escape(finding.remediation)}</div>
+                        <div class="remediation">{_sanitize_html_fragment(finding.remediation)}</div>
                     </div>
                     {f'''
                     <div class="section">
@@ -1156,12 +1192,12 @@ class ReportTemplateEngine:
             
             # Description
             doc.add_heading('Description', 3)
-            doc.add_paragraph(finding.description)
+            doc.add_paragraph(_strip_html_tags(finding.description))
             doc.add_paragraph("")
             
             # Remediation
             doc.add_heading('Remediation', 3)
-            doc.add_paragraph(finding.remediation)
+            doc.add_paragraph(_strip_html_tags(finding.remediation))
             doc.add_paragraph("")
             
             # Instances
@@ -1307,12 +1343,12 @@ class ReportTemplateEngine:
             
             # Description
             story.append(Paragraph("<b>Description:</b>", styles['Normal']))
-            story.append(Paragraph(finding.description, styles['Normal']))
+            story.append(Paragraph(_strip_html_tags(finding.description), styles['Normal']))
             story.append(Spacer(1, 0.1*inch))
             
             # Remediation
             story.append(Paragraph("<b>Remediation:</b>", styles['Normal']))
-            story.append(Paragraph(finding.remediation, styles['Normal']))
+            story.append(Paragraph(_strip_html_tags(finding.remediation), styles['Normal']))
             story.append(Spacer(1, 0.1*inch))
             
             # Instances
