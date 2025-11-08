@@ -14,6 +14,8 @@ import AttackSurfacePage from './components/AttackSurfacePage'
 import ExecutiveDashboard from './components/ExecutiveDashboard'
 import ReportBuilderPage from './components/ReportBuilderPage'
 import BrandingSettingsPage from './components/BrandingSettingsPage'
+import CustomTemplateLibrary from './components/CustomTemplateLibrary'
+import CustomTemplateBuilder from './components/CustomTemplateBuilder'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
 import { NotificationProvider } from './contexts/NotificationContext'
 
@@ -68,6 +70,10 @@ const App = () => {
             {/* Calculator routes */}
             <Route path="/calculators/cvss" element={<CVSSCalculatorPage />} />
             <Route path="/calculators/owasp" element={<OWASPCalculatorPage />} />
+            {/* Custom Template routes */}
+            <Route path="/custom-templates" element={<CustomTemplateLibrary />} />
+            <Route path="/custom-templates/new" element={<CustomTemplateBuilder />} />
+            <Route path="/custom-templates/:templateId/edit" element={<CustomTemplateBuilder />} />
           </Routes>
         </Container>
 

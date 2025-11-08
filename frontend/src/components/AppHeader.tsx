@@ -114,6 +114,23 @@ const AppHeader = () => {
         </Button>
         <Button
           component={Link}
+          to="/custom-templates"
+          variant="outlined"
+          startIcon={<ReportIcon />}
+          sx={{
+            color: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            '&:hover': {
+              borderColor: theme.palette.primary.light,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+          }}
+          aria-label="Custom report templates"
+        >
+          Templates
+        </Button>
+        <Button
+          component={Link}
           to="/vulnerability-repository"
           variant="outlined"
           startIcon={<SecurityIcon />}
