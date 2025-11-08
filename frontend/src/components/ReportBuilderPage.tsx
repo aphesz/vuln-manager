@@ -47,21 +47,21 @@ interface Project {
 }
 
 const TEMPLATE_TYPES = [
-  { value: 'ExecutiveSummary', label: 'Executive Summary', description: 'High-level overview with KPIs and risk metrics' },
-  { value: 'TechnicalFindings', label: 'Technical Findings', description: 'Detailed technical vulnerability analysis' },
-  { value: 'RiskAssessment', label: 'Risk Assessment', description: 'Comprehensive risk scoring and prioritization' },
-  { value: 'RemediationStatus', label: 'Remediation Status', description: 'Current status of vulnerability fixes' },
-  { value: 'PortfolioOverview', label: 'Portfolio Overview', description: 'Multi-project security posture summary' },
-  { value: 'ComplianceOWASP', label: 'OWASP Compliance', description: 'OWASP Top 10 compliance mapping' },
-  { value: 'ComplianceCWE', label: 'CWE Compliance', description: 'CWE Top 25 compliance mapping' },
-  { value: 'ComplianceATTACK', label: 'MITRE ATT&CK', description: 'ATT&CK framework coverage report' },
-  { value: 'ComplianceSLA', label: 'SLA Compliance', description: 'SLA adherence and deadline tracking' },
+  { value: 'Executive Summary', label: 'Executive Summary', description: 'High-level overview with KPIs and risk metrics ✅ Available' },
+  { value: 'Technical Findings', label: 'Technical Findings', description: 'Detailed technical vulnerability analysis ✅ Available' },
+  { value: 'Risk Assessment', label: 'Risk Assessment', description: '🚧 Coming Soon - Comprehensive risk scoring and prioritization' },
+  { value: 'Remediation Status', label: 'Remediation Status', description: '🚧 Coming Soon - Current status of vulnerability fixes' },
+  { value: 'Portfolio Overview', label: 'Portfolio Overview', description: '🚧 Coming Soon - Multi-project security posture summary' },
+  { value: 'Compliance - OWASP Top 10', label: 'OWASP Compliance', description: '🚧 Coming Soon - OWASP Top 10 compliance mapping' },
+  { value: 'Compliance - CWE Top 25', label: 'CWE Compliance', description: '🚧 Coming Soon - CWE Top 25 compliance mapping' },
+  { value: 'Compliance - MITRE ATT&CK', label: 'MITRE ATT&CK', description: '🚧 Coming Soon - ATT&CK framework coverage report' },
+  { value: 'Compliance - SLA Report', label: 'SLA Compliance', description: '🚧 Coming Soon - SLA adherence and deadline tracking' },
 ];
 
 const FORMATS = [
-  { value: 'HTML', label: 'HTML', description: 'Interactive web-based report', icon: '🌐' },
-  { value: 'PDF', label: 'PDF', description: 'Print-ready portable document', icon: '📄' },
-  { value: 'DOCX', label: 'Word', description: 'Editable Microsoft Word document', icon: '📝' },
+  { value: 'html', label: 'HTML', description: 'Interactive web-based report', icon: '🌐' },
+  { value: 'pdf', label: 'PDF', description: 'Print-ready portable document', icon: '📄' },
+  { value: 'docx', label: 'Word', description: 'Editable Microsoft Word document', icon: '📝' },
 ];
 
 const ReportBuilderPage: React.FC = () => {
@@ -73,8 +73,8 @@ const ReportBuilderPage: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   
   // Form state
-  const [templateType, setTemplateType] = useState('ExecutiveSummary');
-  const [format, setFormat] = useState('HTML');
+  const [templateType, setTemplateType] = useState('Executive Summary');
+  const [format, setFormat] = useState('html');
   const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -95,7 +95,7 @@ const ReportBuilderPage: React.FC = () => {
   const loadProjects = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/projects');
+      const response = await fetch('/api/projects/');
       const data = await response.json();
       setProjects(data.filter((p: any) => !p.is_archived));
     } catch (err) {
@@ -121,6 +121,14 @@ const ReportBuilderPage: React.FC = () => {
     setSuccess(null);
 
     try {
+      // Validate template availability
+      const availableTemplates = ['Executive Summary', 'Technical Findings'];
+      if (!availableTemplates.includes(templateType)) {
+        setError('Selected template is not yet available. Please choose Executive Summary or Technical Findings.');
+        setGenerating(false);
+        return;
+      }
+
       // Validate email fields if sending email
       if (sendEmail && !hasEmailSettings) {
         setError('Email settings not configured. Please configure email settings first.');
@@ -155,38 +163,58 @@ const ReportBuilderPage: React.FC = () => {
         email_subject: sendEmail && emailSubject ? emailSubject : undefined,
       };
 
-      const response = await ReportService.generateReport(request);
+      // Use axios directly to get access to response headers for both email and download
+      const axios = (await import('axios')).default;
+      const axiosResponse = await axios.post(
+        '/api/reports/generate',
+        request,
+        { responseType: sendEmail ? 'json' : 'blob' }
+      );
 
       if (sendEmail) {
         // Response is JSON when email is sent
-        const result = response as any;
+        const result = axiosResponse.data;
         if (result.success) {
           setSuccess(result.message || 'Report generated and emailed successfully!');
         } else {
           setError(result.message || 'Failed to generate report');
         }
       } else {
-        // Response is a Blob - download it
-        const blob = response as Blob;
+        // Response is a Blob
+        const blob = axiosResponse.data as Blob;
+        // If previewing HTML, coerce Blob type to text/html and open in a new tab without download
+        if (preview && format === 'html') {
+          const htmlBlob = new Blob([blob], { type: 'text/html;charset=utf-8' });
+          const previewUrl = window.URL.createObjectURL(htmlBlob);
+          window.open(previewUrl, '_blank');
+          // Revoke the object URL after some time to avoid breaking the new tab
+          setTimeout(() => window.URL.revokeObjectURL(previewUrl), 60_000);
+          setSuccess('Preview opened in a new tab.');
+          return;
+        }
+
+        // Otherwise, trigger a download
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        
-        const extension = format.toLowerCase();
-        const timestamp = new Date().toISOString().split('T')[0];
-        a.download = `${templateType}_${timestamp}.${extension}`;
-        
+        // Try to get filename from Content-Disposition header
+        let filename = '';
+        const disposition = axiosResponse.headers['content-disposition'];
+        if (disposition && disposition.indexOf('filename=') !== -1) {
+          filename = disposition.split('filename=')[1].replace(/['"]/g, '');
+        } else {
+          // fallback
+          const extension = format.toLowerCase();
+          const timestamp = new Date().toISOString().split('T')[0];
+          filename = `${templateType}_${timestamp}.${extension}`;
+        }
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
         setSuccess('Report generated and downloaded successfully!');
-        
-        // Open HTML reports in new tab if preview mode
-        if (preview && format === 'HTML') {
-          window.open(url, '_blank');
-        }
       }
     } catch (err: any) {
       console.error('Error generating report:', err);
@@ -502,7 +530,7 @@ const ReportBuilderPage: React.FC = () => {
             <Divider sx={{ mb: 3 }} />
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {format === 'HTML' && (
+              {format === 'html' && (
                 <Button
                   fullWidth
                   variant="outlined"
