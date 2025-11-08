@@ -4864,7 +4864,7 @@ def get_project_template_suggestions(
 from app.executive import ExecutiveMetrics
 
 
-@app.get("/api/executive/summary")
+@app.get("/executive/summary")
 def get_executive_summary(session: Session = Depends(get_session)):
     """
     Executive Summary Dashboard - High-level KPIs for C-level stakeholders.
@@ -4887,7 +4887,7 @@ def get_executive_summary(session: Session = Depends(get_session)):
         raise HTTPException(status_code=500, detail=f"Failed to generate executive summary: {str(e)}")
 
 
-@app.get("/api/executive/risk-heatmap")
+@app.get("/executive/risk-heatmap")
 def get_risk_heatmap(session: Session = Depends(get_session)):
     """
     Risk Heat Map - Visual grid showing risk scores across all projects.
