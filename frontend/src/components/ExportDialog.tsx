@@ -42,7 +42,7 @@ interface ExportDialogProps {
 }
 
 export interface ExportOptions {
-  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive' | 'template';
+  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive' | 'template' | 'html' | 'sarif' | 'pptx';
   columns: string[];
   filters: {
     risk?: RiskRating[];
@@ -92,7 +92,7 @@ const RISK_COLORS: Record<RiskRating, { bg: string; text: string }> = {
 };
 
 export default function ExportDialog({ open, onClose, onExport, projectId }: ExportDialogProps) {
-  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive' | 'template'>('excel');
+  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive' | 'template' | 'html' | 'sarif' | 'pptx'>('excel');
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
     AVAILABLE_COLUMNS.filter(c => c.defaultChecked).map(c => c.key)
   );
@@ -239,6 +239,13 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
             <FormControlLabel value="template" control={<Radio />} label="📋 From Template - Use custom report template" />
             <FormControlLabel value="executive" control={<Radio />} label="📊 Executive Report (PDF) - Summary with charts" />
             <Divider sx={{ my: 1 }} />
+            <Typography variant="caption" color="primary" fontWeight="bold" sx={{ display: 'block', mt: 1, mb: 0.5 }}>
+              🆕 Enhanced Exports (v1.1.0)
+            </Typography>
+            <FormControlLabel value="html" control={<Radio />} label="🌐 Interactive HTML - Sortable/filterable web report" />
+            <FormControlLabel value="sarif" control={<Radio />} label="🔧 SARIF - CI/CD integration format" />
+            <FormControlLabel value="pptx" control={<Radio />} label="📽️ PowerPoint - Executive presentation" />
+            <Divider sx={{ my: 1 }} />
             <FormControlLabel value="excel" control={<Radio />} label="Excel (.xlsx) - Spreadsheet with data analysis" />
             <FormControlLabel value="csv" control={<Radio />} label="CSV (.csv) - Simple tabular format" />
             <FormControlLabel value="json" control={<Radio />} label="JSON (.json) - Full data with metadata" />
@@ -249,6 +256,9 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
             {format === 'template' && '💡 Generate custom report from pre-defined template with your variables'}
             {format === 'executive' && '💡 Best for: Stakeholder presentations, executive summaries, high-level overviews'}
+            {format === 'html' && '💡 Interactive report with JavaScript filtering and sorting - open in any browser'}
+            {format === 'sarif' && '💡 SARIF 2.1.0 format for GitHub Security, GitLab, Azure DevOps, SonarQube'}
+            {format === 'pptx' && '💡 Professional slide deck with executive summary and top findings'}
             {format === 'json' && '💡 Best for: API integrations, automated processing, CI/CD pipelines'}
             {format === 'markdown' && '💡 Best for: GitHub/GitLab wikis, technical documentation, sharing with developers'}
             {format === 'excel' && '💡 Best for: Data analysis, pivot tables, charts, and custom filtering'}

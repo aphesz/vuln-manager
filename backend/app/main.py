@@ -3,7 +3,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query, Path, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text, case, func, delete
 from typing import Optional, List, Dict, Any
@@ -2694,6 +2694,749 @@ def export_findings(
     
     else:
         raise HTTPException(status_code=400, detail="Invalid format. Use 'excel', 'csv', 'json', or 'markdown'")
+
+
+# --- Enhanced Export Formats (v1.1.0 Phase 4) ---
+
+@app.get("/projects/{project_id}/export/sarif")
+def export_sarif(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Export findings in SARIF 2.1.0 format for CI/CD integration.
+    SARIF (Static Analysis Results Interchange Format) is widely supported by:
+    - GitHub Security, GitLab, Azure DevOps
+    - SonarQube, Snyk, Checkmarx
+    - VS Code, IntelliJ IDEA
+    """
+    import json
+    from datetime import datetime
+    
+    # Fetch project
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Fetch findings with instances
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # Map risk ratings to SARIF severity levels
+    risk_to_severity = {
+        'Critical': 'error',
+        'High': 'error',
+        'Medium': 'warning',
+        'Low': 'note',
+        'Informational': 'none'
+    }
+    
+    # Build SARIF document
+    sarif_doc = {
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "VulnManager",
+                        "informationUri": "https://github.com/aphesz/vuln-manager",
+                        "version": "1.1.0",
+                        "semanticVersion": "1.1.0",
+                        "rules": []
+                    }
+                },
+                "results": [],
+                "properties": {
+                    "projectName": project.name,
+                    "projectId": project.id,
+                    "consultantName": project.consultant_name,
+                    "exportedAt": get_utc_now().isoformat()
+                }
+            }
+        ]
+    }
+    
+    run = sarif_doc["runs"][0]
+    
+    # Add rules (one per unique finding)
+    for finding in findings:
+        rule = {
+            "id": f"VULN-{finding.id}",
+            "name": finding.title.replace(" ", ""),
+            "shortDescription": {
+                "text": finding.title
+            },
+            "fullDescription": {
+                "text": finding.description or finding.title
+            },
+            "help": {
+                "text": finding.remediation or "No remediation guidance available",
+                "markdown": finding.remediation or "No remediation guidance available"
+            },
+            "defaultConfiguration": {
+                "level": risk_to_severity.get(finding.risk_rating, 'warning')
+            },
+            "properties": {
+                "tags": [finding.risk_rating, finding.issue_status],
+                "precision": "high"
+            }
+        }
+        run["tool"]["driver"]["rules"].append(rule)
+        
+        # Add result instances
+        instances = session.exec(
+            select(Instance).where(Instance.finding_id == finding.id)
+        ).all()
+        
+        for instance in instances:
+            result = {
+                "ruleId": f"VULN-{finding.id}",
+                "level": risk_to_severity.get(finding.risk_rating, 'warning'),
+                "message": {
+                    "text": f"{finding.title}: {instance.details or 'See description'}"
+                },
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {
+                                "uri": instance.location or "unknown"
+                            }
+                        }
+                    }
+                ],
+                "properties": {
+                    "instanceId": instance.id,
+                    "status": instance.status,
+                    "riskRating": finding.risk_rating,
+                    "reviewStatus": finding.review_status,
+                    "issueStatus": finding.issue_status
+                }
+            }
+            run["results"].append(result)
+    
+    # Return JSON
+    return Response(
+        content=json.dumps(sarif_doc, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_findings.sarif"}
+    )
+
+
+@app.get("/projects/{project_id}/export/html")
+def export_html_interactive(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Export interactive HTML report with sortable/filterable findings table.
+    Includes JavaScript for client-side filtering and sorting.
+    """
+    # Fetch project
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Fetch findings with instances
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # Calculate risk distribution
+    risk_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0, 'Informational': 0}
+    for finding in findings:
+        if finding.risk_rating in risk_counts:
+            risk_counts[finding.risk_rating] += 1
+    
+    # Build HTML
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{project.name} - Security Assessment Report</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }}
+        .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+        .header h1 {{ font-size: 2.5rem; margin-bottom: 10px; }}
+        .header .subtitle {{ opacity: 0.9; font-size: 1.1rem; }}
+        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+        .stat-card {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }}
+        .stat-card .number {{ font-size: 2.5rem; font-weight: bold; margin-bottom: 5px; }}
+        .stat-card .label {{ color: #666; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .critical {{ color: #d32f2f; }}
+        .high {{ color: #f57c00; }}
+        .medium {{ color: #fbc02d; }}
+        .low {{ color: #388e3c; }}
+        .info {{ color: #1976d2; }}
+        .controls {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .controls label {{ display: inline-block; margin-right: 15px; font-weight: 500; }}
+        .controls input, .controls select {{ padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; margin-right: 10px; }}
+        .table-container {{ background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th {{ background: #667eea; color: white; padding: 15px; text-align: left; font-weight: 600; cursor: pointer; user-select: none; }}
+        th:hover {{ background: #5568d3; }}
+        th::after {{ content: ' ⇅'; opacity: 0.5; }}
+        td {{ padding: 12px 15px; border-bottom: 1px solid #eee; }}
+        tr:hover {{ background: #f8f9fa; }}
+        .risk-badge {{ padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; }}
+        .risk-critical {{ background: #ffebee; color: #d32f2f; }}
+        .risk-high {{ background: #fff3e0; color: #f57c00; }}
+        .risk-medium {{ background: #fffde7; color: #f9a825; }}
+        .risk-low {{ background: #e8f5e9; color: #388e3c; }}
+        .risk-info {{ background: #e3f2fd; color: #1976d2; }}
+        .status-badge {{ padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; }}
+        .status-open {{ background: #ffcdd2; color: #c62828; }}
+        .status-partial {{ background: #fff9c4; color: #f57f17; }}
+        .status-closed {{ background: #c8e6c9; color: #2e7d32; }}
+        .expandable {{ cursor: pointer; color: #667eea; text-decoration: underline; }}
+        .details {{ display: none; padding: 15px; background: #f8f9fa; margin: 10px 0; border-left: 3px solid #667eea; }}
+        .details.show {{ display: block; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 {project.name}</h1>
+            <p class="subtitle">Security Assessment Report • Generated {get_utc_now().strftime('%B %d, %Y')}</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number critical">{risk_counts['Critical']}</div>
+                <div class="label">Critical</div>
+            </div>
+            <div class="stat-card">
+                <div class="number high">{risk_counts['High']}</div>
+                <div class="label">High</div>
+            </div>
+            <div class="stat-card">
+                <div class="number medium">{risk_counts['Medium']}</div>
+                <div class="label">Medium</div>
+            </div>
+            <div class="stat-card">
+                <div class="number low">{risk_counts['Low']}</div>
+                <div class="label">Low</div>
+            </div>
+            <div class="stat-card">
+                <div class="number info">{risk_counts['Informational']}</div>
+                <div class="label">Informational</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <label>Filter: <input type="text" id="searchInput" placeholder="Search findings..." /></label>
+            <label>Risk: 
+                <select id="riskFilter">
+                    <option value="">All</option>
+                    <option value="Critical">Critical</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                    <option value="Informational">Informational</option>
+                </select>
+            </label>
+            <label>Status: 
+                <select id="statusFilter">
+                    <option value="">All</option>
+                    <option value="Open">Open</option>
+                    <option value="Partially Closed">Partially Closed</option>
+                    <option value="Closed">Closed</option>
+                </select>
+            </label>
+        </div>
+        
+        <div class="table-container">
+            <table id="findingsTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">ID</th>
+                        <th onclick="sortTable(1)">Title</th>
+                        <th onclick="sortTable(2)">Risk</th>
+                        <th onclick="sortTable(3)">Status</th>
+                        <th onclick="sortTable(4)">Instances</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>"""
+    
+    # Add findings
+    for finding in findings:
+        instances = session.exec(
+            select(Instance).where(Instance.finding_id == finding.id)
+        ).all()
+        
+        risk_class = finding.risk_rating.lower()
+        status_class = finding.issue_status.lower().replace(' ', '-')
+        
+        html_content += f"""
+                    <tr data-risk="{finding.risk_rating}" data-status="{finding.issue_status}">
+                        <td>{finding.id}</td>
+                        <td><strong>{finding.title}</strong></td>
+                        <td><span class="risk-badge risk-{risk_class}">{finding.risk_rating}</span></td>
+                        <td><span class="status-badge status-{status_class}">{finding.issue_status}</span></td>
+                        <td>{len(instances)}</td>
+                        <td><span class="expandable" onclick="toggleDetails({finding.id})">View Details</span></td>
+                    </tr>
+                    <tr id="details-{finding.id}" style="display: none;">
+                        <td colspan="6">
+                            <div class="details">
+                                <h3>Description</h3>
+                                <p>{finding.description or 'No description provided'}</p>
+                                <h3>Remediation</h3>
+                                <p>{finding.remediation or 'No remediation guidance provided'}</p>
+                                <h3>Instances ({len(instances)})</h3>
+                                <ul>"""
+        
+        for instance in instances:
+            html_content += f"""
+                                    <li><strong>{instance.location}</strong> - {instance.details or 'No details'} (Status: {instance.status})</li>"""
+        
+        html_content += """
+                                </ul>
+                            </div>
+                        </td>
+                    </tr>"""
+    
+    html_content += """
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        // Search filter
+        document.getElementById('searchInput').addEventListener('keyup', filterTable);
+        document.getElementById('riskFilter').addEventListener('change', filterTable);
+        document.getElementById('statusFilter').addEventListener('change', filterTable);
+        
+        function filterTable() {
+            const searchValue = document.getElementById('searchInput').value.toLowerCase();
+            const riskValue = document.getElementById('riskFilter').value;
+            const statusValue = document.getElementById('statusFilter').value;
+            const table = document.getElementById('findingsTable');
+            const rows = table.getElementsByTagName('tr');
+            
+            for (let i = 1; i < rows.length; i += 2) {
+                const row = rows[i];
+                const title = row.cells[1].textContent.toLowerCase();
+                const risk = row.getAttribute('data-risk');
+                const status = row.getAttribute('data-status');
+                
+                const matchesSearch = title.includes(searchValue);
+                const matchesRisk = !riskValue || risk === riskValue;
+                const matchesStatus = !statusValue || status === statusValue;
+                
+                if (matchesSearch && matchesRisk && matchesStatus) {
+                    row.style.display = '';
+                    if (i + 1 < rows.length) rows[i + 1].style.display = '';
+                } else {
+                    row.style.display = 'none';
+                    if (i + 1 < rows.length) rows[i + 1].style.display = 'none';
+                }
+            }
+        }
+        
+        function toggleDetails(id) {
+            const detailsRow = document.getElementById('details-' + id);
+            detailsRow.style.display = detailsRow.style.display === 'none' ? '' : 'none';
+        }
+        
+        function sortTable(n) {
+            const table = document.getElementById('findingsTable');
+            let switching = true;
+            let dir = 'asc';
+            let switchcount = 0;
+            
+            while (switching) {
+                switching = false;
+                const rows = table.rows;
+                
+                for (let i = 1; i < (rows.length - 1); i += 2) {
+                    let shouldSwitch = false;
+                    const x = rows[i].getElementsByTagName('TD')[n];
+                    const y = rows[i + 2].getElementsByTagName('TD')[n];
+                    
+                    if (dir === 'asc') {
+                        if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir === 'desc') {
+                        if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 2], rows[i]);
+                    rows[i].parentNode.insertBefore(rows[i + 3], rows[i + 1]);
+                    switching = true;
+                    switchcount++;
+                } else {
+                    if (switchcount === 0 && dir === 'asc') {
+                        dir = 'desc';
+                        switching = true;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>"""
+    
+    return Response(
+        content=html_content,
+        media_type="text/html",
+        headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_interactive.html"}
+    )
+
+
+@app.get("/projects/{project_id}/export/pptx")
+def export_powerpoint(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Export PowerPoint presentation with executive summary and findings.
+    Uses python-pptx library to generate professional slide deck.
+    """
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.enum.text import PP_ALIGN
+    from pptx.dml.color import RGBColor
+    import io
+    
+    # Fetch project
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Fetch findings
+    findings = session.exec(
+        select(Finding).where(Finding.project_id == project_id)
+    ).all()
+    
+    # Calculate statistics
+    risk_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0, 'Informational': 0}
+    status_counts = {'Open': 0, 'Partially Closed': 0, 'Closed': 0}
+    
+    for finding in findings:
+        if finding.risk_rating in risk_counts:
+            risk_counts[finding.risk_rating] += 1
+        if finding.issue_status in status_counts:
+            status_counts[finding.issue_status] += 1
+    
+    # Create presentation
+    prs = Presentation()
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
+    
+    # Define colors
+    color_critical = RGBColor(211, 47, 47)
+    color_high = RGBColor(245, 124, 0)
+    color_medium = RGBColor(251, 192, 45)
+    color_low = RGBColor(56, 142, 60)
+    color_info = RGBColor(25, 118, 210)
+    color_primary = RGBColor(102, 126, 234)
+    
+    # Slide 1: Title
+    title_slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_slide_layout)
+    title = slide.shapes.title
+    subtitle = slide.placeholders[1]
+    
+    title.text = f"{project.name}"
+    subtitle.text = f"Security Assessment Report\\n{get_utc_now().strftime('%B %d, %Y')}"
+    
+    # Slide 2: Executive Summary
+    bullet_slide_layout = prs.slide_layouts[1]
+    slide = prs.slides.add_slide(bullet_slide_layout)
+    shapes = slide.shapes
+    
+    title_shape = shapes.title
+    body_shape = shapes.placeholders[1]
+    
+    title_shape.text = "Executive Summary"
+    
+    tf = body_shape.text_frame
+    tf.text = f"Total Findings: {len(findings)}"
+    
+    p = tf.add_paragraph()
+    p.text = f"Critical: {risk_counts['Critical']}"
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = f"High: {risk_counts['High']}"
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = f"Medium: {risk_counts['Medium']}"
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = f"Low: {risk_counts['Low']}"
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = f"Informational: {risk_counts['Informational']}"
+    p.level = 1
+    
+    # Slide 3: Risk Distribution
+    blank_slide_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank_slide_layout)
+    
+    # Add title
+    left = Inches(0.5)
+    top = Inches(0.5)
+    width = Inches(9)
+    height = Inches(0.75)
+    
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    tf.text = "Risk Distribution"
+    
+    p = tf.paragraphs[0]
+    p.font.size = Pt(32)
+    p.font.bold = True
+    p.font.color.rgb = color_primary
+    
+    # Add risk breakdown
+    y_offset = 1.5
+    for risk, count in risk_counts.items():
+        if count > 0:
+            txBox = slide.shapes.add_textbox(Inches(1), Inches(y_offset), Inches(3), Inches(0.5))
+            tf = txBox.text_frame
+            tf.text = f"{risk}:"
+            p = tf.paragraphs[0]
+            p.font.size = Pt(18)
+            p.font.bold = True
+            
+            # Add count with color
+            txBox = slide.shapes.add_textbox(Inches(4), Inches(y_offset), Inches(2), Inches(0.5))
+            tf = txBox.text_frame
+            tf.text = str(count)
+            p = tf.paragraphs[0]
+            p.font.size = Pt(24)
+            p.font.bold = True
+            
+            if risk == 'Critical':
+                p.font.color.rgb = color_critical
+            elif risk == 'High':
+                p.font.color.rgb = color_high
+            elif risk == 'Medium':
+                p.font.color.rgb = color_medium
+            elif risk == 'Low':
+                p.font.color.rgb = color_low
+            else:
+                p.font.color.rgb = color_info
+            
+            y_offset += 0.7
+    
+    # Add slides for top findings (Critical and High only)
+    critical_high_findings = [f for f in findings if f.risk_rating in ['Critical', 'High']]
+    
+    for finding in critical_high_findings[:10]:  # Limit to top 10
+        slide = prs.slides.add_slide(bullet_slide_layout)
+        shapes = slide.shapes
+        
+        title_shape = shapes.title
+        body_shape = shapes.placeholders[1]
+        
+        # Title with risk badge
+        title_shape.text = f"{finding.title}"
+        title_shape.text_frame.paragraphs[0].font.size = Pt(28)
+        
+        # Body
+        tf = body_shape.text_frame
+        tf.clear()
+        
+        # Risk rating
+        p = tf.add_paragraph()
+        p.text = f"Risk: {finding.risk_rating}"
+        p.font.size = Pt(16)
+        p.font.bold = True
+        if finding.risk_rating == 'Critical':
+            p.font.color.rgb = color_critical
+        else:
+            p.font.color.rgb = color_high
+        
+        # Description
+        p = tf.add_paragraph()
+        p.text = "Description:"
+        p.font.size = Pt(14)
+        p.font.bold = True
+        
+        p = tf.add_paragraph()
+        desc_text = finding.description[:200] + "..." if finding.description and len(finding.description) > 200 else (finding.description or "No description")
+        p.text = desc_text
+        p.font.size = Pt(12)
+        p.level = 1
+        
+        # Remediation
+        p = tf.add_paragraph()
+        p.text = "Remediation:"
+        p.font.size = Pt(14)
+        p.font.bold = True
+        
+        p = tf.add_paragraph()
+        rem_text = finding.remediation[:150] + "..." if finding.remediation and len(finding.remediation) > 150 else (finding.remediation or "See full report")
+        p.text = rem_text
+        p.font.size = Pt(12)
+        p.level = 1
+    
+    # Final slide: Next Steps
+    slide = prs.slides.add_slide(bullet_slide_layout)
+    shapes = slide.shapes
+    
+    title_shape = shapes.title
+    body_shape = shapes.placeholders[1]
+    
+    title_shape.text = "Next Steps"
+    
+    tf = body_shape.text_frame
+    tf.text = "Review and prioritize critical and high-risk findings"
+    
+    p = tf.add_paragraph()
+    p.text = "Assign remediation owners and deadlines"
+    
+    p = tf.add_paragraph()
+    p.text = "Track progress in VulnManager dashboard"
+    
+    p = tf.add_paragraph()
+    p.text = "Schedule follow-up assessment"
+    
+    # Save to BytesIO
+    output = io.BytesIO()
+    prs.save(output)
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        headers={"Content-Disposition": f"attachment; filename={project.name.replace(' ', '_')}_presentation.pptx"}
+    )
+
+
+@app.post("/export/bulk")
+def export_bulk(
+    project_ids: List[int],
+    format: str = "pdf",
+    session: Session = Depends(get_session)
+):
+    """
+    Export multiple projects as a ZIP archive.
+    Generates individual reports for each project and packages them together.
+    """
+    import io
+    import zipfile
+    from datetime import datetime
+    
+    if not project_ids:
+        raise HTTPException(status_code=400, detail="No project IDs provided")
+    
+    # Validate format
+    valid_formats = ['pdf', 'docx', 'html', 'json', 'sarif']
+    if format not in valid_formats:
+        raise HTTPException(status_code=400, detail=f"Invalid format. Use one of: {', '.join(valid_formats)}")
+    
+    # Create ZIP file in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for project_id in project_ids:
+            # Fetch project
+            project = session.exec(select(Project).where(Project.id == project_id)).first()
+            if not project:
+                continue  # Skip missing projects
+            
+            # Generate filename
+            safe_name = project.name.replace(' ', '_').replace('/', '_')
+            
+            # Call appropriate export endpoint based on format
+            try:
+                if format == 'html':
+                    # Generate HTML content
+                    response = export_html_interactive(project_id, session)
+                    content = response.body
+                    filename = f"{safe_name}_report.html"
+                
+                elif format == 'sarif':
+                    # Generate SARIF content
+                    response = export_sarif(project_id, session)
+                    content = response.body
+                    filename = f"{safe_name}_findings.sarif"
+                
+                elif format == 'json':
+                    # Export as JSON
+                    findings = session.exec(
+                        select(Finding).where(Finding.project_id == project_id)
+                    ).all()
+                    
+                    export_data = {
+                        "project": {
+                            "id": project.id,
+                            "name": project.name,
+                            "consultant_name": project.consultant_name
+                        },
+                        "findings": []
+                    }
+                    
+                    for finding in findings:
+                        instances = session.exec(
+                            select(Instance).where(Instance.finding_id == finding.id)
+                        ).all()
+                        
+                        export_data["findings"].append({
+                            "id": finding.id,
+                            "title": finding.title,
+                            "risk_rating": finding.risk_rating,
+                            "description": finding.description,
+                            "remediation": finding.remediation,
+                            "issue_status": finding.issue_status,
+                            "review_status": finding.review_status,
+                            "instances": [
+                                {
+                                    "location": inst.location,
+                                    "details": inst.details,
+                                    "status": inst.status
+                                }
+                                for inst in instances
+                            ]
+                        })
+                    
+                    import json
+                    content = json.dumps(export_data, indent=2).encode('utf-8')
+                    filename = f"{safe_name}_findings.json"
+                
+                else:  # pdf or docx - use existing report generation
+                    # For now, skip PDF/DOCX in bulk export (would need to refactor report generation)
+                    continue
+                
+                # Add to ZIP
+                zip_file.writestr(filename, content)
+                
+            except Exception as e:
+                logger.error(f"Error exporting project {project_id}: {str(e)}")
+                continue
+    
+    zip_buffer.seek(0)
+    
+    # Generate ZIP filename with timestamp
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    zip_filename = f"bulk_export_{format}_{timestamp}.zip"
+    
+    return StreamingResponse(
+        iter([zip_buffer.getvalue()]),
+        media_type='application/zip',
+        headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+    )
+
 
 # --- Peer Review Workflow Endpoints ---
 

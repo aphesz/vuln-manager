@@ -279,6 +279,34 @@ const Dashboard = () => {
         return;
       }
 
+      // Handle Enhanced Export Formats (v1.1.0 Phase 4)
+      if (options.format === 'html') {
+        window.open(`${API_BASE_URL}/projects/${projectId}/export/html`, '_blank');
+        showSuccess('Interactive HTML report opened in new tab!');
+        setExportDialogOpen(false);
+        return;
+      }
+
+      if (options.format === 'sarif') {
+        const link = document.createElement('a');
+        link.href = `${API_BASE_URL}/projects/${projectId}/export/sarif`;
+        link.download = `${project.name}_findings.sarif`;
+        link.click();
+        showSuccess('SARIF export downloaded successfully!');
+        setExportDialogOpen(false);
+        return;
+      }
+
+      if (options.format === 'pptx') {
+        const link = document.createElement('a');
+        link.href = `${API_BASE_URL}/projects/${projectId}/export/pptx`;
+        link.download = `${project.name}_presentation.pptx`;
+        link.click();
+        showSuccess('PowerPoint presentation downloaded successfully!');
+        setExportDialogOpen(false);
+        return;
+      }
+
       // Handle DOCX and PDF differently (they use existing endpoints)
       if (options.format === 'docx') {
         const link = document.createElement('a');
