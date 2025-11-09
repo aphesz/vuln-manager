@@ -2243,8 +2243,7 @@ def get_executive_report(
     company_name: Optional[str] = None,
     custom_header: Optional[str] = None,
     custom_footer: Optional[str] = None,
-    session: Session = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    session: Session = Depends(get_session)
 ):
     """
     Generates and returns an executive summary report in PDF format.
