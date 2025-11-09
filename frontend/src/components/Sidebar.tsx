@@ -111,10 +111,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       path: '/reports',
     },
     {
-      id: 'custom-templates',
-      label: 'Custom Report Templates',
+      id: 'report-templates',
+      label: 'Report Templates',
       icon: <BuildIcon />,
-      path: '/custom-templates',
+      path: '/templates/reports',
     },
   ];
 
