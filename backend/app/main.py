@@ -2893,8 +2893,7 @@ def export_html_interactive(
         .status-partial {{ background: #fff9c4; color: #f57f17; }}
         .status-closed {{ background: #c8e6c9; color: #2e7d32; }}
         .expandable {{ cursor: pointer; color: #667eea; text-decoration: underline; }}
-        .details {{ display: none; padding: 20px; background: #f8f9fa; margin: 10px 0; border-left: 4px solid #667eea; border-radius: 4px; }}
-        .details.show {{ display: block; }}
+        .details {{ padding: 20px; background: #f8f9fa; margin: 10px 0; border-left: 4px solid #667eea; border-radius: 4px; }}
         .details h3 {{ color: #667eea; margin-top: 15px; margin-bottom: 10px; font-size: 1.1rem; }}
         .details h3:first-child {{ margin-top: 0; }}
         .details p {{ line-height: 1.8; color: #444; margin-bottom: 15px; }}
@@ -3054,7 +3053,11 @@ def export_html_interactive(
         
         function toggleDetails(id) {
             const detailsRow = document.getElementById('details-' + id);
-            detailsRow.style.display = detailsRow.style.display === 'none' ? '' : 'none';
+            if (detailsRow.style.display === 'none' || detailsRow.style.display === '') {
+                detailsRow.style.display = 'table-row';
+            } else {
+                detailsRow.style.display = 'none';
+            }
         }
         
         function sortTable(n) {
