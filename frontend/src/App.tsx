@@ -18,6 +18,7 @@ import ReportBuilderPage from './components/ReportBuilderPage'
 import BrandingSettingsPage from './components/BrandingSettingsPage'
 import CustomTemplateLibrary from './components/CustomTemplateLibrary'
 import CustomTemplateBuilder from './components/CustomTemplateBuilder'
+import ReportTemplates from './components/ReportTemplates'
 import LoginPage from './components/LoginPage'
 import RegisterPage from './components/RegisterPage'
 import ProfilePage from './components/ProfilePage'
@@ -119,6 +120,7 @@ const App = () => {
               <Route path="/custom-templates" element={<ProtectedRoute><CustomTemplateLibrary /></ProtectedRoute>} />
               <Route path="/custom-templates/new" element={<ProtectedRoute><CustomTemplateBuilder /></ProtectedRoute>} />
               <Route path="/custom-templates/:templateId/edit" element={<ProtectedRoute><CustomTemplateBuilder /></ProtectedRoute>} />
+              <Route path="/templates/reports" element={<ProtectedRoute><ReportTemplates /></ProtectedRoute>} />
               
               {/* User profile route */}
               <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
