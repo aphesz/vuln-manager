@@ -168,7 +168,7 @@ class Instance(InstanceBase, table=True):
 class CommentBase(SQLModel):
     """Base model for comments on findings."""
     text: str = Field(..., max_length=5000)
-    user: str = Field(..., max_length=255)  # TODO: Replace with proper user auth later
+    user: str = Field(..., max_length=255)  # TODO(v1.0.0): Replace with user_id FK when auth is implemented
 
 class CommentCreate(CommentBase):
     """Model for creating a comment (no created_at)."""

@@ -15,12 +15,16 @@ VulnManager is a comprehensive, full-stack web application designed to help cybe
 * **🔍 Quick Add Finding:** Rapid finding creation with vulnerability template search and multi-instance support.
 * **📚 Vulnerability Repository:** Searchable library of vulnerability templates with CWE/CVE mapping and external database import.
 * **🗄️ CWE Database Import:** Bulk import MITRE CWE database (900+ weakness entries) for comprehensive vulnerability coverage.
-* **� CVE Import:** Import individual CVEs directly from NIST NVD API with automatic template creation.
+* **🆔 CVE Import:** Import individual CVEs directly from NIST NVD API with automatic template creation.
 * **📊 Import History:** Track all CWE/CVE database imports with statistics (created, updated, skipped, errors, success rate).
-* **�📤 Export Enhancements:** Export to Excel/CSV with custom column selection and advanced filtering.
-* **🎨 Custom Template Builder (NEW):** Design professional reports with drag-and-drop sections, multi-format export (HTML/DOCX/PDF), and template library management.
+* **📤 Enhanced Export Formats (v0.10.0):** 
+  - **🔧 SARIF Export:** CI/CD integration format compatible with GitHub Security, GitLab, Azure DevOps, SonarQube
+  - **🌐 Interactive HTML:** Sortable/filterable web reports with expandable details, works offline
+  - **📽️ PowerPoint:** Executive presentations with risk charts and top findings
+  - **📦 Bulk Export:** Multi-project ZIP archives (HTML/JSON/SARIF formats)
+* **📋 Report Templates (v0.10.0):** Unified template system with drag-and-drop builder, template library management, and usage tracking.
 * **📊 Dashboard Widgets:** Real-time metrics cards showing project statistics and risk distribution.
-* **�🔄 Peer Review Workflow:** Complete review system with status tracking (Pending, In Review, Approved, Rejected), reviewer assignment, and collaborative comments.
+* **🔄 Peer Review Workflow:** Complete review system with status tracking (Pending, In Review, Approved, Rejected), reviewer assignment, and collaborative comments.
 * **📊 Issue Status Tracking:** Manage finding lifecycle (Open, Partially Closed, Closed) with status comments and audit trails.
 * **⏰ SLA Management:** Automatic deadline tracking with visual indicators (On Track, At Risk, Overdue) based on risk severity.
 * **🔗 Jira Integration:** Bi-directional sync with Jira for seamless issue tracking and status updates.

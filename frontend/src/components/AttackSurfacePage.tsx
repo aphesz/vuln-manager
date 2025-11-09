@@ -94,8 +94,7 @@ const AttackSurfacePage: React.FC = () => {
   // Handle technique card click
   const handleTechniqueClick = (technique: AttackTechnique) => {
     console.log('Technique clicked:', technique.technique_id);
-    // TODO: Navigate to findings filtered by this technique
-    // For now, just log it
+    // TODO(future): Navigate to findings filtered by this technique (requires finding-to-technique mapping)
   };
 
   // Get tactic order
@@ -223,7 +222,7 @@ const AttackSurfacePage: React.FC = () => {
                     <Grid item xs={12} sm={6} md={4} lg={3} key={technique.technique_id}>
                       <AttackTechniqueCard
                         technique={technique}
-                        findingCount={0}  // TODO: Calculate actual finding count
+                        findingCount={0}  // TODO(future): Calculate from attack_techniques field in findings
                         onClick={() => handleTechniqueClick(technique)}
                       />
                     </Grid>

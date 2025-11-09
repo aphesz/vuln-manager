@@ -99,7 +99,7 @@ const CustomTemplateLibrary: React.FC = () => {
     try {
       const templateData = CustomTemplateService.parseTemplateJSON(template.template_json);
       console.log('Template details:', templateData);
-      // TODO: Open preview dialog
+      // TODO(future): Add template preview modal with section breakdown
       showSnackbar(`Template has ${templateData.sections.length} sections`, 'success');
     } catch (error) {
       showSnackbar('Failed to parse template', 'error');

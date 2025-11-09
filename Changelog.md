@@ -8,6 +8,137 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+---
+
+## [Released]
+
+### v0.10.0 - Report Templates & Enhanced Export Formats ✅ COMPLETE
+**Released:** 2025-11-09  
+**Status:** 🚀 **SHIPPED** - Unified report templates + 4 new export formats
+
+#### Overview
+Major enhancement consolidating custom templates with report templates, plus adding industry-standard export formats for CI/CD integration and executive reporting.
+
+#### Phase 2: Report Templates System ✅ COMPLETE
+- [x] **Unified Template System**
+  - Merged `/custom-templates` and `/templates/reports` into single route
+  - Full CRUD operations for report templates
+  - Dual-mode support: simple parameterized + advanced widget-based layouts
+  - Template library management with usage tracking
+  
+- [x] **Database Schema Enhancements**
+  - `layout_config` TEXT - JSON configuration for widget layouts
+  - `is_public` BOOLEAN - Template sharing capability
+  - `usage_count` INTEGER - Track template popularity
+  - `last_used_at` TIMESTAMP - Last usage tracking
+  - Fixed migration chain (bypassed with direct SQL for v0.10.0)
+  
+- [x] **Frontend Template Manager**
+  - Full-width responsive design matching other pages
+  - Create/Edit/Delete/Duplicate templates
+  - Real-time preview capability
+  - Search and filter functionality
+  
+- [x] **Route Consolidation**
+  - Sidebar navigation updated to `/templates/reports`
+  - Automatic redirects from legacy `/custom-templates` routes
+  - Consistent navigation UX across application
+
+#### Phase 4: Enhanced Export Formats ✅ COMPLETE
+- [x] **SARIF Export (CI/CD Integration)**
+  - `GET /projects/{id}/export/sarif` - SARIF 2.1.0 format
+  - Compatible with GitHub Security, GitLab, Azure DevOps, SonarQube
+  - Risk rating mapping to severity levels (Critical/High→error, Medium→warning, Low→note)
+  - Full finding details with CWE/CVE references
+  
+- [x] **Interactive HTML Export**
+  - `GET /projects/{id}/export/html` - Standalone web report
+  - Client-side sortable/filterable findings table
+  - Expandable detail rows with toggle functionality
+  - Beautiful gradient header with risk distribution cards
+  - Search filtering by text, risk rating, and status
+  - No external dependencies - works offline
+  
+- [x] **PowerPoint Export**
+  - `GET /projects/{id}/export/pptx` - Executive presentation format
+  - Title slide, executive summary, risk distribution chart
+  - Individual slides for Critical/High findings (top 10)
+  - Next steps and recommendations slide
+  - Professional formatting with python-pptx
+  
+- [x] **Bulk Export**
+  - `POST /export/bulk` - Multi-project ZIP archives
+  - Accepts list of project IDs
+  - Supports HTML, JSON, SARIF formats (PDF/DOCX skipped for bulk)
+  - Graceful error handling for missing projects
+  - Individual reports in organized ZIP structure
+
+#### Bug Fixes & Improvements
+- [x] **HTML Export Display Fix** (3 debugging iterations)
+  - Fixed double-escaping issue (HTML tags showing as `&lt;p&gt;`)
+  - Fixed CSS display conflict with toggle functionality
+  - Fixed toggle function to explicitly use `'table-row'`
+  - Descriptions now render properly with full HTML formatting
+  
+- [x] **Template Save Authentication**
+  - Removed `Depends(get_current_user)` temporarily (auth not fully implemented)
+  - Templates can be created without authentication until v1.0.0
+  - Set `created_by_user_id=None` for now
+  
+- [x] **Database Schema Fixes**
+  - Added missing columns via direct SQL (migration system bypassed)
+  - Fixed 500 Internal Server Error on GET `/templates`
+  - Column additions: layout_config, is_public, usage_count, last_used_at
+
+#### UI/UX Enhancements
+- [x] **Breadcrumb Navigation Removal**
+  - Removed PageBreadcrumbs component from 15+ files
+  - Cleaner UI with sidebar-only navigation
+  - More screen space for content
+  - Consistent layout across all pages
+  
+- [x] **Full-Width Layout**
+  - Changed ReportTemplates from Container maxWidth="xl" to Box
+  - Consistent with other pages (Dashboard, ReportBuilder, etc.)
+  - Better use of available screen space
+
+#### Files Modified
+**Backend:**
+- `backend/app/main.py` - Added 4 new export endpoints (SARIF, HTML, PowerPoint, Bulk)
+- `backend/app/models.py` - Enhanced ReportTemplate model with 4 new columns
+- `backend/requirements.txt` - Added python-pptx dependency
+
+**Frontend:**
+- `frontend/src/components/ExportDialog.tsx` - Added new format options
+- `frontend/src/components/Dashboard.tsx` - Added handlers for new formats
+- `frontend/src/components/ReportTemplates.tsx` - Full-width layout, removed breadcrumbs
+- `frontend/src/components/Sidebar.tsx` - Updated routes to `/templates/reports`
+- Removed breadcrumbs from: CVSSCalculatorPage, OWASPCalculatorPage, TagManager, BrandingSettingsPage, VulnerabilityTemplateManager, ProjectsLists, ReportBuilderPage, HolisticDashboard, ExecutiveDashboard, ProfilePage, AttackSurfacePage, TrendAnalysisPage, SLADashboard
+
+#### Testing Results
+✅ **Template System:** Create, edit, delete, duplicate templates working  
+✅ **SARIF Export:** Valid SARIF 2.1.0 JSON generated  
+✅ **HTML Export:** Interactive table with sorting, filtering, expandable details working perfectly  
+✅ **PowerPoint Export:** Professional presentation generated with all slides  
+✅ **Bulk Export:** Multi-project ZIP archives created successfully  
+✅ **Navigation:** Sidebar routes working, redirects functional  
+✅ **Layout:** Full-width consistent across all pages  
+
+#### Dependencies Added
+- `python-pptx>=0.6.21` - PowerPoint generation library
+
+#### Commits
+- `dce60d1a` - Remove breadcrumb navigation from all pages
+- `e8dd70c8` - Fix HTML export: Fix toggle display issue for finding details
+- `d571fdb6` - Fix HTML export: Remove double-escaping of HTML content
+- `ba3f4c57` - Fix HTML export: Add descriptions and improve formatting
+- `44455602` - Complete v0.10.0 Phase 4: Enhanced Export Formats
+- `34809e5d` - Complete v0.10.0 Phase 2: Unify template routes and fix layout
+- `7e58d0f5` - Fix template system: Remove auth + Add database columns + Unify routes
+- `c08894ca` - Complete v0.10.0 Phase 2: Export Template Integration
+
+---
+
 ### v1.0.0 - User Management & Authentication 🔐 IN PROGRESS
 **Started:** 2025-11-09  
 **Status:** 🚧 **PHASE 1 COMPLETE** - Backend authentication implemented

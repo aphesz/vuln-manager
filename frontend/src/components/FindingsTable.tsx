@@ -1268,7 +1268,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
         ] : []),
         <GridActionsCellItem
           label="Export Finding"
-          onClick={() => {/* TODO: Implement export */}}
+          onClick={() => {/* TODO(future): Add single-finding export to Excel/CSV */}}
           showInMenu
         />,
       ],

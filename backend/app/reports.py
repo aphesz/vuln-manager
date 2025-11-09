@@ -524,7 +524,7 @@ def generate_executive_report_pdf(
     story.append(Spacer(1, 30))
     
     # Company logo (if provided)
-    # TODO: Implement logo loading from URL or file path
+    # TODO(future): Load logo from branding settings (requires logo upload feature)
     
     story.append(Paragraph("Executive Security Report", title_style))
     story.append(Spacer(1, 12))

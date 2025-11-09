@@ -40,7 +40,7 @@ const CommentsSection: React.FC<CommentsSectionProps> = ({ findingId }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newComment, setNewComment] = useState('');
-  const [userName, setUserName] = useState('Analyst'); // TODO: Replace with actual user from auth
+  const [userName, setUserName] = useState('Analyst'); // TODO(v1.0.0): Get from AuthContext when auth is implemented
 
   // Get user's timezone preference
   const prefsService = UserPreferencesService.getInstance();

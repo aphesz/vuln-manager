@@ -180,7 +180,7 @@ const CustomTemplateBuilder: React.FC = () => {
           description: description || undefined,
           template_json,
           is_public: isPublic,
-          created_by: 'current_user'  // TODO: Get from auth context
+          created_by: 'current_user'  // TODO(v1.0.0): Get user email from AuthContext
         });
         showSnackbar('Template created successfully', 'success');
         setTimeout(() => navigate(`/custom-templates/${created.id}/edit`), 1500);

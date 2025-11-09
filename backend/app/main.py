@@ -326,9 +326,9 @@ A comprehensive API for managing security vulnerability assessments, findings, a
 
 ### Version
 
-Current version: 0.7.2
+Current version: 0.10.0
     """,
-    version="0.7.2",
+    version="0.10.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -2298,7 +2298,7 @@ def get_executive_report(
             date_from=parsed_date_from,
             date_to=parsed_date_to,
             include_charts=include_charts,
-            logo_url=None,  # TODO: Implement logo support
+            logo_url=None,  # TODO(future): Add logo upload feature in branding settings
             company_name=company_name,
             custom_header=custom_header,
             custom_footer=custom_footer
@@ -5475,7 +5475,7 @@ async def import_cwe_database(
             templates_skipped=skipped_count,
             errors=error_count,
             total_parsed=total_parsed,
-            imported_by="system",  # TODO: Get from auth context when auth is implemented
+            imported_by="system",  # TODO(v1.0.0): Get from current_user.email when auth is implemented
             imported_at=get_utc_now(),
             duration_seconds=duration,
             error_details=json.dumps(error_list) if error_list else None
@@ -5768,7 +5768,7 @@ async def import_cve_by_id(
                     templates_skipped=0,
                     errors=0,
                     total_parsed=1,
-                    imported_by="system",  # TODO: Get from auth context when auth is implemented
+                    imported_by="system",  # TODO(v1.0.0): Get from current_user.email when auth is implemented
                     imported_at=get_utc_now(),
                     duration_seconds=round(duration, 2),
                     error_details=None
@@ -5805,7 +5805,7 @@ async def import_cve_by_id(
                     templates_skipped=0,
                     errors=0,
                     total_parsed=1,
-                    imported_by="system",  # TODO: Get from auth context when auth is implemented
+                    imported_by="system",  # TODO(v1.0.0): Get from current_user.email when auth is implemented
                     imported_at=get_utc_now(),
                     duration_seconds=round(duration, 2),
                     error_details=None
