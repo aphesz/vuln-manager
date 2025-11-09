@@ -243,12 +243,15 @@ class FindingTag(SQLModel, table=True):
     tag_id: int = Field(foreign_key="tag.id", primary_key=True, index=True)
     created_at: datetime = Field(default=None)
 
-# --- Report Template Models (v1.1.0 - Advanced Reporting) ---
+# --- Report Template Models (v1.1.0 - Advanced Reporting - Unified) ---
 
 class ReportTemplateBase(SQLModel):
-    """Base model for report templates."""
+    """
+    Unified base model for report templates.
+    Supports both simple parameterized templates AND complex widget-based templates.
+    """
     name: str = Field(..., index=True, max_length=200)
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=1000)
     
     class TemplateType(str, Enum):
         """Enum for report template types."""
@@ -260,11 +263,16 @@ class ReportTemplateBase(SQLModel):
     template_type: TemplateType = Field(..., index=True)
     
     # Sections configuration stored as JSON
-    # Example: [
+    # Simple mode (parameterized): [
     #   {"id": "title", "name": "Title Page", "enabled": true, "order": 1},
     #   {"id": "summary", "name": "Executive Summary", "enabled": true, "order": 2},
-    #   {"id": "charts", "name": "Charts", "enabled": true, "order": 3, "settings": {"include_pie": true, "include_line": true}},
-    #   {"id": "findings", "name": "Findings List", "enabled": true, "order": 4, "settings": {"group_by": "risk", "max_items": 10}}
+    #   {"id": "charts", "name": "Charts", "enabled": true, "order": 3, "settings": {"include_pie": true}},
+    # ]
+    # 
+    # Advanced mode (widget-based): [
+    #   {"type": "text", "title": "Section Title", "content": "...", "layout": {...}},
+    #   {"type": "table", "title": "Findings Table", "widget": "findings_table", "filters": {...}},
+    #   {"type": "chart", "title": "Risk Chart", "widget": "severity_pie", "settings": {...}},
     # ]
     sections: str = Field(default="[]")  # JSON string
     
@@ -272,11 +280,19 @@ class ReportTemplateBase(SQLModel):
     # Example: [
     #   {"name": "company_name", "label": "Company Name", "type": "text", "required": false, "default": ""},
     #   {"name": "include_charts", "label": "Include Charts", "type": "boolean", "required": false, "default": true},
-    #   {"name": "max_findings", "label": "Max Findings to Show", "type": "number", "required": false, "default": 10}
+    #   {"name": "max_findings", "label": "Max Findings", "type": "number", "required": false, "default": 10}
     # ]
     variables: str = Field(default="[]")  # JSON string
     
-    is_system_template: bool = Field(default=False)  # True for built-in templates (cannot be deleted)
+    # Layout configuration (for advanced widget-based templates)
+    # Example: {"page_size": "letter", "orientation": "portrait", "margins": {"top": 1, "bottom": 1}}
+    layout_config: Optional[str] = Field(default=None)  # JSON string, optional
+    
+    # Metadata
+    is_system_template: bool = Field(default=False)  # Built-in templates (read-only)
+    is_public: bool = Field(default=False)  # Shared with all users
+    usage_count: int = Field(default=0)  # Tracks how many times template has been used
+    last_used_at: Optional[datetime] = Field(default=None)  # Last generation timestamp
 
 class ReportTemplate(ReportTemplateBase, table=True):
     """Database model for ReportTemplate."""
@@ -888,7 +904,7 @@ class Recommendation(SQLModel):
     estimated_effort: Optional[str]  # "1 day", "1 week", etc.
     potential_impact: str
 
-# --- Report Template Read Models (v1.1.0) ---
+# --- Report Template Read Models (v1.1.0 - Unified) ---
 
 class ReportTemplateRead(ReportTemplateBase):
     """Read model for report templates."""
@@ -896,22 +912,28 @@ class ReportTemplateRead(ReportTemplateBase):
     created_at: datetime
     updated_at: datetime
     created_by_user_id: Optional[int]
+    usage_count: int
+    last_used_at: Optional[datetime]
 
 class ReportTemplateCreate(SQLModel):
     """Model for creating report templates."""
     name: str = Field(..., max_length=200)
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=1000)
     template_type: str = Field(...)  # "Executive", "Technical", "Compliance", "Custom"
     sections: str = Field(default="[]")  # JSON string
     variables: str = Field(default="[]")  # JSON string
+    layout_config: Optional[str] = Field(default=None)  # JSON string
+    is_public: bool = Field(default=False)
 
 class ReportTemplateUpdate(SQLModel):
     """Model for updating report templates (all fields optional)."""
     name: Optional[str] = Field(default=None, max_length=200)
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=1000)
     template_type: Optional[str] = Field(default=None)
     sections: Optional[str] = Field(default=None)
     variables: Optional[str] = Field(default=None)
+    layout_config: Optional[str] = Field(default=None)
+    is_public: Optional[bool] = Field(default=None)
 
 # Rebuild models to resolve forward references
 FindingReadWithInstances.model_rebuild()

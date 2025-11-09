@@ -2351,6 +2351,7 @@ def generate_report_from_template(
     
     # Import render_template function
     from app.reports import render_template
+    from app.timezone_utils import get_utc_now
     
     # Generate the report from template
     try:
@@ -2360,6 +2361,13 @@ def generate_report_from_template(
             file_path=file_path,
             variables=variables
         )
+        
+        # Track template usage
+        template.usage_count += 1
+        template.last_used_at = get_utc_now()
+        session.add(template)
+        session.commit()
+        
     except Exception as e:
         print(f"Error generating report from template: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
@@ -5598,8 +5606,8 @@ def create_template(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Create a new report template.
-    Only authenticated users can create templates.
+    Create a new unified report template.
+    Supports both simple parameterized AND complex widget-based templates.
     """
     from app.models import ReportTemplate
     from app.timezone_utils import get_utc_now
@@ -5615,6 +5623,12 @@ def create_template(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in variables field")
     
+    if template.layout_config:
+        try:
+            json.loads(template.layout_config)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON in layout_config field")
+    
     # Create template
     now = get_utc_now()
     db_template = ReportTemplate(
@@ -5623,7 +5637,11 @@ def create_template(
         template_type=template.template_type,
         sections=template.sections,
         variables=template.variables,
+        layout_config=template.layout_config,
         is_system_template=False,
+        is_public=template.is_public,
+        usage_count=0,
+        last_used_at=None,
         created_at=now,
         updated_at=now,
         created_by_user_id=current_user.get("id")

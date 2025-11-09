@@ -40,7 +40,11 @@ interface ReportTemplate {
   template_type: string;
   sections: string;
   variables: string;
+  layout_config: string | null;
   is_system_template: boolean;
+  is_public: boolean;
+  usage_count: number;
+  last_used_at: string | null;
   created_at: string;
   updated_at: string;
   created_by_user_id: number | null;
@@ -52,6 +56,8 @@ interface TemplateDialogData {
   template_type: string;
   sections: string;
   variables: string;
+  layout_config: string;
+  is_public: boolean;
 }
 
 const ReportTemplates: React.FC = () => {
@@ -65,6 +71,8 @@ const ReportTemplates: React.FC = () => {
     template_type: 'Custom',
     sections: '[]',
     variables: '[]',
+    layout_config: '{}',
+    is_public: false,
   });
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
@@ -100,6 +108,8 @@ const ReportTemplates: React.FC = () => {
         template_type: template.template_type,
         sections: template.sections,
         variables: template.variables,
+        layout_config: template.layout_config || '{}',
+        is_public: template.is_public,
       });
     } else {
       setEditingTemplate(null);
@@ -119,6 +129,8 @@ const ReportTemplates: React.FC = () => {
           { name: 'include_charts', label: 'Include Charts', type: 'boolean', default: true },
           { name: 'max_findings', label: 'Max Findings', type: 'number', default: 10 },
         ], null, 2),
+        layout_config: JSON.stringify({ page_size: 'letter', orientation: 'portrait' }, null, 2),
+        is_public: false,
       });
     }
     setDialogOpen(true);
@@ -207,6 +219,8 @@ const ReportTemplates: React.FC = () => {
       template_type: template.template_type,
       sections: template.sections,
       variables: template.variables,
+      layout_config: template.layout_config || '{}',
+      is_public: template.is_public,
     });
     setDialogOpen(true);
   };
