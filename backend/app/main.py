@@ -2969,8 +2969,6 @@ def export_html_interactive(
                 <tbody>"""
     
     # Add findings
-    import html as html_escape_lib
-    
     for finding in findings:
         instances = session.exec(
             select(Instance).where(Instance.finding_id == finding.id)
@@ -2979,19 +2977,15 @@ def export_html_interactive(
         risk_class = finding.risk_rating.lower()
         status_class = finding.issue_status.lower().replace(' ', '-')
         
-        # Escape HTML to prevent rendering issues
-        title_escaped = html_escape_lib.escape(finding.title or 'Untitled')
-        desc_escaped = html_escape_lib.escape(finding.description or 'No description provided')
-        rem_escaped = html_escape_lib.escape(finding.remediation or 'No remediation guidance provided')
-        
-        # Preserve line breaks
-        desc_escaped = desc_escaped.replace('\n', '<br>')
-        rem_escaped = rem_escaped.replace('\n', '<br>')
+        # Use content directly (already contains HTML from rich text editor)
+        title = finding.title or 'Untitled'
+        description = finding.description or 'No description provided'
+        remediation = finding.remediation or 'No remediation guidance provided'
         
         html_content += f"""
                     <tr data-risk="{finding.risk_rating}" data-status="{finding.issue_status}">
                         <td>{finding.id}</td>
-                        <td><strong>{title_escaped}</strong></td>
+                        <td><strong>{title}</strong></td>
                         <td><span class="risk-badge risk-{risk_class}">{finding.risk_rating}</span></td>
                         <td><span class="status-badge status-{status_class}">{finding.issue_status}</span></td>
                         <td>{len(instances)}</td>
@@ -3001,17 +2995,17 @@ def export_html_interactive(
                         <td colspan="6">
                             <div class="details">
                                 <h3>📝 Description</h3>
-                                <p style="white-space: pre-wrap;">{desc_escaped}</p>
+                                <div style="white-space: pre-wrap;">{description}</div>
                                 <h3>🔧 Remediation</h3>
-                                <p style="white-space: pre-wrap;">{rem_escaped}</p>
+                                <div style="white-space: pre-wrap;">{remediation}</div>
                                 <h3>📍 Instances ({len(instances)})</h3>
                                 <ul>"""
         
         for instance in instances:
-            location_escaped = html_escape_lib.escape(instance.location or 'Unknown location')
-            details_escaped = html_escape_lib.escape(instance.details or 'No details')
+            location = instance.location or 'Unknown location'
+            details = instance.details or 'No details'
             html_content += f"""
-                                    <li><strong>{location_escaped}</strong> - {details_escaped} (Status: {instance.status})</li>"""
+                                    <li><strong>{location}</strong> - {details} (Status: {instance.status})</li>"""
         
         html_content += """
                                 </ul>
