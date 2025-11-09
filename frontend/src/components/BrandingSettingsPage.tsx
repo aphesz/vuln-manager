@@ -20,7 +20,6 @@ import {
   Refresh as RefreshIcon,
   CheckCircle as CheckIcon,
 } from '@mui/icons-material';
-import PageBreadcrumbs from './PageBreadcrumbs';
 import ReportService, { ReportBranding } from '../services/ReportService';
 
 const BrandingSettingsPage: React.FC = () => {
@@ -111,8 +110,6 @@ const BrandingSettingsPage: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      <PageBreadcrumbs />
-
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
         <PaletteIcon sx={{ fontSize: 40, color: 'primary.main' }} />
         <Box>

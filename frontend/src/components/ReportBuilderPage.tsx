@@ -38,7 +38,6 @@ import {
   Help as HelpIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import PageBreadcrumbs from './PageBreadcrumbs';
 import ReportService, { ReportGenerationRequest } from '../services/ReportService';
 import CustomTemplateService, { CustomReportTemplate } from '../services/CustomTemplateService';
 
@@ -251,8 +250,6 @@ const ReportBuilderPage: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      <PageBreadcrumbs />
-
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <DownloadIcon sx={{ fontSize: 40, color: 'primary.main' }} />

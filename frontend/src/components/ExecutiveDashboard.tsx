@@ -45,7 +45,6 @@ import {
   Launch,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import PageBreadcrumbs from './PageBreadcrumbs';
 import {
   getExecutiveSummary,
   getRiskHeatMap,
@@ -122,7 +121,6 @@ const ExecutiveDashboard: React.FC = () => {
   if (loading) {
     return (
       <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-        <PageBreadcrumbs />
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
           <CircularProgress size={60} />
         </Box>
@@ -133,7 +131,6 @@ const ExecutiveDashboard: React.FC = () => {
   if (error) {
     return (
       <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-        <PageBreadcrumbs />
         <Alert severity="error" sx={{ mt: 2 }}>
           {error}
         </Alert>
@@ -144,7 +141,6 @@ const ExecutiveDashboard: React.FC = () => {
   if (!summary) {
     return (
       <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-        <PageBreadcrumbs />
         <Alert severity="info" sx={{ mt: 2 }}>
           No executive data available.
         </Alert>
@@ -154,8 +150,6 @@ const ExecutiveDashboard: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      <PageBreadcrumbs />
-
       <Typography variant="h4" gutterBottom sx={{ mt: 2, mb: 3, fontWeight: 'bold' }}>
         Executive Dashboard
       </Typography>

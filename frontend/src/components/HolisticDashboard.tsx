@@ -20,7 +20,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
 } from '@mui/icons-material';
-import PageBreadcrumbs from './PageBreadcrumbs';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
@@ -140,7 +139,6 @@ const HolisticDashboard: React.FC = () => {
   if (error) {
     return (
       <Box sx={{ p: 3 }}>
-        <PageBreadcrumbs />
         <Alert severity="error" sx={{ mt: 2 }}>
           {error}
         </Alert>
@@ -166,8 +164,6 @@ const HolisticDashboard: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
-      <PageBreadcrumbs />
-      
       <Box sx={{ mb: 4, mt: 2 }}>
         <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
           Portfolio Overview

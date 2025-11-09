@@ -40,7 +40,6 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import type { Finding, SLAStatus, SLASummary } from '../types';
 import SLAService from '../services/SLAService';
 import UserPreferencesService from '../services/UserPreferencesService';
-import PageBreadcrumbs from './PageBreadcrumbs';
 import { formatDateWithTime } from '../utils/timezoneUtils';
 import { useNotification } from '../contexts/NotificationContext';
 
@@ -286,9 +285,6 @@ const SLADashboard = () => {
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Box sx={{ p: 3 }}>
-        {/* Breadcrumbs */}
-        <PageBreadcrumbs />
-        
         {error && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
             {error}

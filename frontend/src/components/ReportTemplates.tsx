@@ -28,7 +28,6 @@ import {
   ContentCopy as CopyIcon,
   Description as DescriptionIcon,
 } from '@mui/icons-material';
-import PageBreadcrumbs from './PageBreadcrumbs';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
@@ -236,9 +235,6 @@ const ReportTemplates: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      {/* Breadcrumbs */}
-      <PageBreadcrumbs />
-
       {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>

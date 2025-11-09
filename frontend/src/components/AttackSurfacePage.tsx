@@ -29,7 +29,6 @@ import {
   Shield as ShieldIcon
 } from '@mui/icons-material';
 import AttackTechniqueService, { AttackTechnique, TechniquesByTactic } from '../services/AttackTechniqueService';
-import PageBreadcrumbs from './PageBreadcrumbs';
 import AttackTechniqueCard from './AttackTechniqueCard';
 
 const AttackSurfacePage: React.FC = () => {
@@ -112,16 +111,6 @@ const AttackSurfacePage: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      {/* Breadcrumb Navigation */}
-      <PageBreadcrumbs 
-        projectId={projectId}
-        items={[
-          { label: 'Projects', path: '/', icon: <HomeIcon fontSize="small" /> },
-          { label: `Project ${projectId}`, path: `/projects/${projectId}` },
-          { label: 'MITRE ATT&CK Matrix', icon: <SecurityIcon fontSize="small" /> }
-        ]}
-      />
-
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>

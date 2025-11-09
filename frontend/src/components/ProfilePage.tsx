@@ -18,7 +18,6 @@ import {
 } from '@mui/material';
 import { Person, Lock, Save } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import PageBreadcrumbs from './PageBreadcrumbs';
 
 const ProfilePage: React.FC = () => {
   const { user, updateProfile, changePassword } = useAuth();
@@ -106,13 +105,6 @@ const ProfilePage: React.FC = () => {
 
   return (
     <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      <PageBreadcrumbs
-        items={[
-          { label: 'Dashboard', path: '/' },
-          { label: 'My Profile', icon: <Person fontSize="small" /> },
-        ]}
-      />
-
       <Typography variant="h4" gutterBottom fontWeight="bold" sx={{ mb: 3 }}>
         My Profile
       </Typography>

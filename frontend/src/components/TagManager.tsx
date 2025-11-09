@@ -27,7 +27,6 @@ import {
 } from '@mui/icons-material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import axios from 'axios';
-import PageBreadcrumbs from './PageBreadcrumbs';
 
 interface Tag {
   id: number;
@@ -198,9 +197,6 @@ const TagManager: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Breadcrumbs */}
-      <PageBreadcrumbs />
-      
       <Paper sx={{ p: 2, mb: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Box>

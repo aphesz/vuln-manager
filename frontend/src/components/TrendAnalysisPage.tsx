@@ -39,7 +39,6 @@ import TrendService, {
   type UploadHistoryResponse,
   type Granularity,
 } from '../services/TrendService';
-import PageBreadcrumbs from './PageBreadcrumbs';
 import FindingsTimelineChart from './FindingsTimelineChart';
 import RiskScoreTrendChart from './RiskScoreTrendChart';
 import RemediationProgressChart from './RemediationProgressChart';
@@ -126,9 +125,6 @@ const TrendAnalysisPage: React.FC = () => {
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, sm: 3, md: 4 } }}>
-        {/* Breadcrumbs */}
-        <PageBreadcrumbs projectId={projectId} />
-
         {/* Header */}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
