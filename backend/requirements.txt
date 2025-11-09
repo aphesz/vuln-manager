@@ -20,3 +20,9 @@ rapidfuzz==3.10.1  # fuzzy string matching for vulnerability template matching (
 slowapi==0.1.9  # rate limiting for API endpoints
 pytest==7.4.3  # testing framework
 pytest-cov==4.1.0  # coverage reporting
+
+# Advanced Reporting (v1.1.0)
+matplotlib>=3.8.0  # Chart generation for executive reports
+pillow>=10.0.0  # Image processing for charts
+apscheduler>=3.10.0  # Job scheduling for automated reports
+python-pptx>=0.6.23  # PowerPoint export

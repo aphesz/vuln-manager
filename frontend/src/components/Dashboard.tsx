@@ -223,6 +223,32 @@ const Dashboard = () => {
     if (!project) return;
 
     try {
+      // Handle Executive Report (new)
+      if (options.format === 'executive') {
+        const params = new URLSearchParams();
+        
+        if (options.executiveOptions) {
+          if (options.executiveOptions.includeCharts !== undefined) {
+            params.append('include_charts', String(options.executiveOptions.includeCharts));
+          }
+          if (options.executiveOptions.companyName) {
+            params.append('company_name', options.executiveOptions.companyName);
+          }
+          if (options.executiveOptions.customHeader) {
+            params.append('custom_header', options.executiveOptions.customHeader);
+          }
+          if (options.executiveOptions.customFooter) {
+            params.append('custom_footer', options.executiveOptions.customFooter);
+          }
+        }
+
+        const url = `${API_BASE_URL}/projects/${projectId}/reports/executive?${params.toString()}`;
+        window.open(url, '_blank');
+        showSuccess('Executive report opened in new tab!');
+        setExportDialogOpen(false);
+        return;
+      }
+
       // Handle DOCX and PDF differently (they use existing endpoints)
       if (options.format === 'docx') {
         const link = document.createElement('a');

@@ -77,7 +77,7 @@ from app.parsers import parse_xml_content
 from app import scoring
 from app import owasp
 from app import cwe_top25
-from app.reports import generate_report_docx, generate_report_pdf
+from app.reports import generate_report_docx, generate_report_pdf, generate_executive_report_pdf
 from app.auth import (
     get_password_hash,
     verify_password,
@@ -2232,6 +2232,85 @@ def get_pdf_report(project_id: int, session: Session = Depends(get_session)):
         media_type="application/pdf",
         filename=f"{project.name.replace(' ', '_')}_Report.pdf",
     )
+
+
+@app.get("/projects/{project_id}/reports/executive", response_class=FileResponse)
+def get_executive_report(
+    project_id: int,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    include_charts: bool = True,
+    company_name: Optional[str] = None,
+    custom_header: Optional[str] = None,
+    custom_footer: Optional[str] = None,
+    session: Session = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Generates and returns an executive summary report in PDF format.
+    
+    This is a polished, stakeholder-friendly report with charts and visualizations,
+    designed for executives and non-technical audiences.
+    
+    Query Parameters:
+    - date_from: Optional start date for filtering findings (YYYY-MM-DD)
+    - date_to: Optional end date for filtering findings (YYYY-MM-DD)
+    - include_charts: Whether to include charts in the report (default: true)
+    - company_name: Optional company name for branding
+    - custom_header: Optional custom header text
+    - custom_footer: Optional custom footer text
+    """
+    from datetime import date as date_type
+    
+    # Fetch project with all findings and instances
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Parse date parameters
+    parsed_date_from = None
+    parsed_date_to = None
+    
+    if date_from:
+        try:
+            parsed_date_from = date_type.fromisoformat(date_from)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from format. Use YYYY-MM-DD")
+    
+    if date_to:
+        try:
+            parsed_date_to = date_type.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to format. Use YYYY-MM-DD")
+    
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"/tmp/executive_report_{project_id}_{timestamp}.pdf"
+    
+    # Generate the executive report
+    try:
+        generate_executive_report_pdf(
+            project=project,
+            file_path=file_path,
+            date_from=parsed_date_from,
+            date_to=parsed_date_to,
+            include_charts=include_charts,
+            logo_url=None,  # TODO: Implement logo support
+            company_name=company_name,
+            custom_header=custom_header,
+            custom_footer=custom_footer
+        )
+    except Exception as e:
+        print(f"Error generating executive report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate executive report: {str(e)}")
+    
+    # Return the PDF file
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename=f"{project.name.replace(' ', '_')}_Executive_Report.pdf",
+    )
+
 
 # --- Export Endpoints ---
 

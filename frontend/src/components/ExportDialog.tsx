@@ -28,12 +28,18 @@ interface ExportDialogProps {
 }
 
 export interface ExportOptions {
-  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf';
+  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive';
   columns: string[];
   filters: {
     risk?: RiskRating[];
     issueStatus?: IssueStatus[];
     reviewStatus?: string[];
+  };
+  executiveOptions?: {
+    includeCharts?: boolean;
+    companyName?: string;
+    customHeader?: string;
+    customFooter?: string;
   };
 }
 
@@ -68,13 +74,19 @@ const RISK_COLORS: Record<RiskRating, { bg: string; text: string }> = {
 };
 
 export default function ExportDialog({ open, onClose, onExport, projectId }: ExportDialogProps) {
-  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf'>('excel');
+  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive'>('excel');
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
     AVAILABLE_COLUMNS.filter(c => c.defaultChecked).map(c => c.key)
   );
   const [riskFilter, setRiskFilter] = useState<RiskRating[]>([]);
   const [issueStatusFilter, setIssueStatusFilter] = useState<IssueStatus[]>([]);
   const [reviewStatusFilter, setReviewStatusFilter] = useState<string[]>([]);
+  
+  // Executive report options
+  const [includeCharts, setIncludeCharts] = useState(true);
+  const [companyName, setCompanyName] = useState('');
+  const [customHeader, setCustomHeader] = useState('');
+  const [customFooter, setCustomFooter] = useState('');
 
   const handleColumnToggle = (columnKey: string) => {
     setSelectedColumns(prev =>
@@ -125,6 +137,12 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
         issueStatus: issueStatusFilter.length > 0 ? issueStatusFilter : undefined,
         reviewStatus: reviewStatusFilter.length > 0 ? reviewStatusFilter : undefined,
       },
+      executiveOptions: format === 'executive' ? {
+        includeCharts,
+        companyName: companyName.trim() || undefined,
+        customHeader: customHeader.trim() || undefined,
+        customFooter: customFooter.trim() || undefined,
+      } : undefined,
     };
     onExport(options);
     onClose();
@@ -136,6 +154,10 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
     setRiskFilter([]);
     setIssueStatusFilter([]);
     setReviewStatusFilter([]);
+    setIncludeCharts(true);
+    setCompanyName('');
+    setCustomHeader('');
+    setCustomFooter('');
   };
 
   return (
@@ -147,28 +169,115 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
           <FormLabel component="legend">Export Format</FormLabel>
           <RadioGroup
             value={format}
-            onChange={(e) => setFormat(e.target.value as 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf')}
+            onChange={(e) => setFormat(e.target.value as 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive')}
           >
+            <FormControlLabel value="executive" control={<Radio />} label="📊 Executive Report (PDF) - Summary with charts" />
+            <Divider sx={{ my: 1 }} />
             <FormControlLabel value="excel" control={<Radio />} label="Excel (.xlsx) - Spreadsheet with data analysis" />
             <FormControlLabel value="csv" control={<Radio />} label="CSV (.csv) - Simple tabular format" />
             <FormControlLabel value="json" control={<Radio />} label="JSON (.json) - Full data with metadata" />
             <FormControlLabel value="markdown" control={<Radio />} label="Markdown (.md) - Formatted documentation" />
             <FormControlLabel value="docx" control={<Radio />} label="Word Document (.docx) - Professional report" />
-            <FormControlLabel value="pdf" control={<Radio />} label="PDF (.pdf) - Print-ready report" />
+            <FormControlLabel value="pdf" control={<Radio />} label="PDF (.pdf) - Detailed technical report" />
           </RadioGroup>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            {format === 'executive' && '💡 Best for: Stakeholder presentations, executive summaries, high-level overviews'}
             {format === 'json' && '💡 Best for: API integrations, automated processing, CI/CD pipelines'}
             {format === 'markdown' && '💡 Best for: GitHub/GitLab wikis, technical documentation, sharing with developers'}
             {format === 'excel' && '💡 Best for: Data analysis, pivot tables, charts, and custom filtering'}
             {format === 'csv' && '💡 Best for: Importing into other tools, simple spreadsheets, universal compatibility'}
             {format === 'docx' && '💡 Best for: Client deliverables, executive reports, editable documents'}
-            {format === 'pdf' && '💡 Best for: Final reports, presentations, printing, email distribution'}
+            {format === 'pdf' && '💡 Best for: Detailed technical reports, complete findings documentation'}
           </Typography>
         </FormControl>
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Column Selection - Only show for data formats */}
+        {/* Executive Report Options - Only show for executive format */}
+        {format === 'executive' && (
+          <>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Executive Report Options
+              </Typography>
+              
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={includeCharts}
+                    onChange={(e) => setIncludeCharts(e.target.checked)}
+                  />
+                }
+                label="Include Charts (severity distribution and trend analysis)"
+                sx={{ mb: 2 }}
+              />
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <FormControl fullWidth>
+                  <Typography variant="body2" gutterBottom>
+                    Company Name (optional)
+                  </Typography>
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="e.g., Acme Corporation"
+                    style={{
+                      padding: '10px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </FormControl>
+                
+                <FormControl fullWidth>
+                  <Typography variant="body2" gutterBottom>
+                    Custom Header Text (optional)
+                  </Typography>
+                  <textarea
+                    value={customHeader}
+                    onChange={(e) => setCustomHeader(e.target.value)}
+                    placeholder="Optional custom text to appear at the top of the report"
+                    rows={2}
+                    style={{
+                      padding: '10px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical',
+                    }}
+                  />
+                </FormControl>
+                
+                <FormControl fullWidth>
+                  <Typography variant="body2" gutterBottom>
+                    Custom Footer Text (optional)
+                  </Typography>
+                  <textarea
+                    value={customFooter}
+                    onChange={(e) => setCustomFooter(e.target.value)}
+                    placeholder="Optional custom text to appear at the bottom of the report"
+                    rows={2}
+                    style={{
+                      padding: '10px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical',
+                    }}
+                  />
+                </FormControl>
+              </Box>
+            </Box>
+            
+            <Divider sx={{ my: 2 }} />
+          </>
+        )}
+
+        {/* Column Selection - Only show for data formats, not for executive */}
         {['excel', 'csv', 'json', 'markdown'].includes(format) && (
           <>
             <FormControl component="fieldset" sx={{ mb: 3 }}>

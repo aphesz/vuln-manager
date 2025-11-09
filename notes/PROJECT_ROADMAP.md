@@ -1,7 +1,7 @@
 # 🗺️ VulnManager Project Roadmap
 
-**Last Updated:** November 7, 2025  
-**Version:** 0.8.1 (Complete) → 0.8.3 (65-70% Complete) → 0.8.4-0.8.5 (Planned)
+**Last Updated:** November 9, 2025  
+**Version:** 0.8.4 (Complete) → 0.9.0 (In Progress - Navigation System)
 
 ---
 
@@ -100,11 +100,17 @@ Previous: v0.7.0-v0.7.3.1 - Vulnerability Repository (COMPLETE!) ✅ 🎉
 ├── v0.7.3 - Test Coverage & Code Quality (COMPLETE!) ✅ ⭐ PRODUCTION GRADE
 └── v0.7.3.1 - CVE Import Hotfix (COMPLETE!) ✅ 🔥 CRITICAL FIX
 
-Current: v0.8.0 - Advanced Analytics & Reporting (November 2025) ⭐ IN PROGRESS
+Recently Completed: v0.8.0 - Advanced Analytics & Reporting (COMPLETE!) ✅
 ├── v0.8.1 - Trend Analysis & Historical Data (COMPLETE!) ✅
-├── v0.8.3 - Compliance Mapping (95% COMPLETE!) ✅ 🎯
-├── v0.8.4 - Executive Dashboards (PLANNED) 📋
-└── v0.8.5 - Predictive Analytics (PLANNED - moved from v0.8.2) 📋
+├── v0.8.3 - Compliance Mapping (COMPLETE - 95%) ✅
+└── v0.8.4 - Executive Dashboards (COMPLETE!) ✅
+
+Current: v0.9.0 - Modern Navigation System (November 2025) 🚀 IN PROGRESS
+├── Phase 1 - Sidebar Component & Layout (Week 1) 📋
+├── Phase 2 - Styling & Polish (Week 1-2) 📋
+└── Phase 3 - Migration & Testing (Week 2) 📋
+
+Next: v0.9.1 - Extended Scanner Support (Q1 2026) 📋
 
 Future: v1.0.0 - Enterprise Features (Q2 2026)
 ```
@@ -1446,10 +1452,10 @@ Build on the solid v0.7.x foundation to deliver:
 
 ---
 
-### Phase 5: Predictive Analytics (v0.8.5) 📋 PLANNED (MOVED FROM v0.8.2)
+### Phase 5: Predictive Analytics (v0.8.5) 📋 DEFERRED
 **Effort:** 6-8 hours  
 **Priority:** Low  
-**Status:** 📋 Planning - Deferred to final 0.8.x release
+**Status:** 📋 **DEFERRED** - Moved to future release (post-v0.9.x)
 
 **Goals:**
 - Predict remediation completion dates
@@ -1477,6 +1483,8 @@ Build on the solid v0.7.x foundation to deliver:
   - Suggest prioritization based on risk/effort
   - Identify quick wins (easy remediations)
   - Highlight stale findings (>90 days open)
+
+**Note:** Deferred in favor of v0.9.0 Navigation System UX improvements
 
 **Estimated Effort:** 6-8 hours
 
@@ -1645,99 +1653,691 @@ These advanced analytics features are planned for future releases:
 
 ---
 
-## � Version 1.1.0 - UI/UX Overhaul & Extended Scanner Support (Q4 2026)
+## 🎨 Version 0.9.0 - Modern Navigation System (November 2025)
 
-**Timeline:** 6-8 weeks  
-**Effort:** 40-50 hours  
-**Status:** Concept Phase
+**Timeline:** 1-2 weeks  
+**Effort:** 8-12 hours  
+**Status:** 🚀 **IN PROGRESS** (Started November 9, 2025)  
+**Priority:** High - Major UX improvement
 
-### Key Features
+### Overview
+Replace the top-right button navigation with a modern collapsible left sidebar for better navigation hierarchy and user experience. This is a pure UI/UX enhancement with no backend changes required.
 
-#### Modern Navigation System
-- [ ] **Collapsible left side navigation bar**
-  - Replace top-right buttons with persistent left sidebar
-  - Collapsible/expandable with toggle button
-  - Icons + labels for main sections
-  - Nested navigation for sub-sections
-  - Active state indicators
-  - Keyboard navigation support (Tab, Arrow keys)
-  - Responsive: Auto-collapse on mobile
-  - User preference persistence (collapsed/expanded state)
-  
-  **Navigation Structure:**
-  ```
-  ├── 📊 Dashboard
-  ├── 📁 Projects
-  ├── 🔍 Findings
-  ├── 📚 Vulnerability Repository
-  ├── 📈 Reports & Analytics
-  ├── 🔗 Integrations
-  │   ├── Jira
-  │   ├── Slack
-  │   └── Webhooks
-  ├── ⚙️ Settings
-  │   ├── User Preferences
-  │   ├── Timezone
-  │   └── Notifications
-  └── 👤 User Profile
-  ```
-
-#### Extended Scanner Support
-- [ ] **Nmap XML parser**
-  - Parse Nmap XML output (-oX)
-  - Extract open ports as findings
-  - Service version detection
-  - OS detection results
-  - Map service vulnerabilities to templates
-  - Risk rating based on service exposure
-  
-- [ ] **Metasploit XML/JSON parser**
-  - Parse Metasploit database export
-  - Extract exploitation results
-  - Map exploited vulnerabilities
-  - Link to CVEs/modules used
-  - Critical risk for successful exploits
-  
-- [ ] **OWASP ZAP XML parser**
-  - Parse ZAP XML report format
-  - Extract web vulnerabilities
-  - Map to CWE/OWASP Top 10
-  - Include request/response evidence
-  - Support ZAP API integration
-  
-- [ ] **Additional scanners (stretch goals)**
-  - Qualys XML
-  - Nexpose XML
-  - OpenVAS XML
-  - Acunetix XML
-  - Nikto CSV/XML
-  - Nuclei JSON
-  
-- [ ] **Backend parser architecture**
-  - New parsers.py functions: `parse_nmap_xml()`, `parse_metasploit_export()`, `parse_zap_xml()`
-  - Unified parser interface/base class
-  - Scanner type detection heuristics
-  - Validation for each format
-  - Error handling and logging
-  
-- [ ] **Upload flow enhancements**
-  - Auto-detect additional scanner types
-  - Multi-file upload support (batch processing)
-  - Scanner-specific field mapping
-  - Preview parsed data before import
-  - Conflict resolution UI
-
-**Estimated Effort:** 40-50 hours
+### 🎯 Goals
+1. Improve navigation hierarchy and discoverability
+2. Provide persistent navigation across all pages
+3. Better mobile experience with responsive behavior
+4. Modern, professional appearance
+5. Maintain accessibility standards (WCAG 2.1 AA)
 
 ---
 
-## 🔐 Version 1.2.0 - Security & Access Control (Q1 2027)
+### Phase 1: Sidebar Component & Layout (Week 1) 📋 PLANNED
+**Effort:** 4-5 hours  
+**Priority:** Critical
+
+#### Components to Create
+- [ ] **Sidebar.tsx** (Main navigation component)
+  - Material-UI Drawer component (permanent variant)
+  - Fixed position on left side
+  - Collapsible/expandable toggle button
+  - Width: 280px expanded, 64px collapsed
+  - Smooth transition animations
+  - Dark mode support
+  
+- [ ] **NavigationItem.tsx** (Reusable nav item)
+  - Icon + label display
+  - Active state styling
+  - Hover effects
+  - Support for nested items
+  - Badge support (counts, alerts)
+  - Click handler with React Router navigation
+  
+- [ ] **NavigationGroup.tsx** (Collapsible sections)
+  - Expandable/collapsible groups
+  - Nested navigation items
+  - Chevron icons for expand/collapse
+  - Preserved state (which groups are open)
+
+#### Navigation Structure
+```
+├── 📊 Dashboard (/)
+├── 📁 Projects (/projects)
+├── 🔍 Findings (future - global findings view)
+├── 📚 Vulnerability Repository (/templates)
+│   ├── Template Library
+│   ├── CVSS Calculator (/calculators/cvss)
+│   ├── OWASP Calculator (/calculators/owasp)
+│   └── Import Tools
+├── 📈 Reports & Analytics
+│   ├── Executive Dashboard (/executive)
+│   ├── Compliance (future)
+│   └── Custom Reports (future)
+├── 🔧 Calculators
+│   ├── CVSS 3.1 Calculator (/calculators/cvss)
+│   └── OWASP Risk Calculator (/calculators/owasp)
+├── ⚙️ Settings (future)
+│   ├── User Preferences
+│   ├── Timezone
+│   └── Notifications
+└── 👤 User Profile (future)
+```
+
+#### Layout Changes
+- [ ] **Update App.tsx layout**
+  - Add Sidebar component to layout
+  - Adjust main content area margin-left
+  - Responsive breakpoints (hide sidebar on mobile)
+  - Sidebar state management (collapsed/expanded)
+  
+- [ ] **Update AppHeader.tsx**
+  - Remove navigation buttons (Executive, Tags, Templates)
+  - Keep only: Logo, Theme toggle, possibly user menu (future)
+  - Cleaner, minimal header
+  - Add mobile hamburger menu button
+  
+- [ ] **Content area adjustments**
+  - Add margin-left for sidebar (280px expanded, 64px collapsed)
+  - Smooth transition when sidebar toggles
+  - Full-width when sidebar collapsed on mobile
+  - Proper z-index layering
+
+#### State Management
+- [ ] **Sidebar state persistence**
+  - localStorage key: `sidebar_collapsed`
+  - Boolean value: true/false
+  - Restore state on page load
+  - Update on toggle action
+  
+- [ ] **Active route detection**
+  - Use React Router useLocation hook
+  - Highlight active navigation item
+  - Auto-expand parent group if child is active
+  - Scroll active item into view on load
+
+#### Responsive Behavior
+- [ ] **Desktop (≥1024px)**
+  - Sidebar always visible
+  - Toggle between expanded (280px) and collapsed (64px)
+  - Icons + labels when expanded
+  - Icons only when collapsed
+  
+- [ ] **Tablet (768px - 1023px)**
+  - Sidebar starts collapsed (64px)
+  - Can expand on hover or click
+  - Auto-collapse after navigation
+  
+- [ ] **Mobile (<768px)**
+  - Sidebar hidden by default
+  - Hamburger menu button in header
+  - Opens as overlay drawer (full width or 280px)
+  - Closes after navigation or backdrop click
+
+#### Accessibility
+- [ ] **Keyboard Navigation**
+  - Tab to focus sidebar items
+  - Enter/Space to activate items
+  - Arrow keys to navigate between items
+  - Escape to close mobile drawer
+  
+- [ ] **Screen Reader Support**
+  - Proper ARIA labels
+  - aria-current for active page
+  - aria-expanded for collapsible groups
+  - Focus management when opening/closing
+  
+- [ ] **Visual Indicators**
+  - Clear focus outlines
+  - High contrast mode support
+  - Color-blind friendly indicators
+  - Text labels always available (not icon-only)
+
+---
+
+### Phase 2: Styling & Polish (Week 1-2) 📋 PLANNED
+**Effort:** 2-3 hours  
+**Priority:** High
+
+#### Visual Design
+- [ ] **Color Scheme**
+  - Light mode: Grey background (#f5f5f5), white sidebar
+  - Dark mode: Dark grey sidebar (#1e1e1e), lighter icons
+  - Active item: Primary color highlight
+  - Hover: Subtle background change
+  
+- [ ] **Typography**
+  - Navigation labels: 14px medium weight
+  - Group headers: 12px uppercase, grey color
+  - Consistent font family with app theme
+  
+- [ ] **Icons**
+  - Material-UI icons throughout
+  - 24px size for main items
+  - 20px size for nested items
+  - Consistent icon style
+  
+- [ ] **Animations**
+  - Sidebar expand/collapse: 225ms ease-in-out
+  - Item hover: 150ms ease
+  - Group expand/collapse: 200ms ease
+  - Active indicator slide: 200ms ease
+
+#### User Experience Polish
+- [ ] **Loading States**
+  - Skeleton loader for navigation items
+  - Smooth fade-in when data loads
+  
+- [ ] **Empty States**
+  - Helpful messages when sections are empty
+  - Call-to-action buttons
+  
+- [ ] **Tooltips**
+  - Show full labels on hover when sidebar collapsed
+  - Position tooltips to the right
+  - Delay: 500ms
+  
+- [ ] **Badge Indicators**
+  - New items count (e.g., "3 new findings")
+  - Alert indicators (e.g., overdue SLAs)
+  - Color-coded by urgency
+
+---
+
+### Phase 3: Migration & Testing (Week 2) 📋 PLANNED
+**Effort:** 2-3 hours  
+**Priority:** High
+
+#### Component Migration
+- [ ] **Remove old navigation**
+  - Delete HeaderNavButtons component
+  - Remove button imports from AppHeader
+  - Clean up unused state
+  
+- [ ] **Update all routes**
+  - Verify all routes still accessible
+  - Test navigation from sidebar
+  - Update breadcrumbs if needed
+  
+- [ ] **User preference migration**
+  - No migration needed (new localStorage key)
+  - Sidebar starts expanded by default
+
+#### Testing Checklist
+- [ ] **Functional Testing**
+  - All navigation items lead to correct routes
+  - Toggle button works (expand/collapse)
+  - Active state highlights correct item
+  - Nested groups expand/collapse correctly
+  - State persists across page reloads
+  
+- [ ] **Responsive Testing**
+  - Desktop: Sidebar visible, toggles properly
+  - Tablet: Sidebar works in collapsed mode
+  - Mobile: Hamburger menu opens/closes drawer
+  - Transitions smooth on all screen sizes
+  
+- [ ] **Accessibility Testing**
+  - Tab navigation works
+  - Screen reader announces items correctly
+  - Focus visible on all interactive elements
+  - Keyboard shortcuts work (Escape closes mobile drawer)
+  
+- [ ] **Cross-Browser Testing**
+  - Chrome, Firefox, Safari, Edge
+  - Mobile browsers (iOS Safari, Chrome Android)
+  
+- [ ] **Dark Mode Testing**
+  - Sidebar colors correct in both themes
+  - Active state visible in dark mode
+  - Sufficient contrast ratios
+
+---
+
+### Technical Implementation Details
+
+#### Dependencies
+- **Existing**: `@mui/material` (already installed)
+- **Existing**: `react-router-dom` (already installed)
+- **No new dependencies required**
+
+#### File Structure
+```
+frontend/src/
+├── components/
+│   ├── Sidebar.tsx (NEW - ~350 lines)
+│   ├── NavigationItem.tsx (NEW - ~120 lines)
+│   ├── NavigationGroup.tsx (NEW - ~150 lines)
+│   ├── AppHeader.tsx (MODIFIED - remove nav buttons)
+│   └── App.tsx (MODIFIED - add sidebar to layout)
+├── hooks/
+│   └── useSidebarState.ts (NEW - ~40 lines)
+└── types.ts (MODIFIED - add navigation types)
+```
+
+#### TypeScript Interfaces
+```typescript
+interface NavigationItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  path?: string;
+  badge?: string | number;
+  children?: NavigationItem[];
+}
+
+interface SidebarProps {
+  items: NavigationItem[];
+  collapsed: boolean;
+  onToggle: () => void;
+}
+```
+
+---
+
+### Success Metrics
+
+**Functional:**
+- ✅ All navigation items accessible
+- ✅ Sidebar toggles smoothly (< 250ms)
+- ✅ State persists across sessions
+- ✅ Active route highlighted correctly
+- ✅ Mobile drawer works on all devices
+
+**User Experience:**
+- ✅ Navigation discoverable (no hidden features)
+- ✅ Smooth animations (60fps)
+- ✅ Accessible to keyboard and screen reader users
+- ✅ Consistent with app design language
+- ✅ Users report improved navigation (feedback)
+
+**Performance:**
+- ✅ No performance degradation
+- ✅ Sidebar renders in <50ms
+- ✅ Transitions don't block UI
+- ✅ No memory leaks
+
+**Code Quality:**
+- ✅ TypeScript strict mode passes
+- ✅ No console warnings/errors
+- ✅ Follows Material-UI patterns
+- ✅ Reusable components
+- ✅ Proper component composition
+
+---
+
+### Migration Notes
+
+**Breaking Changes:** None (purely additive)
+
+**User Impact:**
+- New navigation UI (improvement)
+- Old header buttons removed
+- All functionality preserved
+- No data changes required
+
+**Deployment:**
+- Frontend rebuild required
+- No backend changes
+- No database migrations
+- No configuration changes
+- Can deploy independently
+
+---
+
+## 📦 Version 0.9.1 - Extended Scanner Support (Q1 2026)
+
+**Timeline:** 3-4 weeks  
+**Effort:** 25-35 hours  
+**Status:** Planned  
+**Priority:** Medium
+
+### Overview
+Add support for additional security scanners beyond Burp Suite and Nessus.
+
+### Key Features
+
+#### Nmap XML Parser
+- [ ] Parse Nmap XML output (-oX)
+- [ ] Extract open ports as findings
+- [ ] Service version detection
+- [ ] OS detection results
+- [ ] Map service vulnerabilities to templates
+- [ ] Risk rating based on service exposure
+
+#### Metasploit XML/JSON Parser
+- [ ] Parse Metasploit database export
+- [ ] Extract exploitation results
+- [ ] Map exploited vulnerabilities
+- [ ] Link to CVEs/modules used
+- [ ] Critical risk for successful exploits
+
+#### OWASP ZAP XML Parser
+- [ ] Parse ZAP XML report format
+- [ ] Extract web vulnerabilities
+- [ ] Map to CWE/OWASP Top 10
+- [ ] Include request/response evidence
+- [ ] Support ZAP API integration
+
+#### Additional Scanners (Stretch Goals)
+- [ ] Qualys XML
+- [ ] Nexpose XML
+- [ ] OpenVAS XML
+- [ ] Acunetix XML
+- [ ] Nikto CSV/XML
+- [ ] Nuclei JSON
+
+#### Backend Parser Architecture
+- [ ] Unified parser interface/base class
+- [ ] Scanner type detection heuristics
+- [ ] Validation for each format
+- [ ] Error handling and logging
+
+#### Upload Flow Enhancements
+- [ ] Auto-detect additional scanner types
+- [ ] Multi-file upload support (batch processing)
+- [ ] Scanner-specific field mapping
+- [ ] Preview parsed data before import
+- [ ] Conflict resolution UI
+
+**Estimated Effort:** 25-35 hours
+
+---
+
+## � Version 1.1.0 - Post-Authentication Enhancements (Q1 2026)
+
+**Timeline:** 3-4 weeks  
+**Effort:** 20-30 hours  
+**Status:** 📋 Planned  
+**Priority:** HIGH
+
+### Overview
+Essential security and operational features following v1.0.0 authentication implementation.
+
+### Key Features
+
+#### 1. Audit Logging & Activity Tracking 🔍
+**Effort:** 8-10 hours  
+**Priority:** HIGH  
+**Value:** Essential for security, compliance, and debugging
+
+- [ ] **Audit Log Model**
+  - Track all user actions (login, logout, CRUD operations)
+  - Store: user_id, action, resource_type, resource_id, timestamp, ip_address, user_agent
+  - Indexed by user, action type, timestamp for fast queries
+  
+- [ ] **Backend Integration**
+  - Automatic audit logging middleware
+  - Decorator for sensitive operations: `@audit_log("finding:update")`
+  - Configurable log retention (default 90 days)
+  
+- [ ] **Audit Log Viewer (Admin)**
+  - Searchable log table with filters
+  - Filter by: user, action type, resource, date range
+  - Export logs for compliance (CSV/JSON)
+  - Real-time activity feed
+  
+- [ ] **Security Events**
+  - Failed login attempts tracking
+  - Permission denial logging
+  - Suspicious activity detection
+  - Alert on anomalies
+
+#### 2. Email Notifications System 📧
+**Effort:** 8-10 hours  
+**Priority:** MEDIUM  
+**Value:** Improves user engagement and team communication
+
+- [ ] **Email Infrastructure**
+  - SMTP configuration (SendGrid/AWS SES/Mailgun)
+  - HTML email templates with branding
+  - Background job queue (Celery/RQ)
+  
+- [ ] **Notification Types**
+  - Welcome email on registration
+  - Password reset emails
+  - Finding assignment notifications
+  - SLA breach alerts (critical/high findings)
+  - Weekly summary reports
+  - Mentioned in comments (@username)
+  
+- [ ] **User Preferences**
+  - Email notification settings per user
+  - Frequency controls (instant/daily digest)
+  - Opt-out options
+  
+- [ ] **Admin Controls**
+  - System-wide email templates
+  - Email delivery logs
+  - Bounce handling
+
+#### 3. Advanced Reporting & Export 📊
+**Effort:** 6-8 hours  
+**Priority:** MEDIUM  
+**Value:** Professional deliverables for clients and stakeholders
+
+- [ ] **Executive Summary Reports**
+  - Auto-generated PDF with charts
+  - Customizable branding (logo, colors)
+  - Risk trend visualizations
+  - Compliance status overview
+  
+- [ ] **Report Templates**
+  - Pre-built templates: Executive, Technical, Compliance
+  - Custom template builder (drag-and-drop)
+  - Conditional sections based on data
+  - Variable substitution (project name, dates)
+  
+- [ ] **Scheduled Reports**
+  - Weekly/monthly automated generation
+  - Email delivery to stakeholders
+  - Distribution lists management
+  - Report history tracking
+  
+- [ ] **Export Enhancements**
+  - SARIF format for CI/CD integration
+  - HTML interactive reports
+  - PowerPoint export for presentations
+  - Bulk project export
+
+#### 4. API Key Management 🔑
+**Effort:** 4-6 hours  
+**Priority:** MEDIUM  
+**Value:** Enables automation and third-party integrations
+
+- [ ] **API Key Model**
+  - Generate API keys for programmatic access
+  - Key rotation and expiration (30/60/90 days)
+  - Scope/permission assignment per key
+  - Usage tracking (requests, rate limits)
+  
+- [ ] **API Key UI**
+  - Create/revoke keys in user settings
+  - Copy key on creation (show once)
+  - View usage statistics
+  - Last used timestamp
+  
+- [ ] **Backend Integration**
+  - API key authentication middleware
+  - Rate limiting per key
+  - Scope enforcement
+  - Audit logging for API key usage
+
+**Total Estimated Effort:** 26-34 hours
+
+---
+
+## 🔐 Version 1.2.0 - Multi-Factor Authentication (Q1 2026)
+
+**Timeline:** 2-3 weeks  
+**Effort:** 12-16 hours  
+**Status:** 📋 Planned  
+**Priority:** HIGH (Security)
+
+### Overview
+Significantly enhance account security with TOTP-based two-factor authentication.
+
+### Key Features
+
+#### TOTP-Based 2FA 🔐
+**Effort:** 8-10 hours  
+**Priority:** HIGH
+
+- [ ] **Backend Infrastructure**
+  - TOTP secret generation (pyotp library)
+  - QR code generation for authenticator apps
+  - Backup codes generation (10 single-use codes)
+  - Verification endpoint
+  - Recovery flow
+  
+- [ ] **Database Model**
+  - User fields: mfa_enabled, mfa_secret, backup_codes
+  - MFA verification logs
+  - Trusted devices tracking
+  
+- [ ] **MFA Setup Wizard (Frontend)**
+  - Step 1: Enable 2FA page
+  - Step 2: Scan QR code (Google Authenticator, Authy)
+  - Step 3: Verify TOTP code
+  - Step 4: Save backup codes
+  - Success confirmation
+  
+- [ ] **Login Flow Integration**
+  - After password verification, prompt for TOTP
+  - 6-digit code input
+  - "Remember this device" checkbox (30 days)
+  - Backup code entry option
+  - Rate limiting on failed attempts
+  
+- [ ] **User Settings**
+  - Enable/disable MFA toggle
+  - Regenerate backup codes
+  - View trusted devices
+  - Revoke device trust
+
+#### Admin MFA Controls
+**Effort:** 2-3 hours  
+**Priority:** HIGH
+
+- [ ] **Policy Configuration**
+  - Enforce MFA for all users (optional)
+  - Enforce MFA for admin roles (recommended)
+  - Grace period for enrollment (7/14/30 days)
+  - Bypass MFA for trusted IPs (optional)
+  
+- [ ] **Admin Dashboard**
+  - MFA adoption rate metric
+  - Users without MFA list
+  - Ability to reset user MFA
+  - MFA compliance reports
+
+#### Security Enhancements
+**Effort:** 2-3 hours  
+**Priority:** MEDIUM
+
+- [ ] **Trusted Devices**
+  - Cookie-based device tracking
+  - Device fingerprinting (browser, OS, IP)
+  - Device management UI (revoke access)
+  - Email notification on new device login
+  
+- [ ] **Account Recovery**
+  - Backup codes as fallback
+  - Account lockout after 5 failed MFA attempts
+  - Admin-assisted recovery flow
+  - Security questions (optional)
+
+**Total Estimated Effort:** 12-16 hours
+
+---
+
+## 👥 Version 1.3.0 - Team Collaboration Features (Q2 2026)
+
+**Timeline:** 3-4 weeks  
+**Effort:** 18-25 hours  
+**Status:** 📋 Planned  
+**Priority:** MEDIUM
+
+### Overview
+Improve team coordination and reduce context switching.
+
+### Key Features
+
+#### Real-Time Collaboration
+**Effort:** 10-12 hours  
+**Priority:** MEDIUM
+
+- [ ] **@Mentions in Comments**
+  - Mention users with @username syntax
+  - Auto-complete dropdown
+  - Email notification to mentioned user
+  - Highlight mentions in UI
+  
+- [ ] **Real-Time Notifications**
+  - WebSocket-based notification system
+  - Toast notifications for mentions, assignments
+  - Notification center/bell icon
+  - Mark as read functionality
+  - Notification preferences
+  
+- [ ] **Task Assignments**
+  - Assign findings to specific users
+  - Assignment history tracking
+  - Email notification on assignment
+  - "My Assignments" filter view
+  - Bulk assignment UI
+
+#### Activity Feed & Timeline
+**Effort:** 6-8 hours  
+**Priority:** MEDIUM
+
+- [ ] **Project Activity Feed**
+  - Timeline of all project changes
+  - Filter by: user, action type, date
+  - Show: findings added, status changes, comments, assignments
+  - "What's new" summary
+  
+- [ ] **User Activity View**
+  - Per-user activity dashboard
+  - Team member activity overview
+  - Productivity metrics
+  - Recent contributions
+
+#### Team Communication (Optional)
+**Effort:** 8-10 hours  
+**Priority:** LOW
+
+- [ ] **Team Chat or Messaging**
+  - Project-level chat rooms
+  - Direct messages between users
+  - File sharing
+  - Integration with Slack/Teams (alternative)
+
+**Total Estimated Effort:** 18-25 hours
+
+---
+
+## �🔐 Version 1.0.0 - Enterprise Features (Q2 2026)
 
 **Timeline:** 8-10 weeks  
 **Effort:** 60-80 hours  
-**Status:** Concept Phase
+**Status:** ✅ **COMPLETE** (v1.0.0 User Management & Authentication)  
+**Completed:** November 9, 2025
 
-### Key Features
+### Completed Features
+
+#### User Authentication & Management ✅
+- ✅ JWT token authentication (access + refresh tokens)
+- ✅ Argon2 password hashing
+- ✅ Role-based access control (admin/analyst/viewer)
+- ✅ User registration with password validation
+- ✅ Login page with demo credentials
+- ✅ Profile management (update name, avatar, password)
+- ✅ Admin user management (CRUD operations)
+- ✅ Password strength indicator
+- ✅ Protected routes with role enforcement
+- ✅ Rate limiting on auth endpoints
+
+### Key Features (Original Plan - Modified)
 
 #### HTTPS & Secure Communications
 - [ ] **HTTPS-only deployment**
