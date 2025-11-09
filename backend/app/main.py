@@ -1,6 +1,6 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query, Path
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query, Path, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -29,6 +29,11 @@ logger.debug("Logging initialized in main.py")
 
 # Custom imports
 from app.models import (
+    User,
+    UserRead,
+    UserCreate,
+    UserUpdate,
+    UserUpdatePassword,
     Project,
     Finding,
     Instance,
@@ -73,6 +78,20 @@ from app import scoring
 from app import owasp
 from app import cwe_top25
 from app.reports import generate_report_docx, generate_report_pdf
+from app.auth import (
+    get_password_hash,
+    verify_password,
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    validate_password_strength,
+    decode_token,
+)
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from datetime import timedelta
+
+# OAuth2 scheme for token authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 from app.sla import (
     calculate_sla_deadline,
     update_finding_sla,
@@ -108,6 +127,64 @@ def get_session():
     """Dependency to get a new DB session."""
     with Session(engine) as session:
         yield session
+
+
+# --- Authentication Dependencies ---
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    session: Session = Depends(get_session)
+) -> User:
+    """Get current authenticated user from JWT token."""
+    try:
+        payload = decode_token(token)
+        user_id: str = payload.get("sub")
+        token_type: str = payload.get("type")
+        
+        if user_id is None or token_type != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user = session.get(User, int(user_id))
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return user
+
+
+def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
+    """Ensure current user is active."""
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user"
+        )
+    return current_user
+
+
+def require_role(*allowed_roles: str):
+    """Dependency factory to require specific user roles."""
+    def role_checker(current_user: User = Depends(get_current_active_user)) -> User:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required role: {', '.join(allowed_roles)}"
+            )
+        return current_user
+    return role_checker
 
 # --- Input Validation Utilities ---
 
@@ -697,6 +774,368 @@ def readiness_check(session: Session = Depends(get_session)):
             }
         )
 
+# --- Authentication & User Management ---
+
+@app.post("/auth/register", response_model=UserRead, status_code=201)
+@limiter.limit("5/minute")
+def register_user(
+    request: Request,
+    user_data: UserCreate,
+    session: Session = Depends(get_session)
+):
+    """
+    Register a new user account.
+    
+    - **email**: Valid email address (unique)
+    - **username**: Username (unique, 3-30 characters)
+    - **password**: Password (min 8 chars, uppercase, lowercase, digit)
+    - **full_name**: Optional full name
+    
+    Rate limited to 5 registrations per minute per IP.
+    """
+    # Validate password strength
+    is_valid, error_msg = validate_password_strength(user_data.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    # Check if email already exists
+    existing_email = session.exec(select(User).where(User.email == user_data.email)).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Check if username already exists
+    existing_username = session.exec(select(User).where(User.username == user_data.username)).first()
+    if existing_username:
+        raise HTTPException(status_code=400, detail="Username already taken")
+    
+    # Create new user
+    hashed_password = get_password_hash(user_data.password)
+    db_user = User(
+        email=user_data.email,
+        username=user_data.username,
+        full_name=user_data.full_name,
+        hashed_password=hashed_password,
+        role=user_data.role if user_data.role else "viewer",  # Default to viewer role
+        is_active=True,
+        created_at=get_utc_now()
+    )
+    
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    
+    logger.info(f"New user registered: {db_user.email} (ID: {db_user.id})")
+    
+    return db_user
+
+
+@app.post("/auth/login")
+@limiter.limit("10/minute")
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session: Session = Depends(get_session)
+):
+    """
+    Login with email and password to receive JWT tokens.
+    
+    Returns access token (30min expiry) and refresh token (7 days expiry).
+    Rate limited to 10 login attempts per minute per IP.
+    """
+    user = authenticate_user(session, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled"
+        )
+    
+    # Update last login timestamp
+    user.last_login = get_utc_now()
+    session.add(user)
+    session.commit()
+    
+    # Create JWT tokens
+    access_token = create_access_token(data={"sub": str(user.id)})
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    
+    logger.info(f"User logged in: {user.email} (ID: {user.id})")
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": UserRead.from_orm(user)
+    }
+
+
+@app.post("/auth/refresh")
+@limiter.limit("20/minute")
+def refresh_access_token(
+    request: Request,
+    refresh_token: str = Body(..., embed=True),
+    session: Session = Depends(get_session)
+):
+    """
+    Refresh an access token using a valid refresh token.
+    
+    Rate limited to 20 refreshes per minute per IP.
+    """
+    try:
+        payload = decode_token(refresh_token)
+        token_type = payload.get("type")
+        user_id = payload.get("sub")
+        
+        if token_type != "refresh" or not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+        
+        # Verify user still exists and is active
+        user = session.get(User, int(user_id))
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive"
+            )
+        
+        # Create new access token
+        new_access_token = create_access_token(data={"sub": str(user.id)})
+        
+        return {
+            "access_token": new_access_token,
+            "token_type": "bearer"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate refresh token"
+        )
+
+
+@app.post("/auth/logout")
+def logout(current_user: User = Depends(get_current_active_user)):
+    """
+    Logout current user.
+    
+    Note: JWT tokens are stateless. Client should discard tokens.
+    This endpoint exists for logging/auditing purposes.
+    """
+    logger.info(f"User logged out: {current_user.email} (ID: {current_user.id})")
+    
+    return {"message": "Logged out successfully"}
+
+
+@app.get("/auth/me", response_model=UserRead)
+def get_current_user_profile(current_user: User = Depends(get_current_active_user)):
+    """
+    Get current authenticated user's profile.
+    
+    Requires valid JWT access token in Authorization header.
+    """
+    return current_user
+
+
+@app.put("/auth/me", response_model=UserRead)
+@limiter.limit("10/minute")
+def update_current_user_profile(
+    request: Request,
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Update current user's profile information.
+    
+    Can update: full_name, avatar_url
+    Cannot update: email, username, role, is_active (use admin endpoints)
+    
+    Rate limited to 10 updates per minute.
+    """
+    # Update allowed fields
+    if user_update.full_name is not None:
+        current_user.full_name = user_update.full_name
+    
+    if user_update.avatar_url is not None:
+        current_user.avatar_url = user_update.avatar_url
+    
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    
+    logger.info(f"User profile updated: {current_user.email} (ID: {current_user.id})")
+    
+    return current_user
+
+
+@app.put("/auth/me/password")
+@limiter.limit("5/minute")
+def change_password(
+    request: Request,
+    password_data: UserUpdatePassword,
+    current_user: User = Depends(get_current_active_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Change current user's password.
+    
+    Requires: current_password and new_password
+    Rate limited to 5 changes per minute.
+    """
+    # Verify current password
+    if not verify_password(password_data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect"
+        )
+    
+    # Validate new password strength
+    is_valid, error_msg = validate_password_strength(password_data.new_password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    # Update password
+    current_user.hashed_password = get_password_hash(password_data.new_password)
+    session.add(current_user)
+    session.commit()
+    
+    logger.info(f"Password changed: {current_user.email} (ID: {current_user.id})")
+    
+    return {"message": "Password updated successfully"}
+
+
+# Admin-only user management endpoints
+
+@app.get("/users", response_model=List[UserRead])
+def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(require_role("admin")),
+    session: Session = Depends(get_session)
+):
+    """
+    List all users (admin only).
+    
+    Requires admin role.
+    """
+    statement = select(User).offset(skip).limit(limit)
+    users = session.exec(statement).all()
+    return users
+
+
+@app.get("/users/{user_id}", response_model=UserRead)
+def get_user(
+    user_id: int,
+    current_user: User = Depends(require_role("admin")),
+    session: Session = Depends(get_session)
+):
+    """
+    Get specific user by ID (admin only).
+    
+    Requires admin role.
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@app.put("/users/{user_id}", response_model=UserRead)
+@limiter.limit("20/minute")
+def update_user(
+    request: Request,
+    user_id: int,
+    user_update: UserUpdate,
+    current_user: User = Depends(require_role("admin")),
+    session: Session = Depends(get_session)
+):
+    """
+    Update user information (admin only).
+    
+    Can update: email, username, full_name, role, is_active, avatar_url
+    Requires admin role.
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update fields
+    if user_update.email is not None:
+        # Check email uniqueness
+        existing = session.exec(select(User).where(User.email == user_update.email, User.id != user_id)).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already in use")
+        user.email = user_update.email
+    
+    if user_update.username is not None:
+        # Check username uniqueness
+        existing = session.exec(select(User).where(User.username == user_update.username, User.id != user_id)).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Username already in use")
+        user.username = user_update.username
+    
+    if user_update.full_name is not None:
+        user.full_name = user_update.full_name
+    
+    if user_update.role is not None:
+        if user_update.role not in ["admin", "analyst", "viewer"]:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        user.role = user_update.role
+    
+    if user_update.is_active is not None:
+        user.is_active = user_update.is_active
+    
+    if user_update.avatar_url is not None:
+        user.avatar_url = user_update.avatar_url
+    
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    
+    logger.info(f"User {user.id} updated by admin {current_user.id}")
+    
+    return user
+
+
+@app.delete("/users/{user_id}")
+@limiter.limit("10/minute")
+def delete_user(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(require_role("admin")),
+    session: Session = Depends(get_session)
+):
+    """
+    Delete user (admin only).
+    
+    Cannot delete yourself. Requires admin role.
+    """
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    session.delete(user)
+    session.commit()
+    
+    logger.info(f"User {user_id} deleted by admin {current_user.id}")
+    
+    return {"message": "User deleted successfully"}
+
+
 # --- Endpoint: Project Management ---
 
 @app.post("/projects/", response_model=Project)
@@ -781,6 +1220,63 @@ def get_all_projects_with_stats(session: Session = Depends(get_session)):
         })
     
     return projects_with_stats
+
+@app.get("/projects/stats")
+def get_portfolio_stats(session: Session = Depends(get_session)):
+    """Returns aggregated statistics across all projects for portfolio dashboard."""
+    # Get all projects
+    total_projects = session.exec(
+        select(func.count(Project.id))
+    ).one()
+    
+    active_projects = session.exec(
+        select(func.count(Project.id)).where(Project.is_archived == False)
+    ).one()
+    
+    archived_projects = total_projects - active_projects
+    
+    # Get all findings with risk ratings
+    findings = session.exec(select(Finding)).all()
+    
+    # Count by risk level
+    critical_findings = sum(1 for f in findings if f.risk_rating == 'Critical')
+    high_findings = sum(1 for f in findings if f.risk_rating == 'High')
+    medium_findings = sum(1 for f in findings if f.risk_rating == 'Medium')
+    low_findings = sum(1 for f in findings if f.risk_rating == 'Low')
+    informational_findings = sum(1 for f in findings if f.risk_rating == 'Informational')
+    
+    total_findings = len(findings)
+    avg_findings_per_project = total_findings / total_projects if total_projects > 0 else 0
+    
+    # Count projects with critical findings
+    projects_with_critical = session.exec(
+        select(func.count(func.distinct(Finding.project_id)))
+        .where(Finding.risk_rating == 'Critical')
+    ).one()
+    
+    # Get most recent upload date
+    most_recent_instance = session.exec(
+        select(Instance)
+        .order_by(Instance.created_at.desc())
+        .limit(1)
+    ).first()
+    
+    most_recent_upload = most_recent_instance.created_at if most_recent_instance else None
+    
+    return {
+        'total_projects': total_projects,
+        'active_projects': active_projects,
+        'archived_projects': archived_projects,
+        'total_findings': total_findings,
+        'critical_findings': critical_findings,
+        'high_findings': high_findings,
+        'medium_findings': medium_findings,
+        'low_findings': low_findings,
+        'informational_findings': informational_findings,
+        'avg_findings_per_project': round(avg_findings_per_project, 2),
+        'projects_with_critical': projects_with_critical,
+        'most_recent_upload': most_recent_upload
+    }
 
 @app.get("/projects/{project_id}", response_model=ProjectReadWithFindings) # Using the corrected model name
 def read_project(project_id: int, session: Session = Depends(get_session)):

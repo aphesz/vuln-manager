@@ -1,234 +1,111 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { Link } from 'react-router-dom'
-import { useTheme, Box, IconButton, Button, Menu, MenuItem } from '@mui/material'
+import { useTheme, AppBar, Toolbar, Box, IconButton, Typography, useMediaQuery } from '@mui/material'
 import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
-  Assessment as SLAIcon,
-  Security as SecurityIcon,
-  Calculate as CalculateIcon,
-  KeyboardArrowDown as ArrowDownIcon,
-  LocalOffer as TagIcon,
-  Dashboard as ExecutiveIcon,
-  Description as ReportIcon,
+  Menu as MenuIcon,
+  MenuOpen as MenuOpenIcon,
 } from '@mui/icons-material'
 import { useThemeContext } from '../theme/ThemeProvider'
+import UserMenu from './UserMenu'
+import { useAuth } from '../contexts/AuthContext'
 
-const AppHeader = () => {
+interface AppHeaderProps {
+  onMenuClick?: () => void;
+  showMenuButton?: boolean;
+  sidebarHidden?: boolean;
+  onShowSidebar?: () => void;
+}
+
+const AppHeader: React.FC<AppHeaderProps> = ({ onMenuClick, showMenuButton = false, sidebarHidden = false, onShowSidebar }) => {
   const theme = useTheme()
   const { mode, toggleTheme } = useThemeContext()
-  const [calculatorMenuAnchor, setCalculatorMenuAnchor] = useState<null | HTMLElement>(null)
-  
-  const handleCalculatorMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setCalculatorMenuAnchor(event.currentTarget)
-  }
-  
-  const handleCalculatorMenuClose = () => {
-    setCalculatorMenuAnchor(null)
-  }
+  const { isAuthenticated } = useAuth()
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   
   return (
-    <Box
-      component="header"
+    <AppBar
+      position="fixed"
+      sx={{
+        zIndex: (theme) => theme.zIndex.drawer + 1,
+        backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#343a40',
+      }}
       role="banner"
       aria-label="Application header"
-      sx={{
-        backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#343a40',
-        color: '#ffffff',
-        padding: '15px 20px',
-        marginBottom: '20px',
-        boxShadow: theme.shadows[1],
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}
     >
-      <Link to="/" style={{ textDecoration: 'none' }} aria-label="Go to dashboard home">
-        <Box
-          component="h1"
-          sx={{
-            fontSize: '1.2em',
-            fontWeight: 500,
-            color: '#ffffff',
-            '&:hover': {
-              color: theme.palette.primary.light,
-            },
-            cursor: 'pointer',
-            margin: 0,
-          }}
-        >
-          🛡️ VulnManager Dashboard
+      <Toolbar>
+        {showMenuButton && isMobile && (
+          <IconButton
+            edge="start"
+            color="inherit"
+            aria-label="Open navigation menu"
+            onClick={onMenuClick}
+            sx={{ mr: 2 }}
+          >
+            <MenuIcon />
+          </IconButton>
+        )}
+        
+        {/* Show sidebar button when hidden on desktop */}
+        {showMenuButton && !isMobile && sidebarHidden && onShowSidebar && (
+          <IconButton
+            edge="start"
+            color="inherit"
+            aria-label="Show navigation sidebar"
+            onClick={onShowSidebar}
+            sx={{ mr: 2 }}
+          >
+            <MenuOpenIcon />
+          </IconButton>
+        )}
+        
+        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }} aria-label="Go to dashboard home">
+          <Typography
+            variant="h6"
+            component="h1"
+            sx={{
+              fontWeight: 500,
+              color: '#ffffff',
+              '&:hover': {
+                color: theme.palette.primary.light,
+              },
+              cursor: 'pointer',
+              fontSize: { xs: '1.1rem', sm: '1.2rem' },
+            }}
+          >
+            🛡️ VulnManager
+          </Typography>
+        </Link>
+        
+        <Box sx={{ flexGrow: 1 }} />
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton 
+            onClick={toggleTheme}
+            size="large"
+            aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode (current: ${mode} mode)`}
+            aria-pressed={mode === 'dark'}
+            sx={{
+              color: '#ffffff',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              },
+              '&:focus-visible': {
+                outline: `2px solid ${theme.palette.primary.main}`,
+                outlineOffset: '2px',
+              },
+            }}
+            title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {mode === 'dark' ? <LightModeIcon aria-hidden="true" /> : <DarkModeIcon aria-hidden="true" />}
+          </IconButton>
+          
+          {/* User Menu - only show when authenticated */}
+          {isAuthenticated && <UserMenu />}
         </Box>
-      </Link>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Button
-          component={Link}
-          to="/tags"
-          variant="outlined"
-          startIcon={<TagIcon />}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="View tag manager"
-        >
-          Tags
-        </Button>
-        <Button
-          component={Link}
-          to="/executive"
-          variant="outlined"
-          startIcon={<ExecutiveIcon />}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="View executive dashboard"
-        >
-          Executive
-        </Button>
-        <Button
-          component={Link}
-          to="/reports"
-          variant="outlined"
-          startIcon={<ReportIcon />}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="Generate reports"
-        >
-          Reports
-        </Button>
-        <Button
-          component={Link}
-          to="/custom-templates"
-          variant="outlined"
-          startIcon={<ReportIcon />}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="Custom report templates"
-        >
-          Templates
-        </Button>
-        <Button
-          component={Link}
-          to="/vulnerability-repository"
-          variant="outlined"
-          startIcon={<SecurityIcon />}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="View vulnerability repository"
-        >
-          Vuln Repository
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<CalculateIcon />}
-          endIcon={<ArrowDownIcon />}
-          onClick={handleCalculatorMenuOpen}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="Open calculators menu"
-        >
-          Calculators
-        </Button>
-        <Menu
-          anchorEl={calculatorMenuAnchor}
-          open={Boolean(calculatorMenuAnchor)}
-          onClose={handleCalculatorMenuClose}
-          anchorOrigin={{
-            vertical: 'bottom',
-            horizontal: 'right',
-          }}
-          transformOrigin={{
-            vertical: 'top',
-            horizontal: 'right',
-          }}
-        >
-          <MenuItem
-            component={Link}
-            to="/calculators/cvss"
-            onClick={handleCalculatorMenuClose}
-          >
-            CVSS 3.1 Calculator
-          </MenuItem>
-          <MenuItem
-            component={Link}
-            to="/calculators/owasp"
-            onClick={handleCalculatorMenuClose}
-          >
-            OWASP Risk Calculator
-          </MenuItem>
-        </Menu>
-        <Button
-          component={Link}
-          to="/sla"
-          variant="outlined"
-          startIcon={<SLAIcon />}
-          sx={{
-            color: '#ffffff',
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            '&:hover': {
-              borderColor: theme.palette.primary.light,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-          }}
-          aria-label="View SLA dashboard"
-        >
-          SLA Dashboard
-        </Button>
-        <IconButton 
-          onClick={toggleTheme}
-          size="large"
-          aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode (current: ${mode} mode)`}
-          aria-pressed={mode === 'dark'}
-          sx={{
-            color: '#ffffff',
-            '&:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            },
-            '&:focus-visible': {
-              outline: `2px solid ${theme.palette.primary.main}`,
-              outlineOffset: '2px',
-            },
-          }}
-          title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {mode === 'dark' ? <LightModeIcon aria-hidden="true" /> : <DarkModeIcon aria-hidden="true" />}
-        </IconButton>
-      </Box>
-    </Box>
+      </Toolbar>
+    </AppBar>
   )
 }
 

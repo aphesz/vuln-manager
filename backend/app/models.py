@@ -91,6 +91,53 @@ class InstanceBase(SQLModel):
 
 # --- Table Models ---
 
+# User & Authentication Models
+class UserBase(SQLModel):
+    """Base model for user."""
+    email: str = Field(..., unique=True, index=True, max_length=255)
+    username: str = Field(..., unique=True, index=True, max_length=100)
+    full_name: Optional[str] = Field(default=None, max_length=255)
+    role: str = Field(default="viewer", max_length=50)  # admin, analyst, viewer
+    is_active: bool = Field(default=True)
+    is_superuser: bool = Field(default=False)
+    avatar_url: Optional[str] = Field(default=None, max_length=500)
+
+class User(UserBase, table=True):
+    """Database model for User with authentication."""
+    __tablename__ = "users"  # Avoid PostgreSQL reserved "user" type name
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    hashed_password: str = Field(..., max_length=255)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    last_login: Optional[datetime] = Field(default=None)
+
+class UserRead(UserBase):
+    """Model for reading user data (no password)."""
+    id: int
+    created_at: datetime
+    last_login: Optional[datetime]
+
+class UserCreate(SQLModel):
+    """Model for creating a new user."""
+    email: str
+    username: str
+    password: str
+    full_name: Optional[str] = None
+    role: str = "viewer"
+
+class UserUpdate(SQLModel):
+    """Model for updating user profile."""
+    email: Optional[str] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+class UserUpdatePassword(SQLModel):
+    """Model for changing password."""
+    current_password: str
+    new_password: str
+
+# Project Models
 class Project(ProjectBase, table=True):
     """Database model for a project."""
     id: Optional[int] = Field(default=None, primary_key=True)
