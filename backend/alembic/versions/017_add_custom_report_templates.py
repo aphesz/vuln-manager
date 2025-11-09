@@ -1,7 +1,7 @@
 """add custom report templates
 
 Revision ID: 017
-Revises: 016
+Revises: 014
 Create Date: 2025-11-08
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '017'
-down_revision = '016'
+down_revision = '014'
 branch_labels = None
 depends_on = None
 

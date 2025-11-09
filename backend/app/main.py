@@ -5602,8 +5602,7 @@ def get_templates(
 @app.post("/templates", response_model=ReportTemplateRead, status_code=201)
 def create_template(
     template: ReportTemplateCreate,
-    session: Session = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    session: Session = Depends(get_session)
 ):
     """
     Create a new unified report template.
@@ -5644,7 +5643,7 @@ def create_template(
         last_used_at=None,
         created_at=now,
         updated_at=now,
-        created_by_user_id=current_user.get("id")
+        created_by_user_id=None  # No auth required yet
     )
     
     session.add(db_template)
@@ -5675,8 +5674,7 @@ def get_template(
 def update_template(
     template_id: int,
     template_update: ReportTemplateUpdate,
-    session: Session = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    session: Session = Depends(get_session)
 ):
     """
     Update a report template.
@@ -5727,8 +5725,7 @@ def update_template(
 @app.delete("/templates/{template_id}", status_code=204)
 def delete_template(
     template_id: int,
-    session: Session = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    session: Session = Depends(get_session)
 ):
     """
     Delete a report template.

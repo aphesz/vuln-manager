@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom'
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom'
 import { Box } from '@mui/material'
 import AppHeader from './components/AppHeader'
 import { Sidebar } from './components/Sidebar'
@@ -117,10 +117,14 @@ const App = () => {
               <Route path="/tags" element={<ProtectedRoute><TagManager /></ProtectedRoute>} />
               <Route path="/calculators/cvss" element={<ProtectedRoute><CVSSCalculatorPage /></ProtectedRoute>} />
               <Route path="/calculators/owasp" element={<ProtectedRoute><OWASPCalculatorPage /></ProtectedRoute>} />
-              <Route path="/custom-templates" element={<ProtectedRoute><CustomTemplateLibrary /></ProtectedRoute>} />
-              <Route path="/custom-templates/new" element={<ProtectedRoute><CustomTemplateBuilder /></ProtectedRoute>} />
-              <Route path="/custom-templates/:templateId/edit" element={<ProtectedRoute><CustomTemplateBuilder /></ProtectedRoute>} />
+              
+              {/* Unified Report Templates - replaces old /custom-templates */}
               <Route path="/templates/reports" element={<ProtectedRoute><ReportTemplates /></ProtectedRoute>} />
+              
+              {/* Redirect old custom-templates routes to unified templates page */}
+              <Route path="/custom-templates" element={<Navigate to="/templates/reports" replace />} />
+              <Route path="/custom-templates/new" element={<Navigate to="/templates/reports" replace />} />
+              <Route path="/custom-templates/:templateId/edit" element={<Navigate to="/templates/reports" replace />} />
               
               {/* User profile route */}
               <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
