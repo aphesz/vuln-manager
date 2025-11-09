@@ -10,6 +10,7 @@ services:
     environment:
       # Connection to the 'db' service
       - DATABASE_URL=postgresql://pgakar:katakunci@db:5432/vulndb
+      - MPLCONFIGDIR=/tmp/matplotlib
     working_dir: /
     # Using production settings from Dockerfile
     depends_on:
