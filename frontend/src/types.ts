@@ -171,3 +171,15 @@ export interface FindingCreate {
   instances: InstanceCreate[];
   issue_status?: IssueStatus;
 }
+
+// Navigation Types
+export interface NavigationItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  path?: string;
+  badge?: string | number;
+  badgeColor?: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+  children?: NavigationItem[];
+  divider?: boolean; // Show divider after this item
+}

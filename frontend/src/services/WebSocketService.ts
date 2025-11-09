@@ -39,11 +39,10 @@ class WebSocketService {
       return;
     }
 
-    // Build WebSocket URL - connect directly to backend WebSocket endpoint
+    // Build WebSocket URL - use relative path to go through nginx proxy
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const host = window.location.hostname;
-    const port = window.location.protocol === 'https:' ? '8000' : '8000';
-    const wsUrl = `${protocol}://${host}:${port}/ws/${this.projectId}`;
+    const host = window.location.host; // Use .host instead of .hostname to include port
+    const wsUrl = `${protocol}://${host}/ws/${this.projectId}`;
     
     try {
       this.ws = new WebSocket(wsUrl);

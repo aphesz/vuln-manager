@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -16,9 +16,23 @@ import {
   Box,
   Typography,
   Chip,
+  TextField,
+  MenuItem,
+  Select,
+  InputLabel,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { RiskRating, IssueStatus } from '../types';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
+
+interface ReportTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  template_type: string;
+  variables: string;
+}
 
 interface ExportDialogProps {
   open: boolean;
@@ -28,7 +42,7 @@ interface ExportDialogProps {
 }
 
 export interface ExportOptions {
-  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive';
+  format: 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive' | 'template';
   columns: string[];
   filters: {
     risk?: RiskRating[];
@@ -40,6 +54,10 @@ export interface ExportOptions {
     companyName?: string;
     customHeader?: string;
     customFooter?: string;
+  };
+  templateOptions?: {
+    templateId?: number;
+    variables?: Record<string, any>;
   };
 }
 
@@ -74,7 +92,7 @@ const RISK_COLORS: Record<RiskRating, { bg: string; text: string }> = {
 };
 
 export default function ExportDialog({ open, onClose, onExport, projectId }: ExportDialogProps) {
-  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive'>('excel');
+  const [format, setFormat] = useState<'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive' | 'template'>('excel');
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
     AVAILABLE_COLUMNS.filter(c => c.defaultChecked).map(c => c.key)
   );
@@ -87,6 +105,47 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
   const [companyName, setCompanyName] = useState('');
   const [customHeader, setCustomHeader] = useState('');
   const [customFooter, setCustomFooter] = useState('');
+
+  // Template options
+  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [templateVariables, setTemplateVariables] = useState<Record<string, any>>({});
+
+  // Load templates when dialog opens
+  useEffect(() => {
+    if (open && format === 'template') {
+      loadTemplates();
+    }
+  }, [open, format]);
+
+  const loadTemplates = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/templates`);
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data);
+      }
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    }
+  };
+
+  const handleTemplateSelect = (templateId: number) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find(t => t.id === templateId);
+    if (template && template.variables) {
+      try {
+        const vars = JSON.parse(template.variables);
+        const defaults: Record<string, any> = {};
+        vars.forEach((v: any) => {
+          defaults[v.name] = v.default;
+        });
+        setTemplateVariables(defaults);
+      } catch (e) {
+        setTemplateVariables({});
+      }
+    }
+  };
 
   const handleColumnToggle = (columnKey: string) => {
     setSelectedColumns(prev =>
@@ -143,6 +202,10 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
         customHeader: customHeader.trim() || undefined,
         customFooter: customFooter.trim() || undefined,
       } : undefined,
+      templateOptions: format === 'template' ? {
+        templateId: selectedTemplateId || undefined,
+        variables: templateVariables,
+      } : undefined,
     };
     onExport(options);
     onClose();
@@ -158,6 +221,8 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
     setCompanyName('');
     setCustomHeader('');
     setCustomFooter('');
+    setSelectedTemplateId(null);
+    setTemplateVariables({});
   };
 
   return (
@@ -169,8 +234,9 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
           <FormLabel component="legend">Export Format</FormLabel>
           <RadioGroup
             value={format}
-            onChange={(e) => setFormat(e.target.value as 'excel' | 'csv' | 'json' | 'markdown' | 'docx' | 'pdf' | 'executive')}
+            onChange={(e) => setFormat(e.target.value as any)}
           >
+            <FormControlLabel value="template" control={<Radio />} label="📋 From Template - Use custom report template" />
             <FormControlLabel value="executive" control={<Radio />} label="📊 Executive Report (PDF) - Summary with charts" />
             <Divider sx={{ my: 1 }} />
             <FormControlLabel value="excel" control={<Radio />} label="Excel (.xlsx) - Spreadsheet with data analysis" />
@@ -181,6 +247,7 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
             <FormControlLabel value="pdf" control={<Radio />} label="PDF (.pdf) - Detailed technical report" />
           </RadioGroup>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            {format === 'template' && '💡 Generate custom report from pre-defined template with your variables'}
             {format === 'executive' && '💡 Best for: Stakeholder presentations, executive summaries, high-level overviews'}
             {format === 'json' && '💡 Best for: API integrations, automated processing, CI/CD pipelines'}
             {format === 'markdown' && '💡 Best for: GitHub/GitLab wikis, technical documentation, sharing with developers'}
@@ -192,6 +259,62 @@ export default function ExportDialog({ open, onClose, onExport, projectId }: Exp
         </FormControl>
 
         <Divider sx={{ my: 2 }} />
+
+        {/* Template Report Options - Only show for template format */}
+        {format === 'template' && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Template Report Options
+            </Typography>
+            
+            {templates.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ my: 2 }}>
+                Loading templates...
+              </Typography>
+            ) : (
+              <>
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel id="template-select-label">Select Template</InputLabel>
+                  <Select
+                    labelId="template-select-label"
+                    value={selectedTemplateId || ''}
+                    label="Select Template"
+                    onChange={(e) => handleTemplateSelect(Number(e.target.value))}
+                  >
+                    {templates.map((template) => (
+                      <MenuItem key={template.id} value={template.id}>
+                        {template.name}
+                        {template.description && (
+                          <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                            - {template.description}
+                          </Typography>
+                        )}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                {selectedTemplateId && Object.keys(templateVariables).length > 0 && (
+                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <Typography variant="body2" gutterBottom>
+                      Customize Template Variables
+                    </Typography>
+                    {Object.entries(templateVariables).map(([key, value]) => (
+                      <TextField
+                        key={key}
+                        label={key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                        value={value}
+                        onChange={(e) => setTemplateVariables({ ...templateVariables, [key]: e.target.value })}
+                        fullWidth
+                        size="small"
+                      />
+                    ))}
+                  </Box>
+                )}
+              </>
+            )}
+          </Box>
+        )}
 
         {/* Executive Report Options - Only show for executive format */}
         {format === 'executive' && (

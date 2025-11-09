@@ -223,6 +223,36 @@ const Dashboard = () => {
     if (!project) return;
 
     try {
+      // Handle Template Report (new)
+      if (options.format === 'template') {
+        if (!options.templateOptions?.templateId) {
+          showError('Please select a template');
+          return;
+        }
+
+        const response = await axios.post(
+          `${API_BASE_URL}/projects/${projectId}/reports/from-template`,
+          {
+            template_id: options.templateOptions.templateId,
+            variables: options.templateOptions.variables || {},
+          },
+          { responseType: 'blob' }
+        );
+
+        // Create download link for PDF
+        const blob = new Blob([response.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${project.name}_template_report.pdf`;
+        link.click();
+        window.URL.revokeObjectURL(url);
+
+        showSuccess('Template report generated successfully!');
+        setExportDialogOpen(false);
+        return;
+      }
+
       // Handle Executive Report (new)
       if (options.format === 'executive') {
         const params = new URLSearchParams();

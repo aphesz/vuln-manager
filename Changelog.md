@@ -8,6 +8,168 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### v1.0.0 - User Management & Authentication 🔐 IN PROGRESS
+**Started:** 2025-11-09  
+**Status:** 🚧 **PHASE 1 COMPLETE** - Backend authentication implemented
+
+#### Overview
+Complete JWT-based authentication system with user management, role-based access control (RBAC), and secure password hashing. Multi-phase implementation: backend → frontend → admin UI → migration.
+
+#### Phase 1: Backend Authentication ✅ COMPLETE
+- [x] **Authentication Infrastructure**
+  - JWT access tokens (30 min expiry) + refresh tokens (7 days)
+  - Argon2 password hashing (OWASP recommended)
+  - Password strength validation (8+ chars, uppercase, lowercase, digit)
+  - OAuth2 password bearer flow compatible
+  
+- [x] **User Database Models**
+  - User table with email, username, hashed_password, role, is_active, is_superuser
+  - Timestamps: created_at, last_login
+  - Indexes on email, username, created_at
+  - Role-based access: admin, analyst, viewer
+  
+- [x] **Public Auth Endpoints**
+  - `POST /auth/register` - User registration (rate limited: 5/min)
+  - `POST /auth/login` - Login with email + password (rate limited: 10/min)
+  - `POST /auth/refresh` - Refresh access token (rate limited: 20/min)
+  - `POST /auth/logout` - Logout (logging/auditing)
+  
+- [x] **Protected User Endpoints**
+  - `GET /auth/me` - Get current user profile
+  - `PUT /auth/me` - Update profile (full_name, avatar_url)
+  - `PUT /auth/me/password` - Change password
+  
+- [x] **Admin-Only Endpoints**
+  - `GET /users` - List all users (pagination)
+  - `GET /users/{user_id}` - Get specific user
+  - `PUT /users/{user_id}` - Update user (email, username, role, is_active)
+  - `DELETE /users/{user_id}` - Delete user (cannot delete self)
+  
+- [x] **Security Features**
+  - Rate limiting on all auth endpoints
+  - Email/username uniqueness validation
+  - Password strength enforcement
+  - Role-based access control (RBAC)
+  - JWT token validation with type checking (access vs refresh)
+
+#### Phase 2: Frontend Auth Components � PLANNED
+- [ ] **AuthContext** - Global authentication state management
+- [ ] **LoginPage** - Email + password form with error handling
+- [ ] **RegisterPage** - User registration with password strength indicator
+- [ ] **ProtectedRoute** - HOC wrapper for authenticated routes
+- [ ] **UserMenu** - Dropdown in AppHeader with profile/logout
+- [ ] **ProfilePage** - Edit profile information and change password
+
+#### Phase 3: Admin User Management UI 🚧 PLANNED
+- [ ] **UserListPage** - Admin-only user management interface
+- [ ] **UserEditDialog** - Edit user details (role, active status, etc.)
+- [ ] **RoleManagement** - Assign/modify user roles
+
+#### Phase 4: Database Migration & Seeding 🚧 PLANNED
+- [ ] Alembic migration for users table
+- [ ] Seed default admin user (email: admin@vulnmanager.local, password: changeme123)
+- [ ] Migration guide for existing deployments
+
+#### Technical Details
+**Dependencies:**
+- `python-jose[cryptography]>=3.3.0` - JWT token generation/validation
+- `argon2-cffi>=23.1.0` - Modern password hashing (better than bcrypt)
+
+**Files Created/Modified:**
+- `backend/app/auth.py` (NEW) - Authentication utilities
+- `backend/app/models.py` - User models added
+- `backend/app/main.py` - Auth endpoints and dependencies added
+- `backend/requirements.txt` - Auth dependencies added
+
+**Test Results:** ✅ ALL TESTS PASSED
+- User registration, login, token refresh working
+- Protected endpoints correctly gated
+- Admin role authorization working
+- Password validation enforcing rules
+
+---
+
+### v0.10.0 - Holistic Dashboard ✅ COMPLETE
+**Started:** 2025-11-09  
+**Expected Completion:** 2025-11-23  
+**Status:** 🚀 **PLANNING PHASE** - Replacing top navigation with left sidebar
+
+#### Overview
+Major UI/UX enhancement replacing top-right button navigation with a modern, collapsible left sidebar. Pure frontend change with zero backend modifications.
+
+#### Planned Features
+- [ ] **Collapsible Left Sidebar**
+  - Persistent navigation across all pages
+  - 280px expanded, 64px collapsed
+  - Smooth toggle animations
+  - State persistence via localStorage
+  
+- [ ] **Hierarchical Navigation**
+  - Icon + label for all items
+  - Nested groups (expandable/collapsible)
+  - Active route highlighting
+  - Badge support for counts/alerts
+  
+- [ ] **Responsive Design**
+  - Desktop: Always visible, toggles between expanded/collapsed
+  - Tablet: Starts collapsed, expands on hover/click
+  - Mobile: Hidden by default, hamburger menu overlay
+  
+- [ ] **Accessibility**
+  - Full keyboard navigation (Tab, Arrow keys, Enter)
+  - Screen reader support (ARIA labels)
+  - Focus management
+  - WCAG 2.1 AA compliance
+
+#### Navigation Structure
+```
+├── 📊 Dashboard
+├── 📁 Projects
+├── 📚 Vulnerability Repository
+│   ├── Template Library
+│   ├── CVSS Calculator
+│   ├── OWASP Calculator
+│   └── Import Tools
+├── 📈 Reports & Analytics
+│   └── Executive Dashboard
+├── 🔧 Calculators
+│   ├── CVSS 3.1 Calculator
+│   └── OWASP Risk Calculator
+└── (Future: Settings, User Profile)
+```
+
+#### Technical Details
+**New Components** (~660 lines):
+- `Sidebar.tsx` (350 lines) - Main container with toggle
+- `NavigationItem.tsx` (120 lines) - Individual nav items
+- `NavigationGroup.tsx` (150 lines) - Collapsible groups
+- `useSidebarState.ts` (40 lines) - State management hook
+
+**Modified Components**:
+- `App.tsx` - Add sidebar, adjust layout margins
+- `AppHeader.tsx` - Remove nav buttons, add mobile hamburger
+- `types.ts` - Add NavigationItem interface
+
+**No Backend Changes**: Pure frontend enhancement
+
+#### Timeline
+- **Week 1**: Core components & layout integration (6-8 hours)
+- **Week 2**: Styling, polish, testing & migration (4-6 hours)
+- **Total**: 10-14 hours over 1-2 weeks
+
+#### Documentation
+- `V0.9.0_NAVIGATION_PLANNING.md` - Comprehensive planning document
+
+---
+
+### v0.8.4 - Executive Dashboards ✅ COMPLETE
+**Completed:** 2025-11-08  
+**Status:** ✅ **COMPLETE** - High-level executive analytics delivered
+
+(See below for full v0.8.4 details)
+
+---
+
 ### v0.8.3 - Compliance Mapping ✅ COMPLETE (95%)
 **Started:** 2025-11-07  
 **Completed:** 2025-01-XX  
