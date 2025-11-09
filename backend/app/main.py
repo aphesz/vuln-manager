@@ -2893,8 +2893,13 @@ def export_html_interactive(
         .status-partial {{ background: #fff9c4; color: #f57f17; }}
         .status-closed {{ background: #c8e6c9; color: #2e7d32; }}
         .expandable {{ cursor: pointer; color: #667eea; text-decoration: underline; }}
-        .details {{ display: none; padding: 15px; background: #f8f9fa; margin: 10px 0; border-left: 3px solid #667eea; }}
+        .details {{ display: none; padding: 20px; background: #f8f9fa; margin: 10px 0; border-left: 4px solid #667eea; border-radius: 4px; }}
         .details.show {{ display: block; }}
+        .details h3 {{ color: #667eea; margin-top: 15px; margin-bottom: 10px; font-size: 1.1rem; }}
+        .details h3:first-child {{ margin-top: 0; }}
+        .details p {{ line-height: 1.8; color: #444; margin-bottom: 15px; }}
+        .details ul {{ margin-left: 20px; }}
+        .details li {{ margin-bottom: 8px; line-height: 1.6; }}
     </style>
 </head>
 <body>
@@ -2964,6 +2969,8 @@ def export_html_interactive(
                 <tbody>"""
     
     # Add findings
+    import html as html_escape_lib
+    
     for finding in findings:
         instances = session.exec(
             select(Instance).where(Instance.finding_id == finding.id)
@@ -2972,10 +2979,19 @@ def export_html_interactive(
         risk_class = finding.risk_rating.lower()
         status_class = finding.issue_status.lower().replace(' ', '-')
         
+        # Escape HTML to prevent rendering issues
+        title_escaped = html_escape_lib.escape(finding.title or 'Untitled')
+        desc_escaped = html_escape_lib.escape(finding.description or 'No description provided')
+        rem_escaped = html_escape_lib.escape(finding.remediation or 'No remediation guidance provided')
+        
+        # Preserve line breaks
+        desc_escaped = desc_escaped.replace('\n', '<br>')
+        rem_escaped = rem_escaped.replace('\n', '<br>')
+        
         html_content += f"""
                     <tr data-risk="{finding.risk_rating}" data-status="{finding.issue_status}">
                         <td>{finding.id}</td>
-                        <td><strong>{finding.title}</strong></td>
+                        <td><strong>{title_escaped}</strong></td>
                         <td><span class="risk-badge risk-{risk_class}">{finding.risk_rating}</span></td>
                         <td><span class="status-badge status-{status_class}">{finding.issue_status}</span></td>
                         <td>{len(instances)}</td>
@@ -2984,16 +3000,18 @@ def export_html_interactive(
                     <tr id="details-{finding.id}" style="display: none;">
                         <td colspan="6">
                             <div class="details">
-                                <h3>Description</h3>
-                                <p>{finding.description or 'No description provided'}</p>
-                                <h3>Remediation</h3>
-                                <p>{finding.remediation or 'No remediation guidance provided'}</p>
-                                <h3>Instances ({len(instances)})</h3>
+                                <h3>📝 Description</h3>
+                                <p style="white-space: pre-wrap;">{desc_escaped}</p>
+                                <h3>🔧 Remediation</h3>
+                                <p style="white-space: pre-wrap;">{rem_escaped}</p>
+                                <h3>📍 Instances ({len(instances)})</h3>
                                 <ul>"""
         
         for instance in instances:
+            location_escaped = html_escape_lib.escape(instance.location or 'Unknown location')
+            details_escaped = html_escape_lib.escape(instance.details or 'No details')
             html_content += f"""
-                                    <li><strong>{instance.location}</strong> - {instance.details or 'No details'} (Status: {instance.status})</li>"""
+                                    <li><strong>{location_escaped}</strong> - {details_escaped} (Status: {instance.status})</li>"""
         
         html_content += """
                                 </ul>
