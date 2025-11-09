@@ -243,6 +243,48 @@ class FindingTag(SQLModel, table=True):
     tag_id: int = Field(foreign_key="tag.id", primary_key=True, index=True)
     created_at: datetime = Field(default=None)
 
+# --- Report Template Models (v1.1.0 - Advanced Reporting) ---
+
+class ReportTemplateBase(SQLModel):
+    """Base model for report templates."""
+    name: str = Field(..., index=True, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=500)
+    
+    class TemplateType(str, Enum):
+        """Enum for report template types."""
+        Executive = "Executive"
+        Technical = "Technical"
+        Compliance = "Compliance"
+        Custom = "Custom"
+    
+    template_type: TemplateType = Field(..., index=True)
+    
+    # Sections configuration stored as JSON
+    # Example: [
+    #   {"id": "title", "name": "Title Page", "enabled": true, "order": 1},
+    #   {"id": "summary", "name": "Executive Summary", "enabled": true, "order": 2},
+    #   {"id": "charts", "name": "Charts", "enabled": true, "order": 3, "settings": {"include_pie": true, "include_line": true}},
+    #   {"id": "findings", "name": "Findings List", "enabled": true, "order": 4, "settings": {"group_by": "risk", "max_items": 10}}
+    # ]
+    sections: str = Field(default="[]")  # JSON string
+    
+    # Variables that can be customized when using the template
+    # Example: [
+    #   {"name": "company_name", "label": "Company Name", "type": "text", "required": false, "default": ""},
+    #   {"name": "include_charts", "label": "Include Charts", "type": "boolean", "required": false, "default": true},
+    #   {"name": "max_findings", "label": "Max Findings to Show", "type": "number", "required": false, "default": 10}
+    # ]
+    variables: str = Field(default="[]")  # JSON string
+    
+    is_system_template: bool = Field(default=False)  # True for built-in templates (cannot be deleted)
+
+class ReportTemplate(ReportTemplateBase, table=True):
+    """Database model for ReportTemplate."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default=None, index=True)
+    updated_at: datetime = Field(default=None)
+    created_by_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+
 # --- Vulnerability Repository Models ---
 
 class VulnerabilityTemplateBase(SQLModel):
@@ -845,6 +887,31 @@ class Recommendation(SQLModel):
     affected_findings: List[int]  # Finding IDs
     estimated_effort: Optional[str]  # "1 day", "1 week", etc.
     potential_impact: str
+
+# --- Report Template Read Models (v1.1.0) ---
+
+class ReportTemplateRead(ReportTemplateBase):
+    """Read model for report templates."""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    created_by_user_id: Optional[int]
+
+class ReportTemplateCreate(SQLModel):
+    """Model for creating report templates."""
+    name: str = Field(..., max_length=200)
+    description: Optional[str] = Field(default=None, max_length=500)
+    template_type: str = Field(...)  # "Executive", "Technical", "Compliance", "Custom"
+    sections: str = Field(default="[]")  # JSON string
+    variables: str = Field(default="[]")  # JSON string
+
+class ReportTemplateUpdate(SQLModel):
+    """Model for updating report templates (all fields optional)."""
+    name: Optional[str] = Field(default=None, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=500)
+    template_type: Optional[str] = Field(default=None)
+    sections: Optional[str] = Field(default=None)
+    variables: Optional[str] = Field(default=None)
 
 # Rebuild models to resolve forward references
 FindingReadWithInstances.model_rebuild()

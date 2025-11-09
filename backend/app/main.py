@@ -69,6 +69,10 @@ from app.models import (
     TagCreate,
     TagUpdate,
     FindingTag,
+    ReportTemplate,
+    ReportTemplateRead,
+    ReportTemplateCreate,
+    ReportTemplateUpdate,
 )
 
 # Use the RiskRating from FindingBase
@@ -2308,6 +2312,63 @@ def get_executive_report(
         file_path,
         media_type="application/pdf",
         filename=f"{project.name.replace(' ', '_')}_Executive_Report.pdf",
+    )
+
+
+@app.post("/projects/{project_id}/reports/from-template", response_class=FileResponse)
+def generate_report_from_template(
+    project_id: int,
+    template_id: int = Body(..., embed=True),
+    variables: Optional[dict] = Body(default=None, embed=True),
+    session: Session = Depends(get_session)
+):
+    """
+    Generate a report from a template.
+    
+    POST body:
+    {
+        "template_id": 1,
+        "variables": {
+            "company_name": "Acme Corp",
+            "include_charts": true,
+            "max_findings": 10
+        }
+    }
+    """
+    # Fetch project
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Fetch template
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"/tmp/report_{project_id}_{template_id}_{timestamp}.pdf"
+    
+    # Import render_template function
+    from app.reports import render_template
+    
+    # Generate the report from template
+    try:
+        render_template(
+            template=template,
+            project=project,
+            file_path=file_path,
+            variables=variables
+        )
+    except Exception as e:
+        print(f"Error generating report from template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+    
+    # Return the PDF file
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename=f"{project.name.replace(' ', '_')}_{template.name.replace(' ', '_')}.pdf",
     )
 
 
@@ -5501,6 +5562,174 @@ def get_finding_tags(
     ).all()
     
     return tags
+
+
+# =====================================================
+# REPORT TEMPLATE ENDPOINTS (v1.1.0)
+# =====================================================
+
+@app.get("/templates", response_model=List[ReportTemplateRead])
+def get_templates(
+    template_type: Optional[str] = Query(None, description="Filter by template type"),
+    session: Session = Depends(get_session)
+):
+    """
+    Get all report templates.
+    Optionally filter by template_type.
+    """
+    from app.models import ReportTemplate
+    
+    statement = select(ReportTemplate)
+    
+    if template_type:
+        statement = statement.where(ReportTemplate.template_type == template_type)
+    
+    statement = statement.order_by(ReportTemplate.is_system_template.desc(), ReportTemplate.name)
+    
+    templates = session.exec(statement).all()
+    
+    return templates
+
+
+@app.post("/templates", response_model=ReportTemplateRead, status_code=201)
+def create_template(
+    template: ReportTemplateCreate,
+    session: Session = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a new report template.
+    Only authenticated users can create templates.
+    """
+    from app.models import ReportTemplate
+    from app.timezone_utils import get_utc_now
+    
+    # Validate JSON fields
+    try:
+        json.loads(template.sections)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in sections field")
+    
+    try:
+        json.loads(template.variables)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in variables field")
+    
+    # Create template
+    now = get_utc_now()
+    db_template = ReportTemplate(
+        name=template.name,
+        description=template.description,
+        template_type=template.template_type,
+        sections=template.sections,
+        variables=template.variables,
+        is_system_template=False,
+        created_at=now,
+        updated_at=now,
+        created_by_user_id=current_user.get("id")
+    )
+    
+    session.add(db_template)
+    session.commit()
+    session.refresh(db_template)
+    
+    logger.info(f"Created report template: {db_template.id} - {db_template.name}")
+    
+    return db_template
+
+
+@app.get("/templates/{template_id}", response_model=ReportTemplateRead)
+def get_template(
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get a specific report template by ID."""
+    from app.models import ReportTemplate
+    
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    return template
+
+
+@app.put("/templates/{template_id}", response_model=ReportTemplateRead)
+def update_template(
+    template_id: int,
+    template_update: ReportTemplateUpdate,
+    session: Session = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update a report template.
+    System templates cannot be modified.
+    """
+    from app.models import ReportTemplate
+    from app.timezone_utils import get_utc_now
+    
+    db_template = session.get(ReportTemplate, template_id)
+    if not db_template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Prevent modification of system templates
+    if db_template.is_system_template:
+        raise HTTPException(status_code=403, detail="Cannot modify system templates")
+    
+    # Update fields
+    if template_update.name is not None:
+        db_template.name = template_update.name
+    if template_update.description is not None:
+        db_template.description = template_update.description
+    if template_update.template_type is not None:
+        db_template.template_type = template_update.template_type
+    if template_update.sections is not None:
+        try:
+            json.loads(template_update.sections)
+            db_template.sections = template_update.sections
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON in sections field")
+    if template_update.variables is not None:
+        try:
+            json.loads(template_update.variables)
+            db_template.variables = template_update.variables
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON in variables field")
+    
+    db_template.updated_at = get_utc_now()
+    
+    session.add(db_template)
+    session.commit()
+    session.refresh(db_template)
+    
+    logger.info(f"Updated report template: {template_id}")
+    
+    return db_template
+
+
+@app.delete("/templates/{template_id}", status_code=204)
+def delete_template(
+    template_id: int,
+    session: Session = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a report template.
+    System templates cannot be deleted.
+    """
+    from app.models import ReportTemplate
+    
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Prevent deletion of system templates
+    if template.is_system_template:
+        raise HTTPException(status_code=403, detail="Cannot delete system templates")
+    
+    session.delete(template)
+    session.commit()
+    
+    logger.info(f"Deleted report template: {template_id} - {template.name}")
 
 
 # =====================================================

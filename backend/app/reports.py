@@ -751,3 +751,212 @@ def generate_executive_report_pdf(
     except Exception as e:
         print(f"Error generating executive report PDF: {e}")
         raise
+
+# --- Template Rendering Engine (v1.1.0) ---
+
+def render_template(
+    template,
+    project,
+    file_path: str,
+    variables: Optional[dict] = None
+) -> None:
+    """
+    Render a report from a template.
+    
+    This function processes the template's sections configuration and generates
+    a PDF report based on the enabled sections and their settings.
+    
+    Args:
+        template: The ReportTemplate object with sections and variables config
+        project: The Project object including findings and instances
+        file_path: The path where the PDF file should be saved
+        variables: Dict of variable values to use (overrides template defaults)
+    """
+    import json
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+    
+    print(f"Rendering report from template: {template.name} for project: {project.name}")
+    
+    try:
+        # Parse template configuration
+        sections = json.loads(template.sections) if template.sections else []
+        template_vars = json.loads(template.variables) if template.variables else []
+        
+        # Build variable defaults dict
+        var_defaults = {var['name']: var.get('default') for var in template_vars}
+        
+        # Merge with provided variables
+        render_vars = {**var_defaults, **(variables or {})}
+        
+        # Sort sections by order
+        sections_sorted = sorted(
+            [s for s in sections if s.get('enabled', True)],
+            key=lambda x: x.get('order', 999)
+        )
+        
+        # Initialize PDF
+        doc = SimpleDocTemplate(file_path, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Process each section
+        for section in sections_sorted:
+            section_id = section.get('id')
+            section_settings = section.get('settings', {})
+            
+            if section_id == 'title':
+                # Title page section
+                company_name = render_vars.get('company_name', '')
+                
+                story.append(Spacer(1, 2*inch))
+                
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Title'],
+                    fontSize=28,
+                    textColor=colors.HexColor('#1976d2'),
+                    spaceAfter=30,
+                    alignment=1  # Center
+                )
+                story.append(Paragraph(f"Security Assessment Report", title_style))
+                story.append(Paragraph(f"<b>{project.name}</b>", styles['Title']))
+                
+                if company_name:
+                    story.append(Spacer(1, 0.5*inch))
+                    story.append(Paragraph(f"Prepared for: {company_name}", styles['Normal']))
+                
+                story.append(Spacer(1, 0.5*inch))
+                story.append(Paragraph(
+                    f"Report Date: {datetime.now().strftime('%B %d, %Y')}",
+                    styles['Normal']
+                ))
+                
+                if project.consultant_name:
+                    story.append(Paragraph(f"Consultant: {project.consultant_name}", styles['Normal']))
+                
+                story.append(PageBreak())
+            
+            elif section_id == 'summary':
+                # Executive summary section
+                story.append(Paragraph("Executive Summary", styles['Heading1']))
+                story.append(Spacer(1, 0.2*inch))
+                
+                # Calculate metrics
+                total_findings = len(project.findings) if project.findings else 0
+                risk_counts = {}
+                if project.findings:
+                    for finding in project.findings:
+                        risk = finding.risk_rating
+                        risk_counts[risk] = risk_counts.get(risk, 0) + 1
+                
+                # Summary text
+                summary_text = (
+                    f"This security assessment of <b>{project.name}</b> identified "
+                    f"<b>{total_findings}</b> finding{'s' if total_findings != 1 else ''} "
+                    f"across various risk levels."
+                )
+                story.append(Paragraph(summary_text, styles['Normal']))
+                story.append(Spacer(1, 0.3*inch))
+            
+            elif section_id == 'charts':
+                # Charts section
+                include_pie = section_settings.get('include_pie', True) and render_vars.get('include_charts', True)
+                include_line = section_settings.get('include_line', True) and render_vars.get('include_charts', True)
+                
+                if include_pie or include_line:
+                    story.append(Paragraph("Risk Analysis", styles['Heading1']))
+                    story.append(Spacer(1, 0.2*inch))
+                
+                if include_pie and project.findings:
+                    # Generate pie chart
+                    risk_counts = {}
+                    for finding in project.findings:
+                        risk = finding.risk_rating
+                        risk_counts[risk] = risk_counts.get(risk, 0) + 1
+                    
+                    chart_buffer = _generate_severity_pie_chart(risk_counts)
+                    if chart_buffer:
+                        img = Image(chart_buffer, width=6*inch, height=4*inch)
+                        story.append(img)
+                        story.append(Spacer(1, 0.3*inch))
+                
+                if include_line and project.findings:
+                    # Generate trend chart
+                    chart_buffer = _generate_trend_line_chart(project, None, None)
+                    if chart_buffer:
+                        img = Image(chart_buffer, width=6*inch, height=4*inch)
+                        story.append(img)
+                        story.append(Spacer(1, 0.3*inch))
+            
+            elif section_id == 'findings':
+                # Top findings section
+                max_items = section_settings.get('max_items', render_vars.get('max_findings', 10))
+                group_by = section_settings.get('group_by', 'risk')
+                
+                story.append(Paragraph(f"Top {max_items} Findings", styles['Heading1']))
+                story.append(Spacer(1, 0.2*inch))
+                
+                if project.findings:
+                    # Sort by risk rating
+                    RISK_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Informational']
+                    sorted_findings = sorted(
+                        project.findings,
+                        key=lambda f: RISK_ORDER.index(f.risk_rating) if f.risk_rating in RISK_ORDER else len(RISK_ORDER)
+                    )[:max_items]
+                    
+                    for i, finding in enumerate(sorted_findings, 1):
+                        # Finding title
+                        finding_title = f"{i}. {finding.title} ({finding.risk_rating})"
+                        story.append(Paragraph(finding_title, styles['Heading2']))
+                        
+                        # Description
+                        desc_clean = strip_html_tags(finding.description)
+                        if len(desc_clean) > 300:
+                            desc_clean = desc_clean[:300] + "..."
+                        story.append(Paragraph(desc_clean, styles['Normal']))
+                        story.append(Spacer(1, 0.2*inch))
+                else:
+                    story.append(Paragraph("No findings recorded.", styles['Normal']))
+            
+            elif section_id == 'recommendations':
+                # Recommendations section
+                story.append(Paragraph("Recommendations", styles['Heading1']))
+                story.append(Spacer(1, 0.2*inch))
+                
+                # Custom footer if provided
+                custom_footer = render_vars.get('custom_footer', '')
+                if custom_footer:
+                    story.append(Paragraph(custom_footer, styles['Normal']))
+                else:
+                    # Default recommendations based on risk profile
+                    if project.findings:
+                        critical_count = sum(1 for f in project.findings if f.risk_rating == 'Critical')
+                        high_count = sum(1 for f in project.findings if f.risk_rating == 'High')
+                        
+                        if critical_count > 0:
+                            story.append(Paragraph(
+                                f"• Immediate action required: Address {critical_count} critical finding(s)",
+                                styles['Normal']
+                            ))
+                        if high_count > 0:
+                            story.append(Paragraph(
+                                f"• High priority: Remediate {high_count} high-risk finding(s) within 30 days",
+                                styles['Normal']
+                            ))
+                        story.append(Paragraph(
+                            "• Implement regular security assessments",
+                            styles['Normal']
+                        ))
+                    else:
+                        story.append(Paragraph("Continue maintaining security best practices.", styles['Normal']))
+        
+        # Build PDF
+        doc.build(story)
+        print(f"Template report saved to {file_path}")
+        
+    except Exception as e:
+        print(f"Error rendering template report: {e}")
+        raise
