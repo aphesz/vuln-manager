@@ -1,11 +1,40 @@
 # 🗺️ VulnManager Project Roadmap
 
-**Last Updated:** November 9, 2025  
-**Version:** 0.8.4 (Complete) → 0.9.0 (In Progress - Navigation System)
+**Last Updated:** November 12, 2025  
+**Version:** 0.10.2 (Complete) → 0.11.0 (Planning)
 
 ---
 
-## 📊 Current Status (v0.8.1 Complete - Trend Analysis DELIVERED!)
+## 📊 Current Status (v0.10.2 Complete - Enhanced Finding Editability!)
+
+### 🎉 v0.10.2 Enhanced Finding Editability (November 12, 2025) - COMPLETE!
+**Comprehensive finding editing with risk rating fields and POC evidence**
+- ✅ Full inline editing for all finding fields (Description, Impact, References, Remediation)
+- ✅ Proof of Concept evidence system (image upload + description)
+- ✅ Instance CRUD operations (create, edit, delete inline)
+- ✅ Risk Rating fields (CWE, CVE, CVSS 3.1, OWASP metrics)
+- ✅ FindingArtifact model with file storage (/code/uploads/artifacts/)
+- ✅ 2 Alembic migrations (019: POC fields, 020: risk rating fields)
+- ✅ Extended PATCH /findings/{id} with 11+ new fields
+- ✅ Auto-save on blur (no dialog close)
+- ✅ UI improvements (wider dialog, reordered tabs)
+- ✅ Fixed React hooks violations and infinite re-render issues
+- ✅ Removed Jira column from findings table
+- **Total Effort:** 4 hours (2 backend, 2 frontend)
+- **Total Code:** ~1,200 lines across 5 files
+- **New Fields:** impact, references_url, poc_description, cwe_id, cve_id, cvss_vector, cvss_score, owasp_likelihood, owasp_impact, owasp_risk_rating
+
+### 🎉 v0.10.0 Report Templates & Export Formats (November 9, 2025) - COMPLETE!
+**Unified template system with 4 industry-standard export formats**
+- ✅ Unified report template system (merged custom + standard templates)
+- ✅ SARIF 2.1.0 export for CI/CD integration
+- ✅ DefectDojo XML import format
+- ✅ CycloneDX SBOM integration
+- ✅ OWASP Dependency-Check JSON format
+- ✅ Template CRUD with dual-mode support (simple + advanced layouts)
+- ✅ Frontend template manager with preview
+- ✅ Route consolidation (/templates/reports)
+- **Total Code:** ~2,800 lines across 12 files
 
 ### 🎉 v0.8.1 Trend Analysis (November 7, 2025) - COMPLETE!
 **Historical data visualization and security posture trends**

@@ -12,6 +12,69 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ## [Released]
 
+### v0.10.2 - Enhanced Finding Editability & Risk Rating Fields ✅ COMPLETE
+**Released:** 2025-11-12  
+**Status:** 🚀 **SHIPPED** - Full finding editing with comprehensive risk rating support
+
+#### Overview
+Comprehensive enhancement to finding management with full inline editing capabilities, proof-of-concept evidence upload, instance CRUD operations, and detailed risk rating fields including CWE/CVE/CVSS/OWASP metrics.
+
+#### Features Added
+- [x] **Full Finding Field Editing**
+  - All core fields now editable: Description, Impact, References URL, Remediation
+  - Auto-save on blur functionality (no dialog close)
+  - Proof of Concept tab with description + image upload support
+  - FindingArtifact model for POC evidence storage (JPEG/PNG up to 5 MiB)
+  - Artifact CRUD endpoints: upload, list, download, delete
+  
+- [x] **Instance Management Enhancement**
+  - Full CRUD for finding instances (create, edit, delete)
+  - Inline editing with save/cancel controls
+  - Backend endpoints: POST /findings/{id}/instances, PATCH /instances/{id}, DELETE /instances/{id}
+  - Location, details, and status fields fully editable
+  
+- [x] **Risk Rating Fields**
+  - CWE ID (Common Weakness Enumeration) - indexed
+  - CVE ID (Common Vulnerabilities and Exposures) - indexed
+  - CVSS 3.1 vector string + score (0.0-10.0)
+  - OWASP likelihood (1-9) + impact (1-9)
+  - OWASP calculated risk rating
+  - New dedicated "Risk Rating" tab in finding dialog
+  
+- [x] **UI/UX Improvements**
+  - Removed Jira column from findings table
+  - Reordered tabs: Overview → Instances → POC → Remediation → Risk Rating → Peer Review → Issue Status
+  - Dialog width increased (md→lg: 900px→1200px) for better content visibility
+  - Fixed React infinite re-render issues with proper state management
+  - All editable fields use TextField components with onBlur handlers
+  
+- [x] **Backend Infrastructure**
+  - Migration 019: impact, references_url, poc_description, finding_artifact table
+  - Migration 020: cwe_id, cve_id, cvss_vector, cvss_score, owasp_* fields
+  - Extended PATCH /findings/{id} endpoint with validation for all new fields
+  - Input sanitization for HTML content (impact, poc_description)
+  - URL validation for references_url
+  - Audit logging for all field changes
+  
+- [x] **File Upload System**
+  - Upload path fixed: /code/uploads/artifacts/ (writable by non-root appuser)
+  - Artifact storage organized by finding_id
+  - MIME type and file size tracking
+  - Download endpoint with proper headers
+
+#### Technical Details
+- **Database**: 11 new columns across Finding model (7 risk rating + 3 extended + 1 template link)
+- **API**: 3 new instance endpoints, extended finding PATCH with 11+ new fields
+- **Frontend**: Enhanced FindingsTable component, new Risk Rating tab, artifact management UI
+- **Migration Chain**: Stable with idempotent migrations and conditional DDL
+- **State Management**: Fixed React hooks violations (useState in map → centralized state)
+
+#### Breaking Changes
+- Jira column removed from default findings table view (field still exists in database)
+- Tab order changed in finding detail dialog (may affect user workflows temporarily)
+
+---
+
 ### v0.10.0 - Report Templates & Enhanced Export Formats ✅ COMPLETE
 **Released:** 2025-11-09  
 **Status:** 🚀 **SHIPPED** - Unified report templates + 4 new export formats

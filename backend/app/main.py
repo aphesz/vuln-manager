@@ -69,6 +69,8 @@ from app.models import (
     TagCreate,
     TagUpdate,
     FindingTag,
+    FindingArtifact,
+    FindingArtifactRead,
     ReportTemplate,
     ReportTemplateRead,
     ReportTemplateCreate,
@@ -82,6 +84,7 @@ from app import scoring
 from app import owasp
 from app import cwe_top25
 from app.reports import generate_report_docx, generate_report_pdf, generate_executive_report_pdf
+from app.report_poc_simple import render_docx_simple, render_docx_raw, build_simple_template_docx
 from app.auth import (
     get_password_hash,
     verify_password,
@@ -113,6 +116,8 @@ from app.timezone_utils import (
 )
 import json
 from datetime import datetime
+from pathlib import Path as FilePath
+import secrets
 
 # --- Database Setup ---
 
@@ -131,6 +136,12 @@ def get_session():
     """Dependency to get a new DB session."""
     with Session(engine) as session:
         yield session
+
+# File uploads base directory (for POC evidence)
+# Use /code/uploads inside container (writable by appuser) or override via env var
+EVIDENCE_BASE_DIR = FilePath(os.getenv("UPLOAD_DIR", "/code/uploads")).resolve()
+EVIDENCE_ARTIFACTS_DIR = EVIDENCE_BASE_DIR / "artifacts"
+EVIDENCE_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # --- Authentication Dependencies ---
@@ -1304,11 +1315,16 @@ def read_project(project_id: int, session: Session = Depends(get_session)):
             .order_by(Tag.name)
         ).all()
         
-        # Convert to dict and add tags and instances
+        # Convert to dict and add tags, instances, and artifacts
         finding_dict = finding.model_dump()
         finding_dict['tags'] = [TagRead.model_validate(tag) for tag in finding_tags]
         # Explicitly include instances from the relationship
         finding_dict['instances'] = [InstanceRead.model_validate(inst) for inst in finding.instances]
+        # Include artifacts (POC evidence)
+        try:
+            finding_dict['artifacts'] = [FindingArtifactRead.model_validate(a) for a in getattr(finding, 'artifacts', [])]
+        except Exception:
+            finding_dict['artifacts'] = []
         findings_with_tags.append(FindingReadWithInstances(**finding_dict))
     
     # Build project response
@@ -2204,6 +2220,119 @@ def get_docx_report(project_id: int, session: Session = Depends(get_session)):
         file_path, 
         media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         filename=f"{project.name.replace(' ', '_')}_Report.docx"
+    )
+
+@app.get("/reports/poc/template.docx", response_class=FileResponse)
+def download_poc_template():
+    """Download a minimal sample DOCX template for the PoC renderer."""
+    tmp_path = "/tmp/poc_template.docx"
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(build_simple_template_docx())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build template: {e}")
+    return FileResponse(
+        tmp_path,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename="vulnmanager_poc_template.docx"
+    )
+
+@app.post("/projects/{project_id}/report/poc", response_class=FileResponse)
+async def generate_poc_report(
+    project_id: int,
+    apply_style: bool = Query(True, description="Apply left-border styling post-render"),
+    donut_size_cm: float | None = Query(None, description="Donut image size in centimeters (optional)"),
+    donut_dpi: int | None = Query(None, description="Donut image DPI (optional)"),
+    template_file: UploadFile = File(..., description="DOCX template with Jinja2 placeholders"),
+    session: Session = Depends(get_session)
+):
+    """Proof-of-concept templated DOCX report generation using docxtpl + post-processing.
+
+    Upload a .docx file containing a finding loop:
+        {% for f in findings %}
+        <table> ... {{ f.risk_rating }} {{ f.donut_img }} ... {% endfor %}
+        {% endfor %}
+
+    Returns a rendered DOCX with risk-colored donut images and left colored border per finding table.
+    """
+    if not template_file.filename.lower().endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Template must be a .docx file")
+
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Build read model (reuse existing response model builder logic if available)
+    # Minimal reconstruction: load findings + instances
+    findings = project.findings  # Relationship already loaded lazily; may trigger queries
+    # Wrap project into a pseudo read model object with needed attributes
+    class _ProjectReadShim:
+        pass
+    _proj = _ProjectReadShim()
+    _proj.name = project.name
+    _proj.findings = findings
+
+    template_bytes = await template_file.read()
+    try:
+        # Use simpler renderer to avoid corruption; allow disabling styling
+        rendered = render_docx_simple(
+            template_bytes,
+            _proj,
+            apply_style=apply_style,
+            donut_size_cm=donut_size_cm,
+            donut_dpi=donut_dpi,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Template render failed: {e}")
+
+    out_path = f"/tmp/poc_report_{project_id}.docx"
+    with open(out_path, 'wb') as f:
+        f.write(rendered)
+
+    return FileResponse(
+        out_path,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename=f"{project.name.replace(' ', '_')}_POC_Report.docx"
+    )
+
+@app.post("/projects/{project_id}/report/poc/raw", response_class=FileResponse)
+async def generate_poc_report_raw(
+    project_id: int,
+    template_file: UploadFile = File(..., description="DOCX template with Jinja2 placeholders"),
+    session: Session = Depends(get_session)
+):
+    """Raw variant: renders template WITHOUT images and WITHOUT any post-processing.
+
+    Use this to diagnose Word open errors. If this opens successfully while the
+    styled version fails, the issue is with images or border styling.
+    """
+    if not template_file.filename.lower().endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Template must be a .docx file")
+
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    class _ProjectReadShim:
+        pass
+    shim = _ProjectReadShim()
+    shim.name = project.name
+    shim.findings = project.findings
+
+    template_bytes = await template_file.read()
+    try:
+        rendered = render_docx_raw(template_bytes, shim)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Raw template render failed: {e}")
+
+    out_path = f"/tmp/poc_report_raw_{project_id}.docx"
+    with open(out_path, 'wb') as f:
+        f.write(rendered)
+
+    return FileResponse(
+        out_path,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename=f"{project.name.replace(' ', '_')}_POC_Report_RAW.docx"
     )
 
 @app.get("/projects/{project_id}/report.pdf", response_class=FileResponse)
@@ -4155,11 +4284,18 @@ def update_finding(
     session: Session = Depends(get_session)
 ):
     """
-    Update finding fields (title, risk_rating, etc.).
+    Update finding fields.
+    
+    Supported fields:
+    - title, risk_rating, description, remediation
+    - impact, references_url, poc_description
+    - cwe_id, cve_id, cvss_vector, cvss_score
+    - owasp_likelihood, owasp_impact, owasp_risk_rating
+    - review_status, sla_status, issue_status
     
     Args:
         finding_id: ID of the finding
-        data: Dictionary with fields to update (title, risk_rating, description, etc.)
+        data: Dictionary with fields to update
     """
     finding = session.get(Finding, finding_id)
     if not finding:
@@ -4208,6 +4344,126 @@ def update_finding(
             "old": old_desc[:100] if old_desc else None,  # Truncate for audit log
             "new": data["description"][:100] if data["description"] else None
         }
+    
+    # Update impact if provided
+    if "impact" in data:
+        old_val = finding.impact
+        finding.impact = sanitize_html_input(data["impact"]) if data["impact"] is not None else None
+        changes["impact"] = {
+            "old": (old_val[:100] if old_val else None),
+            "new": (finding.impact[:100] if finding.impact else None)
+        }
+    
+    # Update references_url if provided
+    if "references_url" in data:
+        new_url = data["references_url"] or None
+        if new_url:
+            try:
+                validate_url(new_url, "references_url")
+            except HTTPException as e:
+                raise e
+        old_url = finding.references_url
+        finding.references_url = new_url
+        changes["references_url"] = {"old": old_url, "new": new_url}
+    
+    # Update POC description
+    if "poc_description" in data:
+        old_val = finding.poc_description
+        finding.poc_description = sanitize_html_input(data["poc_description"]) if data["poc_description"] is not None else None
+        changes["poc_description"] = {
+            "old": (old_val[:100] if old_val else None),
+            "new": (finding.poc_description[:100] if finding.poc_description else None)
+        }
+    
+    # Update CWE ID if provided
+    if "cwe_id" in data:
+        old_val = finding.cwe_id
+        new_val = data["cwe_id"] or None
+        finding.cwe_id = new_val
+        changes["cwe_id"] = {"old": old_val, "new": new_val}
+    
+    # Update CVE ID if provided
+    if "cve_id" in data:
+        old_val = finding.cve_id
+        new_val = data["cve_id"] or None
+        finding.cve_id = new_val
+        changes["cve_id"] = {"old": old_val, "new": new_val}
+    
+    # Update CVSS vector if provided
+    if "cvss_vector" in data:
+        old_val = finding.cvss_vector
+        new_val = data["cvss_vector"] or None
+        finding.cvss_vector = new_val
+        changes["cvss_vector"] = {"old": old_val, "new": new_val}
+    
+    # Update CVSS score if provided
+    if "cvss_score" in data:
+        old_val = finding.cvss_score
+        new_val = data["cvss_score"]
+        if new_val is not None:
+            try:
+                new_val = float(new_val)
+                if new_val < 0.0 or new_val > 10.0:
+                    raise ValueError("CVSS score must be between 0.0 and 10.0")
+            except (ValueError, TypeError) as e:
+                raise HTTPException(status_code=400, detail=f"Invalid CVSS score: {str(e)}")
+        finding.cvss_score = new_val
+        changes["cvss_score"] = {"old": old_val, "new": new_val}
+    
+    # Update OWASP likelihood if provided
+    if "owasp_likelihood" in data:
+        old_val = finding.owasp_likelihood
+        new_val = data["owasp_likelihood"]
+        if new_val is not None:
+            try:
+                new_val = int(new_val)
+                if new_val < 1 or new_val > 9:
+                    raise ValueError("OWASP likelihood must be between 1 and 9")
+            except (ValueError, TypeError) as e:
+                raise HTTPException(status_code=400, detail=f"Invalid OWASP likelihood: {str(e)}")
+        finding.owasp_likelihood = new_val
+        changes["owasp_likelihood"] = {"old": old_val, "new": new_val}
+    
+    # Update OWASP impact if provided
+    if "owasp_impact" in data:
+        old_val = finding.owasp_impact
+        new_val = data["owasp_impact"]
+        if new_val is not None:
+            try:
+                new_val = int(new_val)
+                if new_val < 1 or new_val > 9:
+                    raise ValueError("OWASP impact must be between 1 and 9")
+            except (ValueError, TypeError) as e:
+                raise HTTPException(status_code=400, detail=f"Invalid OWASP impact: {str(e)}")
+        finding.owasp_impact = new_val
+        changes["owasp_impact"] = {"old": old_val, "new": new_val}
+    
+    # Update OWASP risk rating if provided
+    if "owasp_risk_rating" in data:
+        old_val = finding.owasp_risk_rating
+        new_val = data["owasp_risk_rating"] or None
+        finding.owasp_risk_rating = new_val
+        changes["owasp_risk_rating"] = {"old": old_val, "new": new_val}
+    
+    # Update review_status if provided
+    if "review_status" in data:
+        new_status = data["review_status"]
+        valid_statuses = ['Pending', 'In Review', 'Approved', 'Rejected']
+        if new_status not in valid_statuses:
+            raise HTTPException(status_code=400, detail=f"Invalid review status. Must be one of: {', '.join(valid_statuses)}")
+        old_status = finding.review_status.value if finding.review_status else None
+        finding.review_status = FindingBase.ReviewStatus(new_status)
+        changes["review_status"] = {"old": old_status, "new": new_status}
+    
+    # Update sla_status if provided
+    if "sla_status" in data:
+        new_sla = data["sla_status"]
+        valid_sla = ['On Track', 'At Risk', 'Overdue', None]
+        if new_sla not in ['On Track', 'At Risk', 'Overdue', None, '']:
+            raise HTTPException(status_code=400, detail=f"Invalid SLA status. Must be one of: On Track, At Risk, Overdue or null")
+        old_sla = finding.sla_status.value if finding.sla_status else None
+        finding.sla_status = FindingBase.SLAStatus(new_sla) if new_sla else None
+        changes["sla_status"] = {"old": old_sla, "new": new_sla}
     
     # Update issue_status if provided (v0.8.1 - Track resolved_at)
     if "issue_status" in data:
@@ -4268,8 +4524,242 @@ def update_finding(
         "title": finding.title,
         "risk_rating": finding.risk_rating.value,
         "description": finding.description,
+        "impact": finding.impact,
+        "references_url": finding.references_url,
+        "poc_description": finding.poc_description,
         "remediation_deadline": finding.remediation_deadline.isoformat() if finding.remediation_deadline else None
     }
+
+# --- Instance Management Endpoints ---
+
+@app.patch("/instances/{instance_id}")
+@limiter.limit("60/minute")
+def update_instance(
+    request: Request,
+    instance_id: int,
+    data: dict,
+    session: Session = Depends(get_session)
+):
+    """
+    Update an instance's location, details, or status.
+    
+    Args:
+        instance_id: ID of the instance to update
+        data: Dict with fields to update (location, details, status)
+    
+    Returns:
+        Updated instance data
+    """
+    instance = session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    
+    # Update location if provided
+    if "location" in data and data["location"] is not None:
+        instance.location = sanitize_html_input(str(data["location"]))
+    
+    # Update details if provided
+    if "details" in data and data["details"] is not None:
+        instance.details = sanitize_html_input(str(data["details"]))
+    
+    # Update status if provided
+    if "status" in data and data["status"] is not None:
+        instance.status = sanitize_html_input(str(data["status"]))
+    
+    session.add(instance)
+    session.commit()
+    session.refresh(instance)
+    
+    logger.info(f"Instance {instance_id} updated (finding {instance.finding_id})")
+    
+    return {
+        "id": instance.id,
+        "finding_id": instance.finding_id,
+        "location": instance.location,
+        "details": instance.details,
+        "status": instance.status
+    }
+
+
+@app.delete("/instances/{instance_id}", status_code=204)
+@limiter.limit("60/minute")
+def delete_instance(
+    request: Request,
+    instance_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Delete an instance.
+    
+    Note: Deleting the last instance of a finding will NOT delete the finding itself.
+    """
+    instance = session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    
+    finding_id = instance.finding_id
+    session.delete(instance)
+    session.commit()
+    
+    logger.info(f"Instance {instance_id} deleted from finding {finding_id}")
+    return
+
+
+@app.post("/findings/{finding_id}/instances", status_code=201)
+@limiter.limit("60/minute")
+def add_instance(
+    request: Request,
+    finding_id: int,
+    data: dict,
+    session: Session = Depends(get_session)
+):
+    """
+    Add a new instance to an existing finding.
+    
+    Args:
+        finding_id: ID of the finding
+        data: Dict with location, details, and optional status
+    
+    Returns:
+        Created instance data
+    """
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Validate required fields
+    if "location" not in data or not data["location"]:
+        raise HTTPException(status_code=400, detail="location is required")
+    if "details" not in data or not data["details"]:
+        raise HTTPException(status_code=400, detail="details is required")
+    
+    # Create new instance
+    instance = Instance(
+        finding_id=finding_id,
+        location=sanitize_html_input(str(data["location"])),
+        details=sanitize_html_input(str(data["details"])),
+        status=data.get("status", "New - Unvalidated"),
+        created_at=get_utc_now()
+    )
+    
+    session.add(instance)
+    session.commit()
+    session.refresh(instance)
+    
+    logger.info(f"New instance {instance.id} added to finding {finding_id}")
+    
+    return {
+        "id": instance.id,
+        "finding_id": instance.finding_id,
+        "location": instance.location,
+        "details": instance.details,
+        "status": instance.status,
+        "created_at": instance.created_at.isoformat() if instance.created_at else None
+    }
+
+# --- Finding Artifact (POC Evidence) Endpoints ---
+
+@app.post("/findings/{finding_id}/artifacts", response_model=FindingArtifactRead, status_code=201)
+@limiter.limit("30/minute")
+async def upload_finding_artifact(
+    request: Request,
+    finding_id: int,
+    file: UploadFile = File(...),
+    description: Optional[str] = Body(None),
+    session: Session = Depends(get_session)
+):
+    """Upload a POC evidence image for a finding. Accepts JPEG/PNG up to 5 MiB."""
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    # Validate content type
+    allowed_types = {"image/jpeg", "image/png"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only JPEG and PNG images are allowed")
+    
+    # Read and size-check
+    content = await file.read()
+    max_bytes = 5 * 1024 * 1024  # 5 MiB
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=400, detail="File too large (max 5 MiB)")
+    
+    # Build path: artifacts/<finding_id>/<random>_<sanitized_name>
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", file.filename or "artifact")
+    random_prefix = secrets.token_hex(8)
+    artifact_dir = EVIDENCE_ARTIFACTS_DIR / str(finding_id)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    final_path = artifact_dir / f"{random_prefix}_{safe_name}"
+    
+    # Write to disk
+    with open(final_path, "wb") as f:
+        f.write(content)
+    
+    art = FindingArtifact(
+        finding_id=finding_id,
+        file_name=file.filename or "artifact",
+        file_path=str(final_path.relative_to(EVIDENCE_BASE_DIR)),
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=len(content),
+        description=sanitize_html_input(description) if description else None,
+        created_at=get_utc_now(),
+    )
+    session.add(art)
+    session.commit()
+    session.refresh(art)
+    
+    return FindingArtifactRead.model_validate(art)
+
+
+@app.get("/findings/{finding_id}/artifacts", response_model=List[FindingArtifactRead])
+def list_finding_artifacts(
+    finding_id: int,
+    session: Session = Depends(get_session)
+):
+    finding = session.get(Finding, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    artifacts = session.exec(select(FindingArtifact).where(FindingArtifact.finding_id == finding_id)).all()
+    return [FindingArtifactRead.model_validate(a) for a in artifacts]
+
+
+@app.get("/artifacts/{artifact_id}/download")
+def download_artifact(
+    artifact_id: int,
+    session: Session = Depends(get_session)
+):
+    art = session.get(FindingArtifact, artifact_id)
+    if not art:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    abs_path = (EVIDENCE_BASE_DIR / art.file_path).resolve()
+    if not abs_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on server")
+    return FileResponse(
+        path=str(abs_path),
+        media_type=art.mime_type,
+        filename=art.file_name
+    )
+
+
+@app.delete("/artifacts/{artifact_id}", status_code=204)
+def delete_artifact(
+    artifact_id: int,
+    session: Session = Depends(get_session)
+):
+    art = session.get(FindingArtifact, artifact_id)
+    if not art:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    # Try deleting file from disk
+    try:
+        abs_path = (EVIDENCE_BASE_DIR / art.file_path).resolve()
+        if abs_path.exists():
+            abs_path.unlink()
+    except Exception:
+        # Non-fatal: continue to remove DB row
+        pass
+    session.delete(art)
+    session.commit()
+    return Response(status_code=204)
 
 @app.get("/sla-summary")
 def get_sla_summary_endpoint(session: Session = Depends(get_session)):

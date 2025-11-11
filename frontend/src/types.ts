@@ -45,6 +45,9 @@ export interface Finding {
   risk_rating: RiskRating;
   description: string;
   remediation: string;
+  impact?: string | null;
+  references_url?: string | null;
+  poc_description?: string | null;
   instances: Instance[];
   tags?: Tag[];  // Tags associated with this finding
   // Tier 1 fields
@@ -58,6 +61,26 @@ export interface Finding {
   // Issue Status fields
   issue_status?: IssueStatus;
   issue_status_comment?: string;
+  artifacts?: FindingArtifact[];
+  // Risk Rating fields
+  cwe_id?: string | null;
+  cve_id?: string | null;
+  cvss_vector?: string | null;
+  cvss_score?: number | null;
+  owasp_likelihood?: number | null;
+  owasp_impact?: number | null;
+  owasp_risk_rating?: string | null;
+}
+
+export interface FindingArtifact {
+  id: number;
+  finding_id: number;
+  file_name: string;
+  file_path: string; // relative path served by download endpoint
+  mime_type: string;
+  size_bytes: number;
+  description?: string | null;
+  created_at: string;
 }
 
 export interface Project {

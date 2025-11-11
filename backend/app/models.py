@@ -55,6 +55,11 @@ class FindingBase(SQLModel):
     description: str = Field(...)
     remediation: str = Field(...)
     
+    # Extended fields (v0.10.1 - Editable Findings Expansion)
+    impact: Optional[str] = Field(default=None)  # Business/technical impact narrative
+    references_url: Optional[str] = Field(default=None, max_length=1000)  # External reference URL(s)
+    poc_description: Optional[str] = Field(default=None)  # Text description to accompany POC artifacts
+    
     # Peer Review fields
     review_status: ReviewStatus = Field(default=ReviewStatus.Pending, index=True)
     reviewer_name: Optional[str] = Field(default=None, max_length=100)
@@ -78,6 +83,15 @@ class FindingBase(SQLModel):
     
     # Compliance Mapping fields (v0.8.3)
     owasp_category: Optional[str] = Field(default=None, max_length=10, index=True)  # OWASP Top 10 2021 category (A01-A10)
+    
+    # Risk Rating fields (v0.10.2 - Risk Rating Enhancement)
+    cwe_id: Optional[str] = Field(default=None, index=True, max_length=20)  # e.g., "CWE-79"
+    cve_id: Optional[str] = Field(default=None, index=True, max_length=50)  # e.g., "CVE-2024-1234"
+    cvss_vector: Optional[str] = Field(default=None, max_length=100)  # e.g., "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+    cvss_score: Optional[float] = Field(default=None, ge=0.0, le=10.0)  # 0.0 - 10.0
+    owasp_likelihood: Optional[int] = Field(default=None, ge=1, le=9)  # 1-9
+    owasp_impact: Optional[int] = Field(default=None, ge=1, le=9)  # 1-9
+    owasp_risk_rating: Optional[str] = Field(default=None, max_length=20)  # Critical/High/Medium/Low
     
     # Vulnerability Repository link
     template_id: Optional[int] = Field(default=None, index=True)  # Foreign key to VulnerabilityTemplate
@@ -154,6 +168,7 @@ class Finding(FindingBase, table=True):
     project: Optional[Project] = Relationship(back_populates="findings")
     instances: List["Instance"] = Relationship(back_populates="finding")
     comments: List["Comment"] = Relationship(back_populates="finding")
+    artifacts: List["FindingArtifact"] = Relationship(back_populates="finding")  # POC evidence attachments
 
 class Instance(InstanceBase, table=True):
     """Database model for an Instance."""
@@ -456,6 +471,32 @@ class ImportHistory(ImportHistoryBase, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
 
+# --- Finding Artifact (POC Evidence) Models ---
+
+class FindingArtifactBase(SQLModel):
+    """Base model for evidence artifacts (e.g., POC images) attached to a finding."""
+    finding_id: int = Field(..., foreign_key="finding.id", index=True)
+    file_name: str = Field(..., max_length=255)
+    file_path: str = Field(..., max_length=500)  # Relative path under evidence storage
+    mime_type: str = Field(..., max_length=100)
+    size_bytes: int = Field(..., ge=0)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    created_at: datetime = Field(default=None, index=True)
+
+class FindingArtifact(FindingArtifactBase, table=True):
+    """Database model for FindingArtifact."""
+    __tablename__ = "finding_artifact"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    finding: Optional[Finding] = Relationship(back_populates="artifacts")
+
+class FindingArtifactRead(FindingArtifactBase):
+    id: int
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: Optional[datetime], _info):
+        if value and value.tzinfo:
+            return value.isoformat()
+        return value
+
 # --- Read Models (For FastAPI Responses) ---
 
 # 1. Instance Read Model
@@ -506,6 +547,7 @@ class FindingReadWithInstances(FindingBase):
     instances: List[InstanceRead] = []
     comments: List[CommentRead] = []
     tags: List["TagRead"] = []  # Include tags with findings (forward reference)
+    artifacts: List[FindingArtifactRead] = []  # Attached POC evidence artifacts
 
 # 8. Project Read Model
 class ProjectReadWithFindings(ProjectBase):

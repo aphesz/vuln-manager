@@ -42,7 +42,6 @@ import {
   Cancel as RejectedIcon,
   RateReview as ReviewIcon,
   Pending as PendingIcon,
-  BugReport as JiraIcon,
   Warning as WarningIcon,
   Error as ErrorIcon,
   CheckCircle as SuccessIcon,
@@ -180,6 +179,9 @@ interface FindingDialogProps {
 const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps) => {
   const [tabValue, setTabValue] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Track which instance is being edited
+  const [editingInstanceId, setEditingInstanceId] = useState<number | null>(null);
+  const [editingData, setEditingData] = useState<{ location: string; details: string; status: string } | null>(null);
 
   if (!finding) return null;
 
@@ -194,7 +196,7 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
     <Dialog 
       open={open} 
       onClose={onClose}
-      maxWidth="md"
+      maxWidth="lg"
       fullWidth
     >
       <DialogTitle>
@@ -213,7 +215,9 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
         >
           <Tab label="Overview" />
           <Tab label="Instances" />
+          <Tab label="Proof of Concept" />
           <Tab label="Remediation" />
+          <Tab label="Risk Rating" />
           <Tab label="Peer Review" />
           <Tab label="Issue Status" />
         </Tabs>
@@ -221,55 +225,468 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
         {tabValue === 0 && (
           <Box>
             <Typography variant="h6" gutterBottom>Description</Typography>
-            <Typography variant="body1" paragraph sx={{ whiteSpace: 'pre-wrap' }}>
-              {stripHtmlTags(finding.description)}
-            </Typography>
+            <TextField
+              fullWidth
+              multiline
+              minRows={4}
+              defaultValue={stripHtmlTags(finding.description)}
+              placeholder="Enter finding description..."
+              onBlur={async (e) => {
+                const newVal = e.target.value;
+                if (stripHtmlTags(finding.description) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { description: newVal });
+                    // No local mutation - changes will sync when dialog closes
+                  } catch (err) {
+                    console.error('Failed to update description:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>Impact</Typography>
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              defaultValue={finding.impact || ''}
+              placeholder="Describe the business/technical impact..."
+              onBlur={async (e) => {
+                const newVal = e.target.value;
+                if ((finding.impact || '') !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { impact: newVal });
+                    // No local mutation - changes will sync when dialog closes
+                  } catch (err) {
+                    console.error('Failed to update impact:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>References</Typography>
+            <TextField
+              fullWidth
+              defaultValue={finding.references_url || ''}
+              placeholder="https://example.com/reference"
+              helperText="Provide a reference URL (http/https)"
+              onBlur={async (e) => {
+                const newVal = e.target.value.trim();
+                if ((finding.references_url || '') !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { references_url: newVal });
+                    // No local mutation - changes will sync when dialog closes
+                  } catch (err) {
+                    console.error('Failed to update references URL:', err);
+                  }
+                }
+              }}
+            />
           </Box>
         )}
 
         {tabValue === 1 && (
           <Box>
-            <Typography variant="h6" gutterBottom>
-              Instances ({finding.instances.length})
-            </Typography>
-            {finding.instances.map((instance, idx) => (
-              <Card key={idx} sx={{ mb: 2 }}>
-                <CardContent>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Location
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    {instance.location}
-                  </Typography>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Details
-                  </Typography>
-                  <Typography variant="body2">
-                    {instance.details}
-                  </Typography>
-                  <Box sx={{ mt: 1 }}>
-                    <Chip 
-                      label={instance.status}
-                      size="small"
-                      color={instance.status.includes('New') ? 'error' : 'success'}
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                Instances ({finding.instances.length})
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddSimilarIcon />}
+                onClick={async () => {
+                  const newLocation = prompt('Enter location (e.g., URL, parameter):');
+                  if (!newLocation) return;
+                  const newDetails = prompt('Enter details:');
+                  if (!newDetails) return;
+                  
+                  try {
+                    await axios.post(`${API_BASE_URL}/findings/${finding.id}/instances`, {
+                      location: newLocation,
+                      details: newDetails,
+                      status: 'New - Unvalidated'
+                    });
+                    if (onRefresh) onRefresh();
+                  } catch (err) {
+                    console.error('Failed to add instance:', err);
+                    alert('Failed to add instance');
+                  }
+                }}
+              >
+                Add Instance
+              </Button>
+            </Box>
+            {finding.instances.map((instance, idx) => {
+              const isEditing = editingInstanceId === instance.id;
+
+              const handleEdit = () => {
+                setEditingInstanceId(instance.id);
+                setEditingData({
+                  location: instance.location,
+                  details: instance.details,
+                  status: instance.status
+                });
+              };
+
+              const handleSave = async () => {
+                if (!editingData) return;
+                try {
+                  await axios.patch(`${API_BASE_URL}/instances/${instance.id}`, editingData);
+                  setEditingInstanceId(null);
+                  setEditingData(null);
+                  if (onRefresh) onRefresh();
+                } catch (err) {
+                  console.error('Failed to update instance:', err);
+                  alert('Failed to update instance');
+                }
+              };
+
+              const handleCancel = () => {
+                setEditingInstanceId(null);
+                setEditingData(null);
+              };
+
+              const handleDelete = async () => {
+                if (!confirm('Delete this instance?')) return;
+                try {
+                  await axios.delete(`${API_BASE_URL}/instances/${instance.id}`);
+                  if (onRefresh) onRefresh();
+                } catch (err) {
+                  console.error('Failed to delete instance:', err);
+                  alert('Failed to delete instance');
+                }
+              };
+
+              return (
+                <Card key={instance.id || idx} sx={{ mb: 2 }}>
+                  <CardContent>
+                    {isEditing ? (
+                      <Box>
+                        <TextField
+                          fullWidth
+                          label="Location"
+                          value={editingData?.location || ''}
+                          onChange={(e) => setEditingData({ ...editingData!, location: e.target.value })}
+                          sx={{ mb: 2 }}
+                        />
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={3}
+                          label="Details"
+                          value={editingData?.details || ''}
+                          onChange={(e) => setEditingData({ ...editingData!, details: e.target.value })}
+                          sx={{ mb: 2 }}
+                        />
+                        <TextField
+                          fullWidth
+                          label="Status"
+                          value={editingData?.status || ''}
+                          onChange={(e) => setEditingData({ ...editingData!, status: e.target.value })}
+                          sx={{ mb: 2 }}
+                        />
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button size="small" variant="contained" onClick={handleSave}>
+                            Save
+                          </Button>
+                          <Button size="small" variant="outlined" onClick={handleCancel}>
+                            Cancel
+                          </Button>
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle2" color="text.secondary">
+                              Location
+                            </Typography>
+                            <Typography variant="body2" sx={{ mb: 1 }}>
+                              {instance.location}
+                            </Typography>
+                            <Typography variant="subtitle2" color="text.secondary">
+                              Details
+                            </Typography>
+                            <Typography variant="body2" sx={{ mb: 1 }}>
+                              {instance.details}
+                            </Typography>
+                            <Box sx={{ mt: 1 }}>
+                              <Chip 
+                                label={instance.status}
+                                size="small"
+                                color={instance.status.includes('New') ? 'error' : 'success'}
+                              />
+                            </Box>
+                          </Box>
+                          <Box>
+                            <Tooltip title="Edit instance">
+                              <IconButton size="small" onClick={handleEdit}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete instance">
+                              <IconButton size="small" onClick={handleDelete} color="error">
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </Box>
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+            {finding.instances.length === 0 && (
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
+                No instances yet. Click "Add Instance" to add one.
+              </Typography>
+            )}
           </Box>
         )}
 
         {tabValue === 2 && (
           <Box>
-            <Typography variant="h6" gutterBottom>Remediation Steps</Typography>
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
-              {stripHtmlTags(finding.remediation)}
-            </Typography>
+            <Typography variant="h6" gutterBottom>Proof of Concept</Typography>
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              label="POC Description"
+              defaultValue={finding.poc_description || ''}
+              onBlur={async (e) => {
+                const newVal = e.target.value;
+                if ((finding.poc_description || '') !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { poc_description: newVal });
+                    // No local mutation - changes will sync when dialog closes
+                  } catch (err) {
+                    console.error('Failed to update POC description:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Button variant="contained" component="label">
+                Upload Image
+                <input
+                  hidden
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={async (e: any) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const form = new FormData();
+                    form.append('file', file);
+                    try {
+                      await axios.post(`${API_BASE_URL}/findings/${finding.id}/artifacts`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+                      // No local mutation - will refresh on dialog close
+                    } catch (err) {
+                      console.error('Upload failed:', err);
+                    } finally {
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </Button>
+              <Typography variant="body2" color="text.secondary">JPEG/PNG up to 5 MiB</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle1" gutterBottom>Artifacts</Typography>
+              {(finding.artifacts || []).length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No artifacts uploaded yet.</Typography>
+              ) : (
+                (finding.artifacts || []).map((a: any) => (
+                  <Box key={a.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{a.file_name}</Typography>
+                      <Typography variant="caption" color="text.secondary">{Math.round((a.size_bytes || 0) / 1024)} KB • {a.mime_type}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button size="small" variant="outlined" onClick={() => window.open(`${API_BASE_URL}/artifacts/${a.id}/download`, '_blank')}>Download</Button>
+                      <Button size="small" color="error" variant="outlined" onClick={async () => {
+                        try {
+                          await axios.delete(`${API_BASE_URL}/artifacts/${a.id}`);
+                          // No local mutation - will refresh on dialog close
+                        } catch (err) {
+                          console.error('Delete failed:', err);
+                        }
+                      }}>Delete</Button>
+                    </Box>
+                  </Box>
+                ))
+              )}
+            </Box>
           </Box>
         )}
 
         {tabValue === 3 && (
+          <Box>
+            <Typography variant="h6" gutterBottom>Remediation Steps</Typography>
+            <TextField
+              fullWidth
+              multiline
+              minRows={6}
+              defaultValue={stripHtmlTags(finding.remediation)}
+              placeholder="Enter remediation steps..."
+              onBlur={async (e) => {
+                const newVal = e.target.value;
+                if (stripHtmlTags(finding.remediation) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { remediation: newVal });
+                    // No local mutation - changes will sync when dialog closes
+                  } catch (err) {
+                    console.error('Failed to update remediation:', err);
+                  }
+                }
+              }}
+            />
+          </Box>
+        )}
+
+        {tabValue === 4 && (
+          <Box>
+            <Typography variant="h6" gutterBottom>Risk Rating</Typography>
+            <TextField
+              fullWidth
+              label="CWE ID"
+              defaultValue={finding.cwe_id || ''}
+              placeholder="e.g., CWE-79"
+              helperText="Common Weakness Enumeration identifier"
+              onBlur={async (e) => {
+                const newVal = e.target.value.trim() || null;
+                if ((finding.cwe_id || null) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { cwe_id: newVal });
+                  } catch (err) {
+                    console.error('Failed to update CWE ID:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="CVE ID"
+              defaultValue={finding.cve_id || ''}
+              placeholder="e.g., CVE-2024-1234"
+              helperText="Common Vulnerabilities and Exposures identifier"
+              onBlur={async (e) => {
+                const newVal = e.target.value.trim() || null;
+                if ((finding.cve_id || null) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { cve_id: newVal });
+                  } catch (err) {
+                    console.error('Failed to update CVE ID:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>CVSS 3.1 Score</Typography>
+            <TextField
+              fullWidth
+              label="CVSS Vector"
+              defaultValue={finding.cvss_vector || ''}
+              placeholder="e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+              helperText="Complete CVSS 3.1 vector string"
+              onBlur={async (e) => {
+                const newVal = e.target.value.trim() || null;
+                if ((finding.cvss_vector || null) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { cvss_vector: newVal });
+                  } catch (err) {
+                    console.error('Failed to update CVSS vector:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              type="number"
+              label="CVSS Score"
+              defaultValue={finding.cvss_score !== null && finding.cvss_score !== undefined ? finding.cvss_score : ''}
+              placeholder="0.0 - 10.0"
+              helperText="Calculated CVSS base score"
+              inputProps={{ min: 0, max: 10, step: 0.1 }}
+              onBlur={async (e) => {
+                const newVal = e.target.value ? parseFloat(e.target.value) : null;
+                if ((finding.cvss_score || null) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { cvss_score: newVal });
+                  } catch (err) {
+                    console.error('Failed to update CVSS score:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>OWASP Risk Rating</Typography>
+            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Likelihood"
+                defaultValue={finding.owasp_likelihood !== null && finding.owasp_likelihood !== undefined ? finding.owasp_likelihood : ''}
+                placeholder="1-9"
+                helperText="OWASP likelihood rating (1-9)"
+                inputProps={{ min: 1, max: 9, step: 1 }}
+                onBlur={async (e) => {
+                  const newVal = e.target.value ? parseInt(e.target.value) : null;
+                  if ((finding.owasp_likelihood || null) !== newVal) {
+                    try {
+                      await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { owasp_likelihood: newVal });
+                    } catch (err) {
+                      console.error('Failed to update OWASP likelihood:', err);
+                    }
+                  }
+                }}
+              />
+              <TextField
+                fullWidth
+                type="number"
+                label="Impact"
+                defaultValue={finding.owasp_impact !== null && finding.owasp_impact !== undefined ? finding.owasp_impact : ''}
+                placeholder="1-9"
+                helperText="OWASP impact rating (1-9)"
+                inputProps={{ min: 1, max: 9, step: 1 }}
+                onBlur={async (e) => {
+                  const newVal = e.target.value ? parseInt(e.target.value) : null;
+                  if ((finding.owasp_impact || null) !== newVal) {
+                    try {
+                      await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { owasp_impact: newVal });
+                    } catch (err) {
+                      console.error('Failed to update OWASP impact:', err);
+                    }
+                  }
+                }}
+              />
+            </Box>
+            <TextField
+              fullWidth
+              label="OWASP Risk Rating"
+              defaultValue={finding.owasp_risk_rating || ''}
+              placeholder="Critical / High / Medium / Low"
+              helperText="Calculated OWASP risk rating"
+              onBlur={async (e) => {
+                const newVal = e.target.value.trim() || null;
+                if ((finding.owasp_risk_rating || null) !== newVal) {
+                  try {
+                    await axios.patch(`${API_BASE_URL}/findings/${finding.id}`, { owasp_risk_rating: newVal });
+                  } catch (err) {
+                    console.error('Failed to update OWASP risk rating:', err);
+                  }
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+          </Box>
+        )}
+
+        {tabValue === 5 && (
           <Box key={refreshKey}>
             <FindingReviewPanel
               findingId={finding.id}
@@ -280,7 +697,7 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
           </Box>
         )}
 
-        {tabValue === 4 && (
+        {tabValue === 6 && (
           <Box>
             <Typography variant="h6" gutterBottom>
               Issue Tracking Status
@@ -358,7 +775,11 @@ const FindingDialog = ({ finding, open, onClose, onRefresh }: FindingDialogProps
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={() => {
+          onClose();
+          // Refresh parent when dialog closes to sync any changes
+          if (onRefresh) onRefresh();
+        }}>Close</Button>
       </DialogActions>
     </Dialog>
   );
@@ -406,7 +827,7 @@ const stripHtmlTags = (html: string): string => {
 
 // Main FindingsTable component
 const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, onAddSimilar }: FindingsTableProps) => {
-  const [selectedFinding, setSelectedFinding] = useState(null);
+  const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [selectedRows, setSelectedRows] = useState<any[]>([]);
   const [bulkAction, setBulkAction] = useState<string>('');
   const [bulkValue, setBulkValue] = useState<string>('');
@@ -613,13 +1034,13 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
   const handleBulkExport = () => {
     const selectedFindings = findings.filter((f: Finding) => selectedRows.includes(f.id));
     const csv = [
-      ['ID', 'Title', 'Risk Rating', 'Status', 'Instances', 'SLA Deadline'],
+  ['ID', 'Title', 'Risk Rating', 'Status', 'Instances', 'SLA Deadline'],
       ...selectedFindings.map((f: Finding) => [
         f.id,
         f.title,
         f.risk_rating,
         f.issue_status || 'Open',
-        f.instance_count || 0,
+  f.instances?.length || 0,
         formatDeadline(f.remediation_deadline)
       ])
     ].map(row => row.join(',')).join('\n');
@@ -842,7 +1263,7 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
           // Find tags to add (in new but not in old)
           const toAdd = newTagIds.filter(id => !oldTagIds.includes(id));
           // Find tags to remove (in old but not in new)
-          const toRemove = oldTagIds.filter(id => !newTagIds.includes(id));
+          const toRemove = oldTagIds.filter((id: number) => !newTagIds.includes(id));
 
           try {
             // Add new tags
@@ -1004,39 +1425,6 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
               sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
             />
           </Box>
-        );
-      },
-    },
-    {
-      field: 'jira_status',
-      headerName: 'Jira',
-      flex: 1,
-      minWidth: 110,
-      renderCell: (params: GridRenderCellParams) => {
-        const jiraKey = params.row.jira_issue_key;
-        const jiraStatus = params.value;
-        
-        if (!jiraKey) {
-          return (
-            <Chip
-              label="No Issue"
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: '0.7rem' }}
-            />
-          );
-        }
-        
-        return (
-          <Tooltip title={`${jiraKey}: ${jiraStatus || 'Unknown'}`} arrow>
-            <Chip
-              label={jiraStatus || jiraKey}
-              size="small"
-              icon={<JiraIcon sx={{ fontSize: 14 }} />}
-              color="primary"
-              sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}
-            />
-          </Tooltip>
         );
       },
     },
@@ -1277,11 +1665,10 @@ const FindingsTable = ({ findings, preferences, onPreferencesChange, onRefresh, 
 
   // Filter columns based on user preferences
   const visibleColumns = columns.filter(col => {
-    const columnId = col.field;
-    // Always show actions column
+    const columnId = col.field as string;
     if (columnId === 'actions') return true;
-    // Check preferences for other columns
-    return preferences?.tableColumns?.[columnId]?.visible ?? true;
+    // Preferences object may not declare all columns; default to true
+    return preferences?.[columnId]?.visible ?? true;
   });
 
   return (
