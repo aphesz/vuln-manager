@@ -47,6 +47,7 @@ import {
 import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import PageBreadcrumbs from './PageBreadcrumbs';
+import TemplateVariablesForm from './TemplateVariablesForm';
 
 // Use relative path for API calls - proxied through Nginx in Docker
 const API_BASE_URL = '/api';
@@ -94,6 +95,7 @@ const ModularReportGenerator: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [selectedTemplateInfo, setSelectedTemplateInfo] = useState<ReportTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<ReportTemplate | null>(null);
+  const [variablesDialogOpen, setVariablesDialogOpen] = useState(false);
   
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -169,11 +171,23 @@ const ModularReportGenerator: React.FC = () => {
       return;
     }
 
+    // Open variables dialog first
+    setVariablesDialogOpen(true);
+  };
+
+  const handleVariablesSubmit = async (variables: Record<string, any>) => {
+    setVariablesDialogOpen(false);
     setGenerating(true);
     setError(null);
     setSuccess(null);
 
     try {
+      // Merge custom variables with form variables
+      const mergedVariables = {
+        ...customVariables,
+        ...variables,
+      };
+
       const response = await fetch(`${API_BASE_URL}/projects/${projectId}/report/assemble/v2`, {
         method: 'POST',
         headers: {
@@ -181,7 +195,7 @@ const ModularReportGenerator: React.FC = () => {
         },
         body: JSON.stringify({
           template_ids: selectedTemplateIds,
-          variables: customVariables,
+          variables: mergedVariables,
         }),
       });
 
@@ -922,6 +936,15 @@ const ModularReportGenerator: React.FC = () => {
           <Button onClick={() => setInfoDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Template Variables Form Dialog */}
+      <TemplateVariablesForm
+        open={variablesDialogOpen}
+        onClose={() => setVariablesDialogOpen(false)}
+        projectId={parseInt(projectId || '0')}
+        templateIds={selectedTemplateIds}
+        onSubmit={handleVariablesSubmit}
+      />
     </Box>
   );
 };

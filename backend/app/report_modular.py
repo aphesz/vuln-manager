@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Union
+from typing import List, Dict, Optional, Any, Union, Set
 import json
+import re
 from datetime import datetime
 
 from docxtpl import DocxTemplate, InlineImage
@@ -161,6 +162,130 @@ def generate_sample_project_data(project_name: str = "Sample Security Assessment
         "consultant_email": "consultant@example.com",
         "assessment_period": "Q4 2025",
     }
+
+
+def extract_jinja2_variables(docx_path: Path) -> List[Dict[str, Any]]:
+    """Extract Jinja2 variables from a DOCX template file.
+    
+    Parses the document XML to find all Jinja2 syntax:
+    - {{ variable }} - simple variable interpolation
+    - {% for item in items %} - loop variables
+    - {% if condition %} - conditional variables
+    
+    Args:
+        docx_path: Path to DOCX template file
+        
+    Returns:
+        List of variable dictionaries with metadata:
+        [
+            {
+                "name": "project_name",
+                "type": "string",
+                "required": True,
+                "context": "simple",
+                "sample_value": ""
+            },
+            {
+                "name": "findings",
+                "type": "list",
+                "required": True,
+                "context": "loop",
+                "sample_value": []
+            }
+        ]
+    """
+    doc = Document(docx_path)
+    variables: Dict[str, Dict[str, Any]] = {}
+    
+    # Regex patterns for Jinja2 syntax
+    variable_pattern = re.compile(r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*(?:\|[^}]*)?\}\}')
+    for_pattern = re.compile(r'\{%\s*for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in\s+([a-zA-Z_][a-zA-Z0-9_\.]*)\s*%\}')
+    if_pattern = re.compile(r'\{%\s*if\s+([a-zA-Z_][a-zA-Z0-9_\.]*)\s*(?:[^%]*)%\}')
+    
+    # Extract text from all paragraphs and tables
+    all_text = []
+    for paragraph in doc.paragraphs:
+        all_text.append(paragraph.text)
+    
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    all_text.append(paragraph.text)
+    
+    # Also check headers/footers
+    for section in doc.sections:
+        for header in [section.header, section.footer]:
+            for paragraph in header.paragraphs:
+                all_text.append(paragraph.text)
+    
+    full_text = '\n'.join(all_text)
+    
+    # Find simple variables {{ var }}
+    for match in variable_pattern.finditer(full_text):
+        var_name = match.group(1)
+        # Skip nested properties for now, just get root
+        root_var = var_name.split('.')[0]
+        
+        if root_var not in variables:
+            # Infer type from name patterns
+            inferred_type = "string"
+            if root_var.endswith('_count') or root_var.endswith('_score'):
+                inferred_type = "number"
+            elif root_var.endswith('_date') or root_var.startswith('date_'):
+                inferred_type = "date"
+            elif root_var.endswith('s') and not root_var.endswith('ss'):  # plural
+                inferred_type = "list"
+            
+            variables[root_var] = {
+                "name": root_var,
+                "type": inferred_type,
+                "required": True,
+                "context": "simple",
+                "sample_value": _get_sample_value(inferred_type)
+            }
+    
+    # Find loop variables {% for item in items %}
+    for match in for_pattern.finditer(full_text):
+        loop_var = match.group(1)  # item
+        collection_var = match.group(2)  # items
+        
+        if collection_var not in variables:
+            variables[collection_var] = {
+                "name": collection_var,
+                "type": "list",
+                "required": True,
+                "context": "loop",
+                "sample_value": []
+            }
+    
+    # Find conditional variables {% if var %}
+    for match in if_pattern.finditer(full_text):
+        var_name = match.group(1)
+        root_var = var_name.split('.')[0]
+        
+        if root_var not in variables:
+            variables[root_var] = {
+                "name": root_var,
+                "type": "boolean",
+                "required": False,  # conditionals are optional
+                "context": "conditional",
+                "sample_value": False
+            }
+    
+    return list(variables.values())
+
+
+def _get_sample_value(var_type: str) -> Any:
+    """Get sample value for a variable type."""
+    samples = {
+        "string": "",
+        "number": 0,
+        "boolean": False,
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "list": []
+    }
+    return samples.get(var_type, "")
 
 
 def get_template_by_id(session: Session, template_id: int) -> Optional[ReportTemplate]:

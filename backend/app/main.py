@@ -2882,6 +2882,86 @@ async def preview_template(
         raise HTTPException(status_code=500, detail=f"Failed to generate preview: {str(e)}")
 
 
+@app.get("/projects/{project_id}/templates/{template_id}/variables")
+async def get_template_variables(
+    project_id: int,
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Extract Jinja2 variables from a template for dynamic form generation.
+    
+    Analyzes the template DOCX file and returns all detected Jinja2 variables:
+    - {{ variable }} - Simple variables
+    - {% for item in items %} - Loop variables  
+    - {% if condition %} - Conditional variables
+    
+    Use this to build a dynamic form where users can input custom values
+    before generating reports.
+    
+    Returns:
+        List of variables with metadata:
+        ```json
+        {
+            "template_id": 5,
+            "template_name": "Custom Executive Summary",
+            "variables": [
+                {
+                    "name": "company_name",
+                    "type": "string",
+                    "required": true,
+                    "context": "simple",
+                    "sample_value": ""
+                },
+                {
+                    "name": "findings",
+                    "type": "list",
+                    "required": true,
+                    "context": "loop",
+                    "sample_value": []
+                }
+            ]
+        }
+        ```
+    """
+    from app.report_modular import (
+        get_template_by_id,
+        get_template_path,
+        extract_jinja2_variables,
+    )
+    
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get template from database
+    template = get_template_by_id(session, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Get template file path
+    try:
+        template_path = get_template_path(template)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    # Extract variables from template
+    try:
+        variables = extract_jinja2_variables(template_path)
+        
+        return {
+            "template_id": template_id,
+            "template_name": template.name,
+            "variables": variables
+        }
+    except Exception as e:
+        print(f"Error extracting template variables: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to extract variables: {str(e)}")
+
+
 @app.post("/projects/{project_id}/report/assemble", response_class=FileResponse)
 async def assemble_modular_report(
     project_id: int,
