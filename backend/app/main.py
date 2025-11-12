@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from io import BytesIO
 import os
 import sys
 import logging
@@ -2784,6 +2785,101 @@ async def assemble_modular_report_v2(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to assemble report: {str(e)}")
+
+
+@app.post("/projects/{project_id}/templates/{template_id}/preview", response_class=FileResponse)
+async def preview_template(
+    project_id: int,
+    template_id: int,
+    variables: Optional[Dict[str, Any]] = Body(default=None, description="Optional template variables"),
+    session: Session = Depends(get_session)
+):
+    """
+    Generate a preview of a single template with sample data and watermark.
+    
+    Returns a DOCX file with:
+    - Sample findings and project data (not real database data)
+    - Red "PREVIEW - NOT FINAL" watermark in header
+    - Single template rendering (not merged with others)
+    
+    Use this to test template layout before generating full reports.
+    
+    Args:
+        project_id: Project ID (for context, but uses sample data)
+        template_id: Template ID to preview
+        variables: Optional custom variables for preview
+    
+    Returns:
+        DOCX file with watermark and sample data
+    """
+    from app.report_modular import (
+        get_template_by_id,
+        get_template_path,
+        render_module,
+        generate_sample_project_data,
+        add_watermark_to_docx,
+    )
+    from app.models import ReportTemplate
+    
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get template from database
+    template = get_template_by_id(session, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Get template file path
+    try:
+        template_path = get_template_path(template)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    # Generate sample data (not real project data)
+    sample_context = generate_sample_project_data(project_name=f"{project.name} (Preview)")
+    
+    # Override with user-provided variables if any
+    if variables:
+        sample_context.update(variables)
+    
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"/tmp/preview_{template_id}_{timestamp}.docx"
+    
+    try:
+        # Render template with sample data
+        doc = render_module(template_path, sample_context, module_name=template.name.lower().replace(" ", "_"))
+        
+        # Save to bytes
+        buf = BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        doc_bytes = buf.read()
+        
+        # Add watermark
+        watermarked_bytes = add_watermark_to_docx(doc_bytes, "PREVIEW - NOT FINAL")
+        
+        # Write to temporary file
+        with open(file_path, 'wb') as f:
+            f.write(watermarked_bytes)
+        
+        # Generate descriptive filename
+        safe_name = template.name.replace(" ", "_").replace("/", "_")
+        filename = f"PREVIEW_{safe_name}_{timestamp}.docx"
+        
+        return FileResponse(
+            file_path,
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename=filename
+        )
+        
+    except Exception as e:
+        print(f"Error generating template preview: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate preview: {str(e)}")
 
 
 @app.post("/projects/{project_id}/report/assemble", response_class=FileResponse)

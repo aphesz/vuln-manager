@@ -39,6 +39,130 @@ STORAGE_ROOT = Path("/code/storage/templates") if Path("/code/storage").exists()
 MODULE_DIR = Path(__file__).parent / "report_modules"
 
 
+def generate_sample_project_data(project_name: str = "Sample Security Assessment") -> Dict[str, Any]:
+    """Generate realistic sample data for template preview.
+    
+    Creates fake findings, risk counts, and project metadata for testing templates
+    without requiring real database data.
+    
+    Args:
+        project_name: Name for the sample project
+        
+    Returns:
+        Complete context dict compatible with build_context()
+    """
+    sample_findings = [
+        {
+            "title": "Cross-Site Scripting (XSS) in Search Parameter",
+            "risk_rating": "Critical",
+            "description_text": "The application fails to properly sanitize user input in the search parameter, "
+                              "allowing attackers to inject arbitrary JavaScript code. This vulnerability affects "
+                              "all authenticated users and can lead to session hijacking, credential theft, and "
+                              "unauthorized actions performed on behalf of victims.",
+            "impact": "Attackers can execute malicious scripts in victim browsers, steal session tokens, "
+                     "redirect users to phishing sites, or perform actions as the authenticated user.",
+            "remediation_text": "Implement proper input validation and output encoding. Use a Content Security Policy (CSP) "
+                               "to restrict inline script execution. Encode all user-controllable data before rendering in HTML context.",
+            "poc_content": "1. Navigate to https://example.com/search?q=<script>alert(document.cookie)</script>\n"
+                          "2. Observe the JavaScript execution in the browser\n"
+                          "3. Cookie data is displayed in the alert dialog",
+            "affected_resources": "https://example.com/search, https://example.com/products/search (+2 more)",
+            "instances_count": 4,
+            "cve_id": "N/A",
+            "cwe_id": "CWE-79",
+            "cvss_score": 9.3,
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N",
+            "owasp_category": "A03:2021",
+            "owasp_risk_rating": "Critical",
+        },
+        {
+            "title": "SQL Injection in User Profile Endpoint",
+            "risk_rating": "High",
+            "description_text": "The user profile API endpoint concatenates user input directly into SQL queries "
+                              "without proper parameterization. An attacker can manipulate the 'user_id' parameter "
+                              "to execute arbitrary SQL commands, potentially accessing or modifying database contents.",
+            "impact": "Complete database compromise including unauthorized access to sensitive user data, "
+                     "modification of records, and potential server takeover through advanced SQL injection techniques.",
+            "remediation_text": "Use prepared statements with parameterized queries for all database interactions. "
+                               "Implement least-privilege database access. Deploy web application firewall (WAF) rules.",
+            "poc_content": "POST /api/user/profile\nContent-Type: application/json\n\n"
+                          "{\"user_id\": \"1' OR '1'='1\"}",
+            "affected_resources": "https://api.example.com/user/profile",
+            "instances_count": 1,
+            "cve_id": "N/A",
+            "cwe_id": "CWE-89",
+            "cvss_score": 8.6,
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:L",
+            "owasp_category": "A03:2021",
+            "owasp_risk_rating": "High",
+        },
+        {
+            "title": "Broken Authentication - Weak Password Policy",
+            "risk_rating": "Medium",
+            "description_text": "The application allows users to create accounts with weak passwords (minimum 4 characters, "
+                              "no complexity requirements). This weakness enables brute-force and dictionary attacks.",
+            "impact": "User accounts can be compromised through automated password guessing attacks, "
+                     "leading to unauthorized access and potential data breaches.",
+            "remediation_text": "Enforce strong password policy (minimum 12 characters, complexity requirements). "
+                               "Implement account lockout after failed attempts. Use multi-factor authentication (MFA).",
+            "poc_content": "Successfully created account with password '1234' during testing.",
+            "affected_resources": "https://example.com/register",
+            "instances_count": 1,
+            "cve_id": "N/A",
+            "cwe_id": "CWE-521",
+            "cvss_score": 5.3,
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+            "owasp_category": "A07:2021",
+            "owasp_risk_rating": "Medium",
+        },
+    ]
+    
+    # Add section numbers and other required fields
+    for idx, finding in enumerate(sample_findings, start=1):
+        finding.update({
+            "index": idx,
+            "section_number": f"1.1.{idx}",
+            "references_url": "https://owasp.org/www-project-top-ten/",
+            "issue_status": "Open",
+            "review_status": "Pending",
+            "reviewer_name": "N/A",
+            "sla_status": "At Risk" if idx <= 2 else "On Track",
+            "remediation_deadline": "2025-12-31",
+            "remediation_owner": "Development Team",
+            "jira_issue_key": f"VULN-{100 + idx}",
+            "jira_status": "To Do",
+            "discovered_at": "2025-11-01",
+            "resolved_at": "N/A",
+            "template_id": "",
+            "status": "New - Unvalidated",
+            "owasp_vector": f"OWASP {finding['owasp_category']}",
+            "owasp_likelihood": None,
+            "owasp_impact": None,
+        })
+    
+    return {
+        "project": {
+            "name": project_name,
+            "consultant_name": "John Security Analyst",
+        },
+        "findings": sample_findings,
+        "total_findings": len(sample_findings),
+        "critical_count": 1,
+        "high_count": 1,
+        "medium_count": 1,
+        "low_count": 0,
+        "informational_count": 0,
+        "overdue_count": 0,
+        "at_risk_count": 2,
+        "on_track_count": 1,
+        "company_name": "ACME Corporation",
+        "report_date": datetime.now().strftime("%Y-%m-%d"),
+        "report_version": "1.0 - PREVIEW",
+        "consultant_email": "consultant@example.com",
+        "assessment_period": "Q4 2025",
+    }
+
+
 def get_template_by_id(session: Session, template_id: int) -> Optional[ReportTemplate]:
     """Load template from database by ID.
     
@@ -359,6 +483,46 @@ def merge_documents(docs: List[Document]) -> bytes:
     # Save merged document
     out = BytesIO()
     composer.save(out)
+    out.seek(0)
+    return out.read()
+
+
+def add_watermark_to_docx(docx_bytes: bytes, watermark_text: str = "PREVIEW - NOT FINAL") -> bytes:
+    """Add watermark text to the header of a DOCX document.
+    
+    Args:
+        docx_bytes: Original DOCX as bytes
+        watermark_text: Text to display as watermark
+        
+    Returns:
+        Modified DOCX with watermark as bytes
+    """
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    
+    # Load document
+    buf = BytesIO(docx_bytes)
+    doc = Document(buf)
+    
+    # Add watermark to all sections' headers
+    for section in doc.sections:
+        header = section.header
+        if not header.paragraphs:
+            header_para = header.add_paragraph()
+        else:
+            header_para = header.paragraphs[0]
+        
+        # Clear existing content and add watermark
+        header_para.clear()
+        run = header_para.add_run(watermark_text)
+        run.font.size = Pt(14)
+        run.font.bold = True
+        run.font.color.rgb = RGBColor(255, 0, 0)  # Red color
+        header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Save modified document
+    out = BytesIO()
+    doc.save(out)
     out.seek(0)
     return out.read()
 

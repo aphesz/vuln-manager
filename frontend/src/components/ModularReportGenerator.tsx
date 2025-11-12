@@ -42,6 +42,7 @@ import {
   Delete as DeleteIcon,
   Warning as WarningIcon,
   VerifiedUser as VerifyIcon,
+  Visibility as PreviewIcon,
 } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
@@ -84,6 +85,7 @@ const ModularReportGenerator: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
@@ -205,6 +207,51 @@ const ModularReportGenerator: React.FC = () => {
       console.error(err);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const previewTemplate = async (templateId: number) => {
+    setPreviewing(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/templates/${templateId}/preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          variables: customVariables,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate preview');
+      }
+
+      // Download the preview DOCX file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Get template name for filename
+      const template = availableTemplates.find(t => t.id === templateId);
+      const templateName = template?.name.replace(/\s/g, '_') || 'Template';
+      a.download = `PREVIEW_${templateName}_${new Date().toISOString().split('T')[0]}.docx`;
+      
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setSuccess('Preview generated! The file has a watermark to indicate it uses sample data.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate preview');
+      console.error(err);
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -431,6 +478,18 @@ const ModularReportGenerator: React.FC = () => {
                             edge="end"
                           />
                           <IconButton 
+                            size="small"
+                            color="primary"
+                            disabled={!template.exists || previewing}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              previewTemplate(template.id);
+                            }}
+                            title="Preview with sample data"
+                          >
+                            <PreviewIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton 
                             size="small" 
                             onClick={(e) => {
                               e.stopPropagation();
@@ -526,6 +585,18 @@ const ModularReportGenerator: React.FC = () => {
                               disabled={!template.exists}
                               edge="end" 
                             />
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              disabled={!template.exists || previewing}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                previewTemplate(template.id);
+                              }}
+                              title="Preview with sample data"
+                            >
+                              <PreviewIcon fontSize="small" />
+                            </IconButton>
                             <IconButton
                               size="small"
                               color="error"
