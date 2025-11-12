@@ -15,6 +15,7 @@ import TrendAnalysisPage from './components/TrendAnalysisPage'
 import AttackSurfacePage from './components/AttackSurfacePage'
 import ExecutiveDashboard from './components/ExecutiveDashboard'
 import ReportBuilderPage from './components/ReportBuilderPage'
+import ModularReportGenerator from './components/ModularReportGenerator'
 import BrandingSettingsPage from './components/BrandingSettingsPage'
 import CustomTemplateLibrary from './components/CustomTemplateLibrary'
 import CustomTemplateBuilder from './components/CustomTemplateBuilder'
@@ -110,6 +111,7 @@ const App = () => {
               <Route path="/reports" element={<ProtectedRoute><ReportBuilderPage /></ProtectedRoute>} />
               <Route path="/settings/branding" element={<ProtectedRoute><BrandingSettingsPage /></ProtectedRoute>} />
               <Route path="/projects/:projectId" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/projects/:projectId/reports" element={<ProtectedRoute><ModularReportGenerator /></ProtectedRoute>} />
               <Route path="/projects/:projectId/trends" element={<ProtectedRoute><TrendAnalysisPage /></ProtectedRoute>} />
               <Route path="/projects/:projectId/attack-surface" element={<ProtectedRoute><AttackSurfacePage /></ProtectedRoute>} />
               <Route path="/sla" element={<ProtectedRoute><SLADashboard /></ProtectedRoute>} />
