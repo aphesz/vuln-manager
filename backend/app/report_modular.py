@@ -12,11 +12,19 @@ from typing import List, Dict, Optional, Any
 import json
 from datetime import datetime
 
-from docxtpl import DocxTemplate
+from docxtpl import DocxTemplate, InlineImage
 from docx import Document
+from docx.shared import Cm
 from docxcompose.composer import Composer
 
-from app.report_poc_simple import _strip_html, _fmt_dt, _normalize_risk_label
+from app.report_poc_simple import (
+    _strip_html, 
+    _fmt_dt, 
+    _normalize_risk_label,
+    _generate_donut_image,
+    _set_table_left_border,
+    RISK_COLORS,
+)
 
 
 MODULE_DIR = Path(__file__).parent / "report_modules"
@@ -181,24 +189,70 @@ def build_context(project: Any, variables: Optional[Dict] = None) -> Dict:
     return ctx
 
 
-def render_module(module_path: Path, context: Dict) -> Document:
+def render_module(module_path: Path, context: Dict, module_name: str = "") -> Document:
     """Render a single module template with the given context.
     
     Args:
         module_path: Path to the module DOCX template
         context: Full context dict for Jinja2 rendering
+        module_name: Name of the module (for special handling)
         
     Returns:
         Rendered Document object
     """
     tpl = DocxTemplate(module_path)
+    
+    # Special handling for detailed_findings module - add donut charts
+    if module_name == "detailed_findings" and "findings" in context:
+        enhanced_findings = []
+        for f_ctx in context["findings"]:
+            risk = f_ctx.get("risk_rating", "Low")
+            color = RISK_COLORS.get(risk, "DDDDDD")
+            
+            # Generate donut chart image
+            try:
+                donut_stream = _generate_donut_image(
+                    risk,
+                    color,
+                    size_inches=1.2,  # Smaller for detailed findings
+                    dpi=150,
+                )
+                donut_img = InlineImage(tpl, donut_stream, Cm(3.0))
+                f_ctx["donut_img"] = donut_img
+                f_ctx["has_donut"] = True
+            except Exception as e:
+                # Fallback to text if image generation fails
+                f_ctx["donut_img"] = f"[{risk}]"
+                f_ctx["has_donut"] = False
+            
+            enhanced_findings.append(f_ctx)
+        
+        # Update context with enhanced findings
+        context["findings"] = enhanced_findings
+    
     tpl.render(context)
     
     # Save to BytesIO and reload as Document for merging
     buf = BytesIO()
     tpl.save(buf)
     buf.seek(0)
-    return Document(buf)
+    doc = Document(buf)
+    
+    # Post-process: Add colored left borders to tables in detailed_findings
+    if module_name == "detailed_findings" and "findings" in context:
+        # Apply colored borders to finding tables
+        findings_iter = iter(context["findings"])
+        for tbl in doc.tables:
+            try:
+                finding = next(findings_iter)
+                color = RISK_COLORS.get(finding.get("risk_rating", "Low"), "DDDDDD")
+                _set_table_left_border(tbl, color)
+            except StopIteration:
+                break
+            except Exception:
+                continue
+    
+    return doc
 
 
 def merge_documents(docs: List[Document]) -> bytes:
@@ -269,11 +323,11 @@ def assemble_report(
     # Build context once for all modules
     context = build_context(project, variables)
     
-    # Render each module
+    # Render each module with module name for special handling
     rendered_docs = []
-    for path in module_paths:
+    for module_name, path in zip(modules, module_paths):
         try:
-            doc = render_module(path, context)
+            doc = render_module(path, context, module_name=module_name)
             rendered_docs.append(doc)
         except Exception as e:
             # Add context about which module failed

@@ -125,8 +125,12 @@ def create_detailed_findings_template():
     # Findings loop
     doc.add_paragraph("{% for f in findings %}")
     
-    # Finding heading
+    # Finding heading - donut_img will be added programmatically during render
     doc.add_heading("{{ f.section_number }} {{ f.title }} ({{ f.risk_rating }})", level=2)
+    
+    # Add donut chart if available (will be populated during render)
+    donut_para = doc.add_paragraph()
+    donut_para.add_run("{{ f.donut_img }}")
     
     # Create finding table
     finding_table = doc.add_table(rows=15, cols=2)
