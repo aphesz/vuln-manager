@@ -764,56 +764,6 @@ const Dashboard = () => {
 
       {/* Dashboard Grid */}
       <Grid container spacing={3}>
-        {/* Dashboard Widgets Row */}
-        {metrics && (
-          <Grid item xs={12}>
-            <Grid container spacing={2}>
-              {/* First Row - 3 widgets */}
-              <Grid item xs={12} md={4}>
-                <SLAComplianceWidget
-                  onTrack={metrics.sla_compliance.on_track}
-                  atRisk={metrics.sla_compliance.at_risk}
-                  overdue={metrics.sla_compliance.overdue}
-                  total={metrics.sla_compliance.total}
-                  complianceRate={metrics.sla_compliance.compliance_rate}
-                />
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <ReviewProgressWidget
-                  pending={metrics.review_progress.pending}
-                  inReview={metrics.review_progress.in_review}
-                  approved={metrics.review_progress.approved}
-                  rejected={metrics.review_progress.rejected}
-                  total={metrics.review_progress.total}
-                  approvalRate={metrics.review_progress.approval_rate}
-                />
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <TopVulnerabilitiesWidget
-                  vulnerabilities={metrics.top_vulnerabilities}
-                />
-              </Grid>
-              
-              {/* Second Row - 3 widgets */}
-              <Grid item xs={12} md={4}>
-                <AttackMatrixWidget
-                  projectId={Number(projectId)}
-                />
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <OWASPTop10Widget
-                  projectId={Number(projectId)}
-                />
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <CWETop25Widget
-                  projectId={Number(projectId)}
-                />
-              </Grid>
-            </Grid>
-          </Grid>
-        )}
-
         {/* Metrics Cards */}
         <Grid item xs={12}>
           <MetricsCards findings={project?.findings || []} />
@@ -1053,6 +1003,56 @@ const Dashboard = () => {
             }}
           />
         </Grid>
+
+        {/* Dashboard Widgets Row */}
+        {metrics && (
+          <Grid item xs={12}>
+            <Grid container spacing={2}>
+              {/* First Row - 3 widgets */}
+              <Grid item xs={12} md={4}>
+                <SLAComplianceWidget
+                  onTrack={metrics.sla_compliance.on_track}
+                  atRisk={metrics.sla_compliance.at_risk}
+                  overdue={metrics.sla_compliance.overdue}
+                  total={metrics.sla_compliance.total}
+                  complianceRate={metrics.sla_compliance.compliance_rate}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <ReviewProgressWidget
+                  pending={metrics.review_progress.pending}
+                  inReview={metrics.review_progress.in_review}
+                  approved={metrics.review_progress.approved}
+                  rejected={metrics.review_progress.rejected}
+                  total={metrics.review_progress.total}
+                  approvalRate={metrics.review_progress.approval_rate}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TopVulnerabilitiesWidget
+                  vulnerabilities={metrics.top_vulnerabilities}
+                />
+              </Grid>
+              
+              {/* Second Row - 3 widgets */}
+              <Grid item xs={12} md={4}>
+                <AttackMatrixWidget
+                  projectId={Number(projectId)}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <OWASPTop10Widget
+                  projectId={Number(projectId)}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <CWETop25Widget
+                  projectId={Number(projectId)}
+                />
+              </Grid>
+            </Grid>
+          </Grid>
+        )}
       </Grid>
 
       {/* Upload Dialog */}
