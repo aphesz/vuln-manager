@@ -8,6 +8,200 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### v0.15.0 - Template Placeholder Documentation Generator 📚
+**Released:** 2025-11-12  
+**Status:** ✅ **COMPLETE** - Auto-generated documentation for template variables
+
+#### Overview
+Comprehensive documentation system for template variables. Users can view detailed information about available placeholders, including descriptions, examples, usage patterns, and sources. Supports multiple output formats (JSON, Markdown, HTML) with search and categorization for easy discovery.
+
+#### Key Features
+- [x] **Auto-Generated Variable Documentation**
+  - Comprehensive metadata for 50+ common template variables
+  - Categories: project, findings, risk_summary, compliance, sla, metadata, custom
+  - Each variable includes:
+    * Description (what it represents)
+    * Example (sample value)
+    * Source (where data comes from)
+    * Type (string/number/list/boolean)
+    * Usage pattern (simple variable vs. loop)
+    * Context (additional information)
+
+- [x] **Multi-Format Output**
+  - JSON format: Structured docs with categories dict
+  - Markdown format: Formatted documentation with headers and code blocks
+  - HTML format: Styled output with CSS for immediate viewing
+  - API endpoint: GET `/projects/{id}/templates/{template_id}/documentation?format={json|markdown|html}`
+
+- [x] **Interactive Documentation Viewer**
+  - Material-UI Dialog component (TemplatePlaceholderDocs)
+  - Real-time search filtering across all variable metadata
+  - Categorized accordion sections for organization
+  - Copy-to-clipboard for usage snippets with success feedback
+  - Color-coded category chips for visual distinction
+  - "View Variables" button on all template cards (system and custom)
+
+#### Technical Implementation
+**Backend (`report_modular.py`):**
+- `generate_template_documentation()`: 267-line function with comprehensive variable metadata
+- 50+ predefined variables:
+  * Project: project_name, project_description, client_name, assessment_dates, etc.
+  * Risk Summary: critical_count, high_count, cvss_score, total_issues, etc.
+  * Findings: finding.title, finding.description, finding.cvss_score, finding.recommendation, etc.
+  * Compliance: owasp_top_10, cwe_top_25, compliance_percentage, etc.
+  * SLA: sla_deadline, sla_owner, sla_status, etc.
+  * Metadata: report_date, version, authors, etc.
+- Extracts actual variables from template using docxtpl
+- Merges with predefined metadata for comprehensive docs
+
+**Backend (`main.py`):**
+- Documentation endpoint with format query parameter
+- Supports JSON (default), Markdown, and HTML outputs
+- Handles template not found errors gracefully
+
+**Frontend (`TemplatePlaceholderDocs.tsx`):**
+- 334-line React component with TypeScript
+- Features:
+  * Search bar for filtering variables
+  * Accordion sections by category
+  * Copy-to-clipboard for usage snippets
+  * Comprehensive variable display with all metadata
+  * Loading and error states
+
+**Frontend (`ModularReportGenerator.tsx`):**
+- Added DescriptionIcon button to template cards (green color)
+- Button placement: Between preview and version history buttons
+- Dialog integration with conditional rendering
+- State management: docsDialogOpen, selectedTemplateForDocs
+- Handler: handleShowDocs(template)
+
+#### User Experience
+1. Click "View Variables" icon (green document icon) on any template card
+2. Dialog opens showing all available variables for that template
+3. Use search bar to filter by name, description, category, or example
+4. Variables grouped by category with color-coded chips
+5. Click copy icon to copy usage snippet (e.g., `{{ project_name }}`) to clipboard
+6. View complete information for each variable:
+   - Description: What the variable represents
+   - Example: Sample value to expect
+   - Source: Where the data comes from
+   - Usage: How to use it in templates
+   - Context: Additional information
+
+#### Benefits
+- **Faster Template Authoring**: No need to guess variable names
+- **Accurate Usage**: See correct syntax and patterns
+- **Understanding Context**: Know where data comes from and what format to expect
+- **Reduced Errors**: Avoid typos and invalid variable references
+- **Better Documentation**: Self-documenting system for all templates
+- **Multi-Format Support**: Export docs as JSON, Markdown, or HTML
+
+#### Phase 5 Progress
+✅ v0.12.2 - Template Preview (commit 03ce00d7)  
+✅ v0.13.0 - Template Variables Form Builder (commit 10c7e81d)  
+✅ v0.14.0 - Template Versioning System (commit 489cfffb)  
+✅ v0.15.0 - Placeholder Documentation Generator (commit 1e0723f5)
+
+**Next:** Template Sharing/Marketplace (export/import templates)
+
+---
+
+### v0.14.0 - Template Versioning System 🕐
+**Released:** 2025-11-12  
+**Status:** ✅ **COMPLETE** - Complete version control for report templates
+
+#### Overview
+Comprehensive version control system for report templates. Create snapshots, track changes over time, and restore previous versions with automatic backup. Each version stores complete metadata including SHA-256 hash, file size, and change descriptions.
+
+#### Key Features
+- [x] **Version Snapshots**
+  - Create snapshot of current template state
+  - Each version stored as separate file with unique version number
+  - SHA-256 hash for integrity verification
+  - File size and creation timestamp tracked
+  - Optional change description for documentation
+
+- [x] **Version History**
+  - List all versions ordered by creation date (newest first)
+  - Current version highlighted with badge
+  - Each entry shows:
+    * Version number
+    * Creation timestamp (formatted)
+    * File size (human-readable)
+    * SHA-256 hash (for verification)
+    * Change description (if provided)
+    * "Current" badge on active version
+
+- [x] **Version Restore**
+  - Restore any previous version to become current
+  - Automatic backup of current version before restore
+  - File-level copy with metadata update
+  - Confirmation dialog prevents accidental restores
+  - Success feedback with template reload
+
+#### Technical Implementation
+**Backend Model (`ReportTemplateVersion`):**
+- `version_number`: Integer, auto-incrementing per template
+- `change_description`: Optional text describing changes
+- `file_size_bytes`: Size of version file
+- `file_hash`: SHA-256 hash of file contents
+- `version_file_path`: Absolute path to version file
+- `is_current`: Boolean flag (only one true per template)
+- `created_at`: Timestamp of version creation
+- Foreign key to `report_template` table
+
+**API Endpoints:**
+- POST `/projects/{id}/templates/{template_id}/versions`: Create new version
+- GET `/projects/{id}/templates/{template_id}/versions`: List all versions
+- POST `/projects/{id}/templates/{template_id}/versions/{version_id}/restore`: Restore version
+
+**Storage Structure:**
+```
+storage/
+└── templates/
+    └── versions/
+        └── template_{template_id}/
+            ├── v1_timestamp.docx
+            ├── v2_timestamp.docx
+            └── v3_timestamp.docx
+```
+
+**Frontend Component (`TemplateVersionHistory`):**
+- 280-line React component with Material-UI
+- Accordion-based version list
+- Create new version form with description field
+- Restore button with confirmation dialog
+- Automatic refresh after operations
+- Human-readable timestamps using date-fns
+- File size formatting (B, KB, MB)
+
+#### User Experience
+1. Click "Version History" icon (clock icon) on template card
+2. View list of all versions with complete metadata
+3. Click "Create New Version" to snapshot current state
+4. Optionally add change description (e.g., "Added risk charts section")
+5. Click "Restore" on any previous version to revert
+6. Confirm restore action in dialog
+7. Current template automatically backed up before restore
+8. Template reloads with restored content
+
+#### Benefits
+- **Safe Experimentation**: Try changes knowing you can revert
+- **Change Tracking**: Document why each version was created
+- **Audit Trail**: Complete history of template evolution
+- **Integrity Verification**: SHA-256 hashes prevent tampering
+- **Automatic Backup**: Never lose current version during restore
+- **Team Collaboration**: See who changed what and when
+
+#### Phase 5 Progress
+✅ v0.12.2 - Template Preview (commit 03ce00d7)  
+✅ v0.13.0 - Template Variables Form Builder (commit 10c7e81d)  
+✅ v0.14.0 - Template Versioning System (commit 489cfffb)
+
+**Next:** Placeholder Documentation Generator (auto-generated variable docs)
+
+---
+
 ### v0.12.0 - Unified Template System 📝
 **Released:** 2025-11-12  
 **Status:** ✅ **COMPLETE** - User-uploadable custom templates with database-backed storage
