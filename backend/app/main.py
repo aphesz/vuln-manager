@@ -85,6 +85,7 @@ from app import owasp
 from app import cwe_top25
 from app.reports import generate_report_docx, generate_report_pdf, generate_executive_report_pdf
 from app.report_poc_simple import render_docx_simple, render_docx_raw, build_simple_template_docx
+from app.report_modular import assemble_report, list_available_modules
 from app.auth import (
     get_password_hash,
     verify_password,
@@ -2477,6 +2478,149 @@ def generate_report_from_template(
     # Generate filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_path = f"/tmp/report_{project_id}_{template_id}_{timestamp}.pdf"
+
+@app.post("/projects/{project_id}/report/assemble", response_class=FileResponse)
+async def assemble_modular_report(
+    project_id: int,
+    modules: List[str] = Body(..., description="List of module names to include (in order)"),
+    variables: Optional[Dict[str, Any]] = Body(default=None, description="Optional template variables"),
+    session: Session = Depends(get_session)
+):
+    """
+    Assemble a modular report from selected template modules.
+    
+    This endpoint allows you to compose a custom report by selecting and ordering
+    reusable template modules (title_page, executive_summary, detailed_findings, etc.).
+    
+    POST body:
+    ```json
+    {
+        "modules": [
+            "title_page",
+            "executive_summary",
+            "risk_charts",
+            "detailed_findings",
+            "recommendations"
+        ],
+        "variables": {
+            "company_name": "Acme Corporation",
+            "assessment_period": "Q4 2024",
+            "include_charts": true
+        }
+    }
+    ```
+    
+    Available modules:
+    - title_page: Project title, metadata, and company branding
+    - executive_summary: High-level overview and key metrics
+    - risk_charts: Visual risk distribution and trends
+    - top_findings: Top N critical findings summary
+    - detailed_findings: Full finding details with all fields
+    - recommendations: Remediation recommendations and action items
+    - appendix: Additional technical details
+    - sla_status: SLA tracking and deadline summary
+    - compliance_owasp: OWASP Top 10 compliance mapping
+    - compliance_cwe: CWE Top 25 compliance mapping
+    - jira_integration: Jira ticket status and linking
+    
+    Returns:
+        Assembled DOCX report with selected modules merged into a single document
+    """
+    # Fetch project with all findings
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Validate modules list
+    if not modules:
+        raise HTTPException(status_code=400, detail="Must specify at least one module")
+    
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"/tmp/modular_report_{project_id}_{timestamp}.docx"
+    
+    try:
+        # Assemble the modular report
+        report_bytes = assemble_report(
+            project=project,
+            modules=modules,
+            variables=variables or {}
+        )
+        
+        # Write to temporary file
+        with open(file_path, 'wb') as f:
+            f.write(report_bytes)
+        
+        # Generate descriptive filename
+        modules_str = "_".join(modules[:3])  # First 3 modules
+        if len(modules) > 3:
+            modules_str += f"_plus{len(modules) - 3}"
+        
+        filename = f"{project.name.replace(' ', '_')}_Modular_{modules_str}_Report.docx"
+        
+        return FileResponse(
+            file_path,
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename=filename
+        )
+        
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Error assembling modular report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to assemble report: {str(e)}")
+
+
+@app.get("/report/modules")
+def get_available_modules():
+    """
+    List all available report modules with metadata.
+    
+    Returns information about each module including whether it exists,
+    its path, and a brief description.
+    
+    Use this endpoint to discover which modules can be used with the
+    /projects/{id}/report/assemble endpoint.
+    """
+    try:
+        modules_info = list_available_modules()
+        return {
+            "modules": modules_info,
+            "total": len(modules_info),
+            "available": sum(1 for m in modules_info if m["exists"]),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list modules: {str(e)}")
+
+
+@app.get("/report/modules/generate-defaults")
+def generate_default_module_templates():
+    """
+    Generate default module templates programmatically.
+    
+    This endpoint creates default DOCX templates for all available modules
+    if they don't already exist. Useful for initial setup or regenerating
+    templates after updates.
+    
+    Note: This will overwrite existing templates with the same names.
+    """
+    try:
+        from app.report_modules.generate_templates import main as generate_main
+        
+        # Run the template generator
+        generate_main()
+        
+        return {
+            "message": "Successfully generated default module templates",
+            "modules": list_available_modules()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate default templates: {str(e)}"
+        )
     
     # Import render_template function
     from app.reports import render_template

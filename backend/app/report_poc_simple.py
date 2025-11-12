@@ -76,6 +76,21 @@ def _strip_html(text: str) -> str:
     return txt
 
 
+def _fmt_dt(value) -> str:
+    """Format datetime/date-like values to ISO date string for templates.
+
+    Returns "N/A" if value is falsy or not datetime-like.
+    """
+    try:
+        if not value:
+            return "N/A"
+        if hasattr(value, 'strftime'):
+            return value.strftime('%Y-%m-%d')
+        return str(value)
+    except Exception:
+        return "N/A"
+
+
 def _generate_donut_image(label: str, color_hex: str, size_inches: float = 1.5, dpi: int = 150) -> BytesIO:
     """Create a donut chart image with maximum Word compatibility.
 
@@ -195,6 +210,30 @@ def render_docx_simple(
             "description_text": description_text[:500] if len(description_text) > 500 else description_text,
             "remediation_text": _strip_html(getattr(f, "remediation", "") or ""),
             "donut_img": donut_img,
+            # --- Extended Finding fields exposed as placeholders ---
+            "impact": _strip_html(getattr(f, "impact", "") or ""),
+            "references_url": getattr(f, "references_url", None) or "N/A",
+            "poc_content": _strip_html(getattr(f, "poc_description", "") or ""),
+            "review_status": str(getattr(f, "review_status", "Pending") or "Pending"),
+            "reviewer_name": getattr(f, "reviewer_name", None) or "N/A",
+            "issue_status": str(getattr(f, "issue_status", "Open") or "Open"),
+            "issue_status_comment": getattr(f, "issue_status_comment", None) or "",
+            "jira_issue_key": getattr(f, "jira_issue_key", None) or "N/A",
+            "jira_status": getattr(f, "jira_status", None) or "N/A",
+            "remediation_deadline": _fmt_dt(getattr(f, "remediation_deadline", None)),
+            "sla_status": str(getattr(f, "sla_status", "") or "N/A"),
+            "remediation_owner": getattr(f, "remediation_owner", None) or "N/A",
+            "discovered_at": _fmt_dt(getattr(f, "discovered_at", None)),
+            "resolved_at": _fmt_dt(getattr(f, "resolved_at", None)),
+            "owasp_category": owasp_category or "N/A",
+            "cwe_id": getattr(f, "cwe_id", None) or "N/A",
+            "cve_id": getattr(f, "cve_id", None) or "N/A",
+            "cvss_vector": getattr(f, "cvss_vector", None) or "N/A",
+            "cvss_score": getattr(f, "cvss_score", None),
+            "owasp_likelihood": getattr(f, "owasp_likelihood", None),
+            "owasp_impact": getattr(f, "owasp_impact", None),
+            "owasp_risk_rating": getattr(f, "owasp_risk_rating", None) or "N/A",
+            "template_id": getattr(f, "template_id", None) or "",
         })
 
     ctx = {
@@ -283,6 +322,30 @@ def render_docx_raw(template_bytes: bytes, project: object) -> bytes:
             "description_text": description_text[:500] if len(description_text) > 500 else description_text,
             "remediation_text": _strip_html(getattr(f, "remediation", "") or ""),
             "donut_img": donut_img,
+            # --- Extended Finding fields exposed as placeholders ---
+            "impact": _strip_html(getattr(f, "impact", "") or ""),
+            "references_url": getattr(f, "references_url", None) or "N/A",
+            "poc_content": _strip_html(getattr(f, "poc_description", "") or ""),
+            "review_status": str(getattr(f, "review_status", "Pending") or "Pending"),
+            "reviewer_name": getattr(f, "reviewer_name", None) or "N/A",
+            "issue_status": str(getattr(f, "issue_status", "Open") or "Open"),
+            "issue_status_comment": getattr(f, "issue_status_comment", None) or "",
+            "jira_issue_key": getattr(f, "jira_issue_key", None) or "N/A",
+            "jira_status": getattr(f, "jira_status", None) or "N/A",
+            "remediation_deadline": _fmt_dt(getattr(f, "remediation_deadline", None)),
+            "sla_status": str(getattr(f, "sla_status", "") or "N/A"),
+            "remediation_owner": getattr(f, "remediation_owner", None) or "N/A",
+            "discovered_at": _fmt_dt(getattr(f, "discovered_at", None)),
+            "resolved_at": _fmt_dt(getattr(f, "resolved_at", None)),
+            "owasp_category": owasp_category or "N/A",
+            "cwe_id": getattr(f, "cwe_id", None) or "N/A",
+            "cve_id": getattr(f, "cve_id", None) or "N/A",
+            "cvss_vector": getattr(f, "cvss_vector", None) or "N/A",
+            "cvss_score": getattr(f, "cvss_score", None),
+            "owasp_likelihood": getattr(f, "owasp_likelihood", None),
+            "owasp_impact": getattr(f, "owasp_impact", None),
+            "owasp_risk_rating": getattr(f, "owasp_risk_rating", None) or "N/A",
+            "template_id": getattr(f, "template_id", None) or "",
         })
 
     ctx = {
