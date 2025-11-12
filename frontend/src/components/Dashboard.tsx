@@ -1020,6 +1020,14 @@ const Dashboard = () => {
                 </Button>
                 <Button
                   variant="contained"
+                  startIcon={<ReportIcon />}
+                  onClick={() => navigate(`/projects/${projectId}/reports`)}
+                  color="primary"
+                >
+                  Generate Reports
+                </Button>
+                <Button
+                  variant="contained"
                   startIcon={<UploadIcon />}
                   onClick={() => setUploadDialogOpen(true)}
                 >

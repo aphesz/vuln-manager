@@ -1,11 +1,11 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query, Path, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, WebSocket, WebSocketDisconnect, Request, Body, Query, Path, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from sqlmodel import SQLModel, Session, create_engine, select
-from sqlalchemy import text, case, func, delete
+from sqlalchemy import text, case, func, delete, or_
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -2479,6 +2479,313 @@ def generate_report_from_template(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_path = f"/tmp/report_{project_id}_{template_id}_{timestamp}.pdf"
 
+# ==================== Template Management Endpoints (v0.12.0) ====================
+
+@app.get("/projects/{project_id}/templates")
+async def list_project_templates(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    List all available templates for a project (system, shared, and project-specific).
+    
+    Returns templates that can be used for report generation, including:
+    - System templates (built-in)
+    - Public shared templates
+    - Project-specific templates
+    """
+    from app.report_modular import list_available_modules
+    
+    # Get project to verify it exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # List all available templates (including project-specific)
+    templates = list_available_modules(session, project_id=project_id)
+    
+    return {"templates": templates, "total": len(templates)}
+
+
+@app.post("/projects/{project_id}/templates/upload")
+async def upload_custom_template(
+    project_id: int,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    template_type: str = Form("Custom"),
+    is_public: bool = Form(False),
+    session: Session = Depends(get_session)
+):
+    """
+    Upload a custom DOCX template for a project.
+    
+    The template should contain Jinja2 placeholders for project data:
+    - {{ project.name }}
+    - {{ findings }} - loop with {% for f in findings %}
+    - {{ f.title }}, {{ f.risk_rating }}, {{ f.description_text }}, etc.
+    
+    Args:
+        file: DOCX file upload
+        name: Template name
+        description: Optional description
+        template_type: Template category (Executive/Technical/Compliance/Custom)
+        is_public: Whether to share with other projects
+    
+    Returns:
+        Created template metadata
+    """
+    from app.models import ReportTemplate
+    from pathlib import Path
+    import os
+    
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Validate file type
+    if not file.filename.endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Only DOCX files are supported")
+    
+    # Create storage directory if needed
+    if is_public:
+        storage_dir = Path("/code/storage/templates/shared")
+    else:
+        storage_dir = Path(f"/code/storage/templates/projects/{project_id}")
+    
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = name.replace(" ", "_").replace("/", "_")
+    filename = f"{safe_name}_{timestamp}.docx"
+    file_path = storage_dir / filename
+    
+    # Save file
+    try:
+        contents = await file.read()
+        with open(file_path, 'wb') as f:
+            f.write(contents)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Create database record
+    relative_path = f"{'shared' if is_public else f'projects/{project_id}'}/{filename}"
+    
+    template = ReportTemplate(
+        name=name,
+        description=description,
+        template_type=template_type,
+        docx_file_path=relative_path,
+        sections="[]",
+        variables="[]",
+        is_system_template=False,
+        is_public=is_public,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        created_by_user_id=None,  # TODO: Set when auth is implemented
+    )
+    
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    
+    return {
+        "id": template.id,
+        "name": template.name,
+        "description": template.description,
+        "template_type": str(template.template_type),
+        "file_path": relative_path,
+        "is_public": is_public,
+        "created_at": template.created_at.isoformat()
+    }
+
+
+@app.delete("/projects/{project_id}/templates/{template_id}", status_code=204)
+async def delete_custom_template(
+    project_id: int,
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Delete a custom template from database and filesystem.
+    
+    Only non-system templates can be deleted.
+    """
+    from app.models import ReportTemplate
+    from pathlib import Path
+    import os
+    
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get template
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Prevent deletion of system templates
+    if template.is_system_template:
+        raise HTTPException(status_code=403, detail="Cannot delete system templates")
+    
+    # Delete file if it exists
+    if template.docx_file_path:
+        file_path = Path(f"/code/storage/templates/{template.docx_file_path}")
+        if file_path.exists():
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                # Log but don't fail - we still want to delete the DB record
+                print(f"Warning: Failed to delete file {file_path}: {str(e)}")
+    
+    # Delete database record
+    session.delete(template)
+    session.commit()
+    
+    return None
+
+
+@app.get("/projects/{project_id}/templates/verify")
+async def verify_template_files(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Check which templates have missing or inaccessible files.
+    
+    Returns:
+        List of templates with file existence status
+    """
+    from app.models import ReportTemplate
+    from pathlib import Path
+    
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all templates accessible to this project
+    statement = select(ReportTemplate).where(
+        or_(
+            ReportTemplate.is_system_template == True,
+            ReportTemplate.is_public == True,
+            ReportTemplate.docx_file_path.like(f"projects/{project_id}/%")
+        )
+    )
+    templates = session.exec(statement).all()
+    
+    results = []
+    for template in templates:
+        file_exists = False
+        file_path = None
+        error_message = None
+        
+        if template.docx_file_path:
+            file_path = Path(f"/code/storage/templates/{template.docx_file_path}")
+            try:
+                file_exists = file_path.exists()
+                if not file_exists:
+                    error_message = "File not found"
+            except Exception as e:
+                error_message = str(e)
+        else:
+            error_message = "No file path specified"
+        
+        results.append({
+            "id": template.id,
+            "name": template.name,
+            "is_system_template": template.is_system_template,
+            "docx_file_path": template.docx_file_path,
+            "file_exists": file_exists,
+            "error_message": error_message
+        })
+    
+    return {
+        "total_templates": len(results),
+        "valid_templates": sum(1 for r in results if r["file_exists"]),
+        "invalid_templates": sum(1 for r in results if not r["file_exists"]),
+        "templates": results
+    }
+
+
+@app.post("/projects/{project_id}/report/assemble/v2", response_class=FileResponse)
+async def assemble_modular_report_v2(
+    project_id: int,
+    template_ids: List[int] = Body(..., description="List of template IDs to include (in order)"),
+    variables: Optional[Dict[str, Any]] = Body(default=None, description="Optional template variables"),
+    session: Session = Depends(get_session)
+):
+    """
+    Assemble a modular report from selected templates (v2 - uses database templates).
+    
+    This is the new unified endpoint that supports both system and user-uploaded templates.
+    
+    POST body:
+    ```json
+    {
+        "template_ids": [1, 2, 5, 3, 7],
+        "variables": {
+            "company_name": "Acme Corporation",
+            "report_date": "2025-11-12",
+            "assessment_period": "Q4 2024"
+        }
+    }
+    ```
+    
+    Returns:
+        Assembled DOCX report with selected templates merged into a single document
+    """
+    from app.report_modular import assemble_report
+    
+    # Fetch project with all findings
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Validate template_ids list
+    if not template_ids:
+        raise HTTPException(status_code=400, detail="Must specify at least one template")
+    
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"/tmp/modular_report_{project_id}_{timestamp}.docx"
+    
+    try:
+        # Assemble the modular report using database templates
+        report_bytes = assemble_report(
+            session=session,
+            project=project,
+            template_ids=template_ids,
+            variables=variables or {}
+        )
+        
+        # Write to temporary file
+        with open(file_path, 'wb') as f:
+            f.write(report_bytes)
+        
+        # Generate descriptive filename
+        filename = f"{project.name.replace(' ', '_')}_Custom_Report_{timestamp}.docx"
+        
+        return FileResponse(
+            file_path,
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename=filename
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error assembling modular report v2: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to assemble report: {str(e)}")
+
+
 @app.post("/projects/{project_id}/report/assemble", response_class=FileResponse)
 async def assemble_modular_report(
     project_id: int,
@@ -2487,7 +2794,10 @@ async def assemble_modular_report(
     session: Session = Depends(get_session)
 ):
     """
-    Assemble a modular report from selected template modules.
+    LEGACY: Assemble a modular report from selected template modules.
+    
+    ⚠️  DEPRECATED: This endpoint uses hardcoded module names. 
+        Use /projects/{project_id}/report/assemble/v2 instead for database-backed templates.
     
     This endpoint allows you to compose a custom report by selecting and ordering
     reusable template modules (title_page, executive_summary, detailed_findings, etc.).
@@ -2526,6 +2836,8 @@ async def assemble_modular_report(
     Returns:
         Assembled DOCX report with selected modules merged into a single document
     """
+    from app.report_modular import assemble_report_legacy
+    
     # Fetch project with all findings
     project = session.exec(select(Project).where(Project.id == project_id)).first()
     if not project:
@@ -2540,8 +2852,8 @@ async def assemble_modular_report(
     file_path = f"/tmp/modular_report_{project_id}_{timestamp}.docx"
     
     try:
-        # Assemble the modular report
-        report_bytes = assemble_report(
+        # Assemble the modular report using legacy function
+        report_bytes = assemble_report_legacy(
             project=project,
             modules=modules,
             variables=variables or {}
@@ -2574,25 +2886,29 @@ async def assemble_modular_report(
 
 
 @app.get("/report/modules")
-def get_available_modules():
+def get_available_modules(session: Session = Depends(get_session)):
     """
-    List all available report modules with metadata.
+    List all available report modules/templates with metadata.
     
-    Returns information about each module including whether it exists,
-    its path, and a brief description.
+    Returns information about each template including whether the file exists,
+    its path, description, template type, and system/public flags.
     
-    Use this endpoint to discover which modules can be used with the
-    /projects/{id}/report/assemble endpoint.
+    Use this endpoint to discover which templates can be used with the
+    /projects/{id}/report/assemble/v2 endpoint (by template ID).
+    
+    For legacy module names, use the /projects/{id}/report/assemble endpoint.
     """
+    from app.report_modular import list_available_modules
+    
     try:
-        modules_info = list_available_modules()
+        modules_info = list_available_modules(session)
         return {
-            "modules": modules_info,
+            "templates": modules_info,
             "total": len(modules_info),
             "available": sum(1 for m in modules_info if m["exists"]),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list modules: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
 
 
 @app.get("/report/modules/generate-defaults")

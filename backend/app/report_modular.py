@@ -1,14 +1,16 @@
 """
 Modular DOCX report generation system.
 
-Allows assembling reports from multiple reusable template modules
-that can be selected, ordered, and merged into a single DOCX output.
+Supports user-uploaded custom DOCX templates with placeholders (like report_poc_simple.py).
+Templates are stored in database and loaded from storage/templates/.
+
+v0.12.0: Unified template system - users can upload custom DOCX templates
 """
 from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 import json
 from datetime import datetime
 
@@ -16,7 +18,9 @@ from docxtpl import DocxTemplate, InlineImage
 from docx import Document
 from docx.shared import Cm
 from docxcompose.composer import Composer
+from sqlmodel import Session, select
 
+from app.models import ReportTemplate
 from app.report_poc_simple import (
     _strip_html, 
     _fmt_dt, 
@@ -27,26 +31,84 @@ from app.report_poc_simple import (
 )
 
 
+# Storage root for templates
+# Use /code/storage in container, fallback to relative path for local dev
+STORAGE_ROOT = Path("/code/storage/templates") if Path("/code/storage").exists() else Path(__file__).parent.parent / "storage" / "templates"
+
+# Legacy module directory (for backward compatibility)
 MODULE_DIR = Path(__file__).parent / "report_modules"
 
-# Available module names (without .docx extension)
-AVAILABLE_MODULES = [
-    "title_page",
-    "executive_summary",
-    "risk_charts",
-    "top_findings",
-    "detailed_findings",
-    "recommendations",
-    "appendix",
-    "sla_status",
-    "compliance_owasp",
-    "compliance_cwe",
-    "jira_integration",
-]
+
+def get_template_by_id(session: Session, template_id: int) -> Optional[ReportTemplate]:
+    """Load template from database by ID.
+    
+    Args:
+        session: Database session
+        template_id: Template ID
+        
+    Returns:
+        ReportTemplate object or None
+    """
+    return session.get(ReportTemplate, template_id)
+
+
+def get_template_by_name(session: Session, name: str, project_id: Optional[int] = None) -> Optional[ReportTemplate]:
+    """Load template from database by name.
+    
+    Args:
+        session: Database session  
+        name: Template name
+        project_id: Optional project ID for project-specific templates
+        
+    Returns:
+        ReportTemplate object or None
+    """
+    # Try project-specific first
+    if project_id:
+        stmt = select(ReportTemplate).where(
+            ReportTemplate.name == name,
+            ReportTemplate.project_id == project_id
+        )
+        result = session.exec(stmt).first()
+        if result:
+            return result
+    
+    # Fall back to system/public templates
+    stmt = select(ReportTemplate).where(
+        ReportTemplate.name == name,
+        ReportTemplate.is_system_template == True
+    )
+    return session.exec(stmt).first()
+
+
+def get_template_path(template: ReportTemplate) -> Path:
+    """Get filesystem path for a template.
+    
+    Args:
+        template: ReportTemplate object
+        
+    Returns:
+        Path to DOCX file
+        
+    Raises:
+        FileNotFoundError: If template file doesn't exist
+    """
+    # DOCX templates stored in storage/templates/
+    if template.docx_file_path:
+        path = STORAGE_ROOT / template.docx_file_path
+        if not path.exists():
+            raise FileNotFoundError(f"Template file not found: {path}")
+        return path
+    
+    # Legacy fallback: should not happen with new system
+    raise ValueError(f"Template '{template.name}' has no docx_file_path")
 
 
 def get_module_path(module_name: str) -> Path:
-    """Get the file path for a module template.
+    """DEPRECATED: Get the file path for a module template.
+    
+    This function is kept for backward compatibility.
+    New code should use get_template_by_id() or get_template_by_name().
     
     Args:
         module_name: Module name without .docx extension
@@ -57,9 +119,15 @@ def get_module_path(module_name: str) -> Path:
     Raises:
         FileNotFoundError: If module doesn't exist
     """
+    # Try new storage location first
+    path = STORAGE_ROOT / "system" / f"{module_name}.docx"
+    if path.exists():
+        return path
+    
+    # Fall back to legacy location
     path = MODULE_DIR / f"{module_name}.docx"
     if not path.exists():
-        raise FileNotFoundError(f"Module '{module_name}' not found at {path}")
+        raise FileNotFoundError(f"Module '{module_name}' not found")
     return path
 
 
@@ -123,7 +191,7 @@ def build_context(project: Any, variables: Optional[Dict] = None) -> Dict:
             "affected_resources": affected_resources,
             "status": status,
             "owasp_vector": f"OWASP {owasp_category}" if owasp_category else "N/A",
-            "description_text": description_text[:500] if len(description_text) > 500 else description_text,
+            "description_text": description_text,  # No truncation - full description
             "remediation_text": _strip_html(getattr(f, "remediation", "") or ""),
             # Extended fields
             "impact": _strip_html(getattr(f, "impact", "") or ""),
@@ -202,8 +270,9 @@ def render_module(module_path: Path, context: Dict, module_name: str = "") -> Do
     """
     tpl = DocxTemplate(module_path)
     
-    # Special handling for detailed_findings module - add donut charts
-    if module_name == "detailed_findings" and "findings" in context:
+    # Add donut charts for ANY template that contains findings
+    # This ensures custom templates also get donut images
+    if "findings" in context and context["findings"]:
         enhanced_findings = []
         for f_ctx in context["findings"]:
             risk = f_ctx.get("risk_rating", "Low")
@@ -214,7 +283,7 @@ def render_module(module_path: Path, context: Dict, module_name: str = "") -> Do
                 donut_stream = _generate_donut_image(
                     risk,
                     color,
-                    size_inches=1.2,  # Smaller for detailed findings
+                    size_inches=1.2,  # Smaller for inline use
                     dpi=150,
                 )
                 donut_img = InlineImage(tpl, donut_stream, Cm(3.0))
@@ -238,8 +307,9 @@ def render_module(module_path: Path, context: Dict, module_name: str = "") -> Do
     buf.seek(0)
     doc = Document(buf)
     
-    # Post-process: Add colored left borders to tables in detailed_findings
-    if module_name == "detailed_findings" and "findings" in context:
+    # Post-process: Add colored left borders to tables in ANY template with findings
+    # This ensures custom templates also get colored borders
+    if "findings" in context and context["findings"]:
         # Apply colored borders to finding tables
         findings_iter = iter(context["findings"])
         for tbl in doc.tables:
@@ -294,13 +364,69 @@ def merge_documents(docs: List[Document]) -> bytes:
 
 
 def assemble_report(
+    session: Session,
+    project: Any,
+    template_ids: List[int],
+    variables: Optional[Dict] = None,
+) -> bytes:
+    """Assemble a modular report from selected templates.
+    
+    Main entry point for modular report generation using database templates.
+    
+    Args:
+        session: Database session
+        project: Project object with findings
+        template_ids: List of template IDs to include (in order)
+        variables: Optional user variables (company_name, etc.)
+        
+    Returns:
+        Complete assembled DOCX report as bytes
+        
+    Raises:
+        FileNotFoundError: If a requested template doesn't exist
+        ValueError: If template_ids list is empty
+    """
+    if not template_ids:
+        raise ValueError("Must specify at least one template")
+    
+    # Load templates from database
+    templates = []
+    for tmpl_id in template_ids:
+        tmpl = get_template_by_id(session, tmpl_id)
+        if not tmpl:
+            raise ValueError(f"Template ID {tmpl_id} not found")
+        templates.append(tmpl)
+    
+    # Get paths and validate all templates exist
+    template_paths = [get_template_path(tmpl) for tmpl in templates]
+    
+    # Build context once for all templates
+    context = build_context(project, variables)
+    
+    # Render each template
+    rendered_docs = []
+    for tmpl, path in zip(templates, template_paths):
+        try:
+            # Use template name as module_name for special handling (e.g., "Detailed Findings")
+            doc = render_module(path, context, module_name=tmpl.name.lower().replace(" ", "_"))
+            rendered_docs.append(doc)
+        except Exception as e:
+            # Add context about which template failed
+            raise RuntimeError(f"Failed to render template '{tmpl.name}': {e}") from e
+    
+    # Merge all rendered templates
+    return merge_documents(rendered_docs)
+
+
+def assemble_report_legacy(
     project: Any,
     modules: List[str],
     variables: Optional[Dict] = None,
 ) -> bytes:
-    """Assemble a modular report from selected modules.
+    """DEPRECATED: Assemble a modular report from module names.
     
-    Main entry point for modular report generation.
+    This function is kept for backward compatibility.
+    New code should use assemble_report() with template IDs.
     
     Args:
         project: Project object with findings
@@ -317,7 +443,7 @@ def assemble_report(
     if not modules:
         raise ValueError("Must specify at least one module")
     
-    # Validate all modules exist before rendering
+    # Validate all modules exist before rendering (use legacy path resolution)
     module_paths = [get_module_path(m) for m in modules]
     
     # Build context once for all modules
@@ -337,21 +463,48 @@ def assemble_report(
     return merge_documents(rendered_docs)
 
 
-def list_available_modules() -> List[Dict[str, Any]]:
-    """List all available report modules with metadata.
+def list_available_modules(session: Optional[Session] = None, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """List all available report templates from database.
+    
+    Args:
+        session: Optional database session (for API endpoint use)
+        project_id: Optional project ID (for future project-specific filtering)
     
     Returns:
-        List of dicts with module info (name, exists, description)
+        List of dicts with template info (id, name, description, type, etc.)
     """
+    if not session:
+        # If no session provided, return empty list (caller should provide session)
+        return []
+    
+    # Query all templates with DOCX files
+    # For now, show all non-private templates (system + public + user uploads)
+    # TODO: Add project_id filtering when model is updated
+    stmt = select(ReportTemplate).where(
+        ReportTemplate.docx_file_path != None
+    )
+    templates = session.exec(stmt).all()
+    
     modules = []
-    for name in AVAILABLE_MODULES:
-        path = MODULE_DIR / f"{name}.docx"
+    for tmpl in templates:
+        try:
+            path = get_template_path(tmpl)
+            exists = path.exists()
+        except (FileNotFoundError, ValueError):
+            exists = False
+            path = None
+        
         modules.append({
-            "name": name,
-            "exists": path.exists(),
-            "path": str(path),
-            "description": _get_module_description(name),
+            "id": tmpl.id,
+            "name": tmpl.name,
+            "description": tmpl.description or "",
+            "template_type": str(tmpl.template_type),
+            "exists": exists,
+            "path": str(path) if path else None,
+            "is_system": tmpl.is_system_template,
+            "is_public": tmpl.is_public,
         })
+    
     return modules
 
 

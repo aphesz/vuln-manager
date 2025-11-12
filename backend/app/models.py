@@ -303,6 +303,11 @@ class ReportTemplateBase(SQLModel):
     # Example: {"page_size": "letter", "orientation": "portrait", "margins": {"top": 1, "bottom": 1}}
     layout_config: Optional[str] = Field(default=None)  # JSON string, optional
     
+    # User-uploaded DOCX template support (v0.12.0)
+    docx_file_path: Optional[str] = Field(default=None, max_length=500)  # Path to uploaded DOCX file (relative to storage/templates/)
+    # If docx_file_path is set, this is a user-uploaded template.
+    # If NULL, this is a parameterized/widget-based template.
+    
     # Metadata
     is_system_template: bool = Field(default=False)  # Built-in templates (read-only)
     is_public: bool = Field(default=False)  # Shared with all users

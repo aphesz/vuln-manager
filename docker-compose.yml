@@ -7,6 +7,8 @@ services:
     volumes:
       # Mount code for live-reloading during development
       - ./backend/app:/app
+      # Persist storage for uploaded templates and generated files
+      - ./backend/storage:/code/storage
     environment:
       # Connection to the 'db' service
       - DATABASE_URL=postgresql://pgakar:katakunci@db:5432/vulndb
