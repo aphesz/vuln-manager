@@ -8,6 +8,93 @@ All notable changes to VulnManager are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### v0.12.0 - Unified Template System 📝
+**Released:** 2025-11-12  
+**Status:** ✅ **COMPLETE** - User-uploadable custom templates with database-backed storage
+
+#### Overview
+Major architectural upgrade to the report generation system. Users can now upload custom DOCX templates with Jinja2 placeholders, and the platform automatically fills them with project data. Templates are stored in a database with filesystem backing, enabling true customization of report generation.
+
+#### Key Features
+- [x] **User-Uploadable Templates**
+  - Upload custom DOCX files with Jinja2 placeholders (e.g., `{{ project.name }}`, `{% for f in findings %}`)
+  - Platform automatically fills placeholders with real project data
+  - Mix system templates and custom templates in any order
+  - Templates stored in database with metadata (name, description, type, visibility)
+
+- [x] **Database-Backed Storage**
+  - Extended `ReportTemplate` model with `docx_file_path` field
+  - File storage structure: `storage/templates/system/`, `shared/`, `projects/{id}/`
+  - 11 system templates migrated and seeded into database
+  - Alembic migration: `021_add_report_template_docx_support`
+
+- [x] **Refactored Core Engine (`report_modular.py`)**
+  - Template loading from database instead of hardcoded paths
+  - `get_template_by_id()`, `get_template_by_name()`, `get_template_path()`
+  - `assemble_report(session, project, template_ids, variables)` - NEW
+  - `assemble_report_legacy(project, modules, variables)` - LEGACY
+  - Auto-detection of container vs local dev paths
+
+- [x] **New API Endpoints**
+  - `GET /projects/{id}/templates` - List available templates (system + custom)
+  - `POST /projects/{id}/templates/upload` - Upload custom DOCX template
+  - `POST /projects/{id}/report/assemble/v2` - Generate report from template IDs
+  - `POST /projects/{id}/report/assemble` - LEGACY: Module name-based generation
+
+- [x] **Frontend UI Overhaul**
+  - New ModularReportGenerator.tsx (v0.12.0)
+  - System templates section with icons
+  - Custom templates section with upload button
+  - Upload dialog: file picker, name, description, public/private toggle
+  - Template selection with visual distinction (system vs custom)
+  - Drag & drop reordering of selected templates
+  - Generates reports via v2 endpoint with template IDs
+
+- [x] **Jinja2 Placeholder Reference**
+  - Project variables: `project.name`, `project.description`, `project.consultant_name`
+  - Findings loop: `{% for f in findings %}`, `f.title`, `f.risk_rating`, `f.description_text`
+  - Risk counts: `risk_critical`, `risk_high`, `risk_medium`, `risk_low`
+  - Custom variables: `company_name`, `report_date`, `assessment_period`
+  - Advanced features: conditionals, filters, date formatting
+
+#### Technical Implementation
+- **Migration**: Added `docx_file_path VARCHAR(500) NULL` to `reporttemplate` table
+- **Seed Script**: `app.seed_system_templates` - Populates 11 system templates
+- **Storage**: 3-tier structure (system/shared/project-specific)
+- **Path Resolution**: Container-aware (`/code/storage` vs relative paths)
+- **Permissions**: Fixed with `chown appuser:appuser` and `chmod 755/644`
+- **Testing**: All endpoints tested, system + custom template mixing validated
+
+#### Backward Compatibility
+- ✅ Legacy `/report/assemble` endpoint preserved with module names
+- ✅ Old frontend component backed up as `ModularReportGenerator_v1_backup.tsx`
+- ✅ `assemble_report_legacy()` function maintains old behavior
+- ✅ No breaking changes to existing functionality
+
+#### Example Usage
+```bash
+# Upload custom template
+curl -X POST http://localhost:8000/projects/12/templates/upload \
+  -F "file=@my_template.docx" \
+  -F "name=Custom Findings" \
+  -F "description=Executive findings summary"
+
+# Generate report with mixed templates (system ID 5,6,7 + custom ID 17)
+curl -X POST http://localhost:8000/projects/12/report/assemble/v2 \
+  -H "Content-Type: application/json" \
+  -d '{"template_ids": [5, 6, 17, 7], "variables": {"company_name": "Acme"}}' \
+  --output report.docx
+```
+
+#### Documentation
+- Full technical documentation: `notes/V0.12.0_UNIFIED_TEMPLATE_SYSTEM.md`
+- Jinja2 placeholder reference with 40+ available variables
+- Custom template creation guide with examples
+- API endpoint documentation with curl examples
+- Migration guide for existing installations
+
+---
+
 ### v0.11.0 - Modular Report System 🎨
 **Released:** 2025-11-12  
 **Status:** ✅ **DEPLOYED & TESTED** - Modular DOCX report generation system operational

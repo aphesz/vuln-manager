@@ -44,12 +44,14 @@ import {
   VerifiedUser as VerifyIcon,
   Visibility as PreviewIcon,
   History as HistoryIcon,
+  Description as DescriptionIcon,
 } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import PageBreadcrumbs from './PageBreadcrumbs';
 import TemplateVariablesForm from './TemplateVariablesForm';
 import TemplateVersionHistory from './TemplateVersionHistory';
+import TemplatePlaceholderDocs from './TemplatePlaceholderDocs';
 
 // Use relative path for API calls - proxied through Nginx in Docker
 const API_BASE_URL = '/api';
@@ -100,6 +102,8 @@ const ModularReportGenerator: React.FC = () => {
   const [variablesDialogOpen, setVariablesDialogOpen] = useState(false);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [selectedTemplateForVersions, setSelectedTemplateForVersions] = useState<ReportTemplate | null>(null);
+  const [docsDialogOpen, setDocsDialogOpen] = useState(false);
+  const [selectedTemplateForDocs, setSelectedTemplateForDocs] = useState<ReportTemplate | null>(null);
   
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -281,6 +285,11 @@ const ModularReportGenerator: React.FC = () => {
   const handleVersionRestored = () => {
     setSuccess('Template restored successfully! Reloading templates...');
     loadAvailableTemplates();
+  };
+
+  const handleShowDocs = (template: ReportTemplate) => {
+    setSelectedTemplateForDocs(template);
+    setDocsDialogOpen(true);
   };
 
   const handleUploadTemplate = async () => {
@@ -518,6 +527,18 @@ const ModularReportGenerator: React.FC = () => {
                             <PreviewIcon fontSize="small" />
                           </IconButton>
                           <IconButton 
+                            size="small"
+                            color="info"
+                            disabled={!template.exists}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShowDocs(template);
+                            }}
+                            title="View available variables"
+                          >
+                            <DescriptionIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton 
                             size="small" 
                             onClick={(e) => {
                               e.stopPropagation();
@@ -624,6 +645,18 @@ const ModularReportGenerator: React.FC = () => {
                               title="Preview with sample data"
                             >
                               <PreviewIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="success"
+                              disabled={!template.exists}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShowDocs(template);
+                              }}
+                              title="View available variables"
+                            >
+                              <DescriptionIcon fontSize="small" />
                             </IconButton>
                             <IconButton
                               size="small"
@@ -982,6 +1015,20 @@ const ModularReportGenerator: React.FC = () => {
           templateId={selectedTemplateForVersions.id}
           templateName={selectedTemplateForVersions.name}
           onVersionRestored={handleVersionRestored}
+        />
+      )}
+
+      {/* Template Placeholder Documentation Dialog */}
+      {selectedTemplateForDocs && projectId && (
+        <TemplatePlaceholderDocs
+          open={docsDialogOpen}
+          onClose={() => {
+            setDocsDialogOpen(false);
+            setSelectedTemplateForDocs(null);
+          }}
+          projectId={parseInt(projectId)}
+          templateId={selectedTemplateForDocs.id}
+          templateName={selectedTemplateForDocs.name}
         />
       )}
     </Box>

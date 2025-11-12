@@ -2965,6 +2965,159 @@ async def get_template_variables(
         raise HTTPException(status_code=500, detail=f"Failed to extract variables: {str(e)}")
 
 
+@app.get("/projects/{project_id}/templates/{template_id}/documentation")
+async def get_template_documentation(
+    project_id: int,
+    template_id: int,
+    format: str = Query("json", regex="^(json|markdown|html)$"),
+    session: Session = Depends(get_session)
+):
+    """
+    Generate comprehensive documentation for template placeholders.
+    
+    Analyzes the template and returns documentation for all Jinja2 variables
+    including descriptions, example values, data sources, and usage patterns.
+    
+    This helps users understand:
+    - What variables are available
+    - What data each variable contains
+    - Where the data comes from (database, user input, calculations)
+    - How to use each variable in templates
+    
+    Args:
+        project_id: Project ID (for access control)
+        template_id: Template to document
+        format: Output format - json (default), markdown, or html
+    
+    Returns:
+        Comprehensive variable documentation with examples and metadata
+        
+    Example JSON response:
+    ```json
+    {
+        "template_name": "executive_summary.docx",
+        "total_variables": 25,
+        "categories": {
+            "project": [...],
+            "findings": [...],
+            "risk_summary": [...],
+            "compliance": [...],
+            "sla": [...]
+        },
+        "variables": [
+            {
+                "name": "project_name",
+                "type": "string",
+                "category": "project",
+                "description": "Name of the security assessment project",
+                "example": "Acme Corp Q4 2024 Pentest",
+                "source": "Project database record",
+                "required": true,
+                "usage": "{{ project_name }}",
+                "context": "simple"
+            }
+        ]
+    }
+    ```
+    """
+    from app.report_modular import (
+        get_template_by_id,
+        get_template_path,
+        generate_template_documentation,
+    )
+    
+    # Verify project exists
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get template from database
+    template = get_template_by_id(session, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Get template file path
+    try:
+        template_path = get_template_path(template)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    # Generate documentation
+    try:
+        docs = generate_template_documentation(template_path)
+        
+        if format == "json":
+            return docs
+        elif format == "markdown":
+            # Generate markdown format
+            md_lines = [
+                f"# Template Variables Documentation",
+                f"",
+                f"**Template**: {docs['template_name']}",
+                f"**Total Variables**: {docs['total_variables']}",
+                f"",
+            ]
+            
+            for category, vars_list in docs['categories'].items():
+                md_lines.append(f"## {category.replace('_', ' ').title()}")
+                md_lines.append("")
+                for var in vars_list:
+                    md_lines.append(f"### `{var['name']}`")
+                    md_lines.append(f"")
+                    md_lines.append(f"**Description**: {var['description']}")
+                    md_lines.append(f"")
+                    md_lines.append(f"**Type**: `{var['type']}`")
+                    md_lines.append(f"")
+                    md_lines.append(f"**Example**: `{var['example']}`")
+                    md_lines.append(f"")
+                    md_lines.append(f"**Source**: {var['source']}")
+                    md_lines.append(f"")
+                    md_lines.append(f"**Usage**: `{var['usage']}`")
+                    md_lines.append(f"")
+                    md_lines.append("")
+            
+            return {"format": "markdown", "content": "\n".join(md_lines)}
+        else:  # html
+            # Generate HTML format
+            html_parts = [
+                "<!DOCTYPE html><html><head>",
+                "<style>",
+                "body { font-family: Arial, sans-serif; max-width: 1200px; margin: 40px auto; padding: 20px; }",
+                "h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }",
+                "h2 { color: #34495e; margin-top: 30px; border-bottom: 2px solid #95a5a6; padding-bottom: 8px; }",
+                ".variable { background: #ecf0f1; padding: 15px; margin: 15px 0; border-left: 4px solid #3498db; }",
+                ".variable-name { font-size: 18px; font-weight: bold; color: #2980b9; }",
+                ".label { font-weight: bold; color: #7f8c8d; }",
+                "code { background: #34495e; color: #ecf0f1; padding: 2px 6px; border-radius: 3px; }",
+                "</style></head><body>",
+                f"<h1>Template Variables Documentation</h1>",
+                f"<p><strong>Template</strong>: {docs['template_name']}</p>",
+                f"<p><strong>Total Variables</strong>: {docs['total_variables']}</p>",
+            ]
+            
+            for category, vars_list in docs['categories'].items():
+                html_parts.append(f"<h2>{category.replace('_', ' ').title()}</h2>")
+                for var in vars_list:
+                    html_parts.append(f'<div class="variable">')
+                    html_parts.append(f'<div class="variable-name">{var["name"]}</div>')
+                    html_parts.append(f'<p><span class="label">Description:</span> {var["description"]}</p>')
+                    html_parts.append(f'<p><span class="label">Type:</span> <code>{var["type"]}</code></p>')
+                    html_parts.append(f'<p><span class="label">Example:</span> <code>{var["example"]}</code></p>')
+                    html_parts.append(f'<p><span class="label">Source:</span> {var["source"]}</p>')
+                    html_parts.append(f'<p><span class="label">Usage:</span> <code>{var["usage"]}</code></p>')
+                    html_parts.append('</div>')
+            
+            html_parts.append("</body></html>")
+            
+            return {"format": "html", "content": "".join(html_parts)}
+        
+    except Exception as e:
+        print(f"Error generating template documentation: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate documentation: {str(e)}")
+
+
 @app.post("/projects/{project_id}/report/assemble", response_class=FileResponse)
 async def assemble_modular_report(
     project_id: int,

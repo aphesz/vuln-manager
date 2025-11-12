@@ -288,6 +288,302 @@ def _get_sample_value(var_type: str) -> Any:
     return samples.get(var_type, "")
 
 
+def generate_template_documentation(docx_path: Path) -> Dict[str, Any]:
+    """Generate comprehensive documentation for template variables.
+    
+    Analyzes template and provides detailed documentation for each variable
+    including description, example values, data source, and usage context.
+    
+    Args:
+        docx_path: Path to DOCX template file
+        
+    Returns:
+        Dictionary with documentation metadata:
+        {
+            "template_name": "...",
+            "total_variables": 15,
+            "categories": {
+                "project": [...],
+                "findings": [...],
+                "metadata": [...]
+            },
+            "variables": [
+                {
+                    "name": "project_name",
+                    "type": "string",
+                    "category": "project",
+                    "description": "Name of the security assessment project",
+                    "example": "Acme Corp Q4 2024 Pentest",
+                    "source": "Project database record",
+                    "required": True,
+                    "usage": "{{ project_name }}"
+                },
+                ...
+            ]
+        }
+    """
+    # Extract variables first
+    variables = extract_jinja2_variables(docx_path)
+    
+    # Comprehensive variable metadata based on common context structure
+    variable_metadata = {
+        # Project Info
+        "project_name": {
+            "category": "project",
+            "description": "Name of the security assessment project",
+            "example": "Acme Corp Q4 2024 Penetration Test",
+            "source": "Project database record"
+        },
+        "project_id": {
+            "category": "project",
+            "description": "Unique identifier for the project",
+            "example": "42",
+            "source": "Project database record"
+        },
+        "consultant_name": {
+            "category": "project",
+            "description": "Name of the security consultant/tester",
+            "example": "John Smith",
+            "source": "Project database record"
+        },
+        "consultant_email": {
+            "category": "metadata",
+            "description": "Email address of the consultant",
+            "example": "john.smith@company.com",
+            "source": "Project metadata or user input"
+        },
+        "company_name": {
+            "category": "metadata",
+            "description": "Client company name",
+            "example": "ACME Corporation",
+            "source": "Custom variable (user input)"
+        },
+        
+        # Dates
+        "report_date": {
+            "category": "metadata",
+            "description": "Date the report was generated",
+            "example": "2024-11-12",
+            "source": "Current date or custom variable"
+        },
+        "report_version": {
+            "category": "metadata",
+            "description": "Version number of the report",
+            "example": "1.0",
+            "source": "Custom variable (user input)"
+        },
+        "assessment_period": {
+            "category": "metadata",
+            "description": "Time period when assessment was conducted",
+            "example": "Q4 2024",
+            "source": "Custom variable (user input)"
+        },
+        
+        # Risk Counts
+        "critical_count": {
+            "category": "risk_summary",
+            "description": "Number of Critical risk findings",
+            "example": "3",
+            "source": "Calculated from findings database"
+        },
+        "high_count": {
+            "category": "risk_summary",
+            "description": "Number of High risk findings",
+            "example": "7",
+            "source": "Calculated from findings database"
+        },
+        "medium_count": {
+            "category": "risk_summary",
+            "description": "Number of Medium risk findings",
+            "example": "12",
+            "source": "Calculated from findings database"
+        },
+        "low_count": {
+            "category": "risk_summary",
+            "description": "Number of Low risk findings",
+            "example": "8",
+            "source": "Calculated from findings database"
+        },
+        "informational_count": {
+            "category": "risk_summary",
+            "description": "Number of Informational findings",
+            "example": "5",
+            "source": "Calculated from findings database"
+        },
+        "total_findings_count": {
+            "category": "risk_summary",
+            "description": "Total number of all findings",
+            "example": "35",
+            "source": "Calculated from findings database"
+        },
+        
+        # Finding Lists (for loops)
+        "findings": {
+            "category": "findings",
+            "description": "List of all findings with full details",
+            "example": "[{title: 'XSS', risk_rating: 'Critical', ...}, ...]",
+            "source": "Findings database with instances"
+        },
+        "critical_findings": {
+            "category": "findings",
+            "description": "List of Critical risk findings only",
+            "example": "[{title: 'SQL Injection', ...}, ...]",
+            "source": "Filtered findings by risk rating"
+        },
+        "high_findings": {
+            "category": "findings",
+            "description": "List of High risk findings only",
+            "example": "[{title: 'Authentication Bypass', ...}, ...]",
+            "source": "Filtered findings by risk rating"
+        },
+        
+        # Finding Fields (used in loops)
+        "finding": {
+            "category": "findings",
+            "description": "Current finding object in {% for finding in findings %} loop",
+            "example": "{title: 'XSS', risk_rating: 'Critical', description_text: '...', ...}",
+            "source": "Finding database record with nested data"
+        },
+        "title": {
+            "category": "findings",
+            "description": "Finding title/name",
+            "example": "Cross-Site Scripting (XSS) in Search Parameter",
+            "source": "Finding.title field"
+        },
+        "risk_rating": {
+            "category": "findings",
+            "description": "Risk level: Critical, High, Medium, Low, Informational",
+            "example": "Critical",
+            "source": "Finding.risk_rating field"
+        },
+        "description_text": {
+            "category": "findings",
+            "description": "Full HTML description of the vulnerability",
+            "example": "The application fails to properly sanitize user input...",
+            "source": "Finding.description field (HTML stripped)"
+        },
+        "impact": {
+            "category": "findings",
+            "description": "Security impact description",
+            "example": "Attackers can steal session tokens and perform unauthorized actions",
+            "source": "Finding.impact field"
+        },
+        "remediation_text": {
+            "category": "findings",
+            "description": "Recommended remediation steps",
+            "example": "Implement proper input validation and output encoding",
+            "source": "Finding.remediation field (HTML stripped)"
+        },
+        "affected_resources": {
+            "category": "findings",
+            "description": "List of affected URLs/systems",
+            "example": "https://example.com/search, https://example.com/products (+2 more)",
+            "source": "Aggregated from Finding instances"
+        },
+        "instances_count": {
+            "category": "findings",
+            "description": "Number of instances/occurrences of this finding",
+            "example": "4",
+            "source": "Count of related Instance records"
+        },
+        
+        # CVE/CWE/CVSS
+        "cve_id": {
+            "category": "compliance",
+            "description": "CVE identifier if applicable",
+            "example": "CVE-2024-1234",
+            "source": "Finding.cve_id field"
+        },
+        "cwe_id": {
+            "category": "compliance",
+            "description": "CWE identifier",
+            "example": "CWE-79",
+            "source": "Finding.cwe_id field"
+        },
+        "cvss_score": {
+            "category": "compliance",
+            "description": "CVSS 3.1 score (0.0-10.0)",
+            "example": "9.3",
+            "source": "Finding.cvss_score field"
+        },
+        "cvss_vector": {
+            "category": "compliance",
+            "description": "CVSS 3.1 vector string",
+            "example": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N",
+            "source": "Finding.cvss_vector field"
+        },
+        "owasp_category": {
+            "category": "compliance",
+            "description": "OWASP Top 10 category",
+            "example": "A03:2021",
+            "source": "Finding.owasp_category field"
+        },
+        "owasp_risk_rating": {
+            "category": "compliance",
+            "description": "OWASP risk classification",
+            "example": "Critical",
+            "source": "Finding.owasp_risk_rating field"
+        },
+        
+        # SLA
+        "overdue_count": {
+            "category": "sla",
+            "description": "Number of findings past SLA deadline",
+            "example": "2",
+            "source": "Calculated from SLA policy and finding dates"
+        },
+        "at_risk_count": {
+            "category": "sla",
+            "description": "Number of findings approaching SLA deadline",
+            "example": "5",
+            "source": "Calculated from SLA policy and finding dates"
+        },
+        "on_track_count": {
+            "category": "sla",
+            "description": "Number of findings within SLA",
+            "example": "28",
+            "source": "Calculated from SLA policy and finding dates"
+        },
+    }
+    
+    # Enrich variables with metadata
+    documented_variables = []
+    categories = {}
+    
+    for var in variables:
+        var_name = var["name"]
+        metadata = variable_metadata.get(var_name, {
+            "category": "custom",
+            "description": f"Custom template variable",
+            "example": "User-defined value",
+            "source": "Custom variable (user input)"
+        })
+        
+        doc_var = {
+            **var,
+            "category": metadata.get("category", "custom"),
+            "description": metadata.get("description", "No description available"),
+            "example": metadata.get("example", ""),
+            "source": metadata.get("source", "Unknown"),
+            "usage": f"{{{{ {var_name} }}}}" if var["context"] == "simple" else f"{{% for item in {var_name} %}}...{{% endfor %}}"
+        }
+        
+        documented_variables.append(doc_var)
+        
+        # Group by category
+        category = doc_var["category"]
+        if category not in categories:
+            categories[category] = []
+        categories[category].append(doc_var)
+    
+    return {
+        "template_name": docx_path.name,
+        "total_variables": len(documented_variables),
+        "categories": categories,
+        "variables": documented_variables
+    }
+
+
 def get_template_by_id(session: Session, template_id: int) -> Optional[ReportTemplate]:
     """Load template from database by ID.
     
