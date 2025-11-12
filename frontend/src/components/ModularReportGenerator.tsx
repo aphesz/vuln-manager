@@ -140,13 +140,8 @@ const ModularReportGenerator: React.FC = () => {
       const data = await response.json();
       setAvailableTemplates(data.templates);
       
-      // Pre-select recommended system templates
-      const systemTemplates = data.templates.filter((t: ReportTemplate) => t.is_system);
-      const recommendedNames = ['Title Page', 'Executive Summary', 'Detailed Findings', 'Recommendations'];
-      const recommended = systemTemplates
-        .filter((t: ReportTemplate) => recommendedNames.includes(t.name) && t.exists)
-        .map((t: ReportTemplate) => t.id);
-      setSelectedTemplateIds(recommended);
+      // Don't pre-select any templates - let users choose
+      // Previously auto-selected: Title Page, Executive Summary, Detailed Findings, Recommendations
     } catch (err) {
       setError('Failed to load available templates');
       console.error(err);

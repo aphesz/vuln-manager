@@ -87,7 +87,7 @@ from app.parsers import parse_xml_content
 from app import scoring
 from app import owasp
 from app import cwe_top25
-from app.reports import generate_report_docx, generate_report_pdf, generate_executive_report_pdf
+from app.reports import generate_report_pdf, generate_executive_report_pdf
 from app.report_poc_simple import render_docx_simple, render_docx_raw, build_simple_template_docx
 from app.report_modular import assemble_report, list_available_modules
 from app.auth import (
@@ -2210,23 +2210,6 @@ def get_cwe_top_25_coverage(
 
 # --- Endpoint: Report Generation ---
 
-@app.get("/projects/{project_id}/report.docx", response_class=FileResponse)
-def get_docx_report(project_id: int, session: Session = Depends(get_session)):
-    """Generates and returns the assessment report in DOCX format."""
-    project = session.exec(select(Project).where(Project.id == project_id)).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Generate the report file path
-    file_path = f"/tmp/report_{project_id}.docx"
-    generate_report_docx(project, file_path)
-    
-    return FileResponse(
-        file_path, 
-        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        filename=f"{project.name.replace(' ', '_')}_Report.docx"
-    )
-
 @app.get("/reports/poc/template.docx", response_class=FileResponse)
 def download_poc_template():
     """Download a minimal sample DOCX template for the PoC renderer."""
@@ -3116,105 +3099,6 @@ async def get_template_documentation(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to generate documentation: {str(e)}")
-
-
-@app.post("/projects/{project_id}/report/assemble", response_class=FileResponse)
-async def assemble_modular_report(
-    project_id: int,
-    modules: List[str] = Body(..., description="List of module names to include (in order)"),
-    variables: Optional[Dict[str, Any]] = Body(default=None, description="Optional template variables"),
-    session: Session = Depends(get_session)
-):
-    """
-    LEGACY: Assemble a modular report from selected template modules.
-    
-    ⚠️  DEPRECATED: This endpoint uses hardcoded module names. 
-        Use /projects/{project_id}/report/assemble/v2 instead for database-backed templates.
-    
-    This endpoint allows you to compose a custom report by selecting and ordering
-    reusable template modules (title_page, executive_summary, detailed_findings, etc.).
-    
-    POST body:
-    ```json
-    {
-        "modules": [
-            "title_page",
-            "executive_summary",
-            "risk_charts",
-            "detailed_findings",
-            "recommendations"
-        ],
-        "variables": {
-            "company_name": "Acme Corporation",
-            "assessment_period": "Q4 2024",
-            "include_charts": true
-        }
-    }
-    ```
-    
-    Available modules:
-    - title_page: Project title, metadata, and company branding
-    - executive_summary: High-level overview and key metrics
-    - risk_charts: Visual risk distribution and trends
-    - top_findings: Top N critical findings summary
-    - detailed_findings: Full finding details with all fields
-    - recommendations: Remediation recommendations and action items
-    - appendix: Additional technical details
-    - sla_status: SLA tracking and deadline summary
-    - compliance_owasp: OWASP Top 10 compliance mapping
-    - compliance_cwe: CWE Top 25 compliance mapping
-    - jira_integration: Jira ticket status and linking
-    
-    Returns:
-        Assembled DOCX report with selected modules merged into a single document
-    """
-    from app.report_modular import assemble_report_legacy
-    
-    # Fetch project with all findings
-    project = session.exec(select(Project).where(Project.id == project_id)).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Validate modules list
-    if not modules:
-        raise HTTPException(status_code=400, detail="Must specify at least one module")
-    
-    # Generate filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = f"/tmp/modular_report_{project_id}_{timestamp}.docx"
-    
-    try:
-        # Assemble the modular report using legacy function
-        report_bytes = assemble_report_legacy(
-            project=project,
-            modules=modules,
-            variables=variables or {}
-        )
-        
-        # Write to temporary file
-        with open(file_path, 'wb') as f:
-            f.write(report_bytes)
-        
-        # Generate descriptive filename
-        modules_str = "_".join(modules[:3])  # First 3 modules
-        if len(modules) > 3:
-            modules_str += f"_plus{len(modules) - 3}"
-        
-        filename = f"{project.name.replace(' ', '_')}_Modular_{modules_str}_Report.docx"
-        
-        return FileResponse(
-            file_path,
-            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            filename=filename
-        )
-        
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print(f"Error assembling modular report: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to assemble report: {str(e)}")
 
 
 @app.get("/report/modules")

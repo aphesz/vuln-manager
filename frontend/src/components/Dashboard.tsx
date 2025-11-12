@@ -306,13 +306,11 @@ const Dashboard = () => {
         return;
       }
 
-      // Handle DOCX and PDF differently (they use existing endpoints)
+      // Handle DOCX and PDF differently
       if (options.format === 'docx') {
-        const link = document.createElement('a');
-        link.href = `${API_BASE_URL}/projects/${projectId}/report.docx`;
-        link.download = `${project.name}_report.docx`;
-        link.click();
-        showSuccess('DOCX report downloaded successfully!');
+        // Redirect to Modular Report Generator for DOCX reports
+        navigate(`/projects/${projectId}/reports`);
+        showSuccess('Opening Modular Report Generator...');
         setExportDialogOpen(false);
         return;
       }
@@ -618,22 +616,9 @@ const Dashboard = () => {
               <ListItemText primary="Export Excel" />
             </ListItem>
             
-            <ListItem button onClick={async () => { 
-              try {
-                const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/report.docx`, {
-                  responseType: 'blob',
-                });
-                const url = window.URL.createObjectURL(new Blob([response.data]));
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', `${project.name}_report.docx`);
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                showSuccess('Report generated successfully');
-              } catch (err) {
-                showError('Failed to generate report');
-              }
+            <ListItem button onClick={() => { 
+              navigate(`/projects/${projectId}/reports`); 
+              showSuccess('Opening Modular Report Generator...'); 
               setMobileMenuOpen(false); 
             }}>
               <ListItemIcon><ReportIcon /></ListItemIcon>
