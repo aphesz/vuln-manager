@@ -1,25 +1,52 @@
 # Modular Template System Design - User-Supplied Templates
 
+**Status**: ✅ **IMPLEMENTED** (v0.12.1)  
+**Last Updated**: November 12, 2025
+
+## Executive Summary
+
+The Modular Template System enables users to upload custom DOCX templates with Jinja2 placeholders that are automatically filled with project data. This system was inspired by `report_poc_simple.py` and extends it with modular composition capabilities.
+
+### Key Features Delivered
+- ✅ User-uploadable DOCX templates with full styling control
+- ✅ 11 pre-built system templates for common report sections
+- ✅ Drag-and-drop template selection and ordering
+- ✅ Automatic donut chart generation with risk labels
+- ✅ Risk-based colored table borders
+- ✅ Template management (upload, delete, verify)
+- ✅ Docker volume persistence
+- ✅ Full-text rendering (no truncation)
+- ✅ Database-backed template library
+- ✅ Public/private template sharing
+
+### Architecture
+- **Backend**: FastAPI + SQLModel + docxtpl (Jinja2) + docxcompose
+- **Storage**: Filesystem-backed with Docker volume mount
+- **Frontend**: React + Material-UI + react-beautiful-dnd
+- **Database**: PostgreSQL with migration 021
+
+---
+
 ## Vision
 Enable users to upload custom DOCX templates with placeholders that get automatically filled with project data, similar to `report_poc_simple.py` but with modular composition capabilities.
 
 ## Architecture
 
-### Current State (v0.11.0)
-- ❌ System generates hardcoded templates programmatically
-- ❌ Users cannot customize layouts or styles
-- ❌ Templates are stored in `backend/app/report_modules/` as system files
-- ✅ Module selection and ordering works
-- ✅ Context building from project data works
-- ✅ Document merging works
-
-### Target State (v0.12.0+)
+### Current State (v0.12.1) ✅ COMPLETE
 - ✅ Users upload custom DOCX templates via UI
 - ✅ Templates stored per-project or as reusable library
 - ✅ Templates use Jinja2 placeholders (same as POC)
 - ✅ System fills placeholders with project data
 - ✅ Multiple templates can be selected and merged
-- ✅ Template library shared across projects
+- ✅ Template library shared across projects (public templates)
+- ✅ Module selection and ordering works (drag & drop)
+- ✅ Context building from project data works
+- ✅ Document merging works (docxcompose)
+- ✅ Donut charts with risk labels in custom templates
+- ✅ Colored table borders in custom templates
+- ✅ Template management (delete, verify)
+- ✅ Docker volume persistence for template storage
+- ✅ Full-text descriptions (no truncation)
 
 ## Design Pattern: report_poc_simple.py
 
@@ -50,160 +77,320 @@ return tpl.docx_bytes
 
 ## Proposed Implementation
 
-### 1. Template Storage Model
+### 1. Template Storage Model ✅ IMPLEMENTED
 
 ```python
 class ReportTemplate(SQLModel, table=True):
-    """User-uploaded report templates."""
+    """User-uploaded report templates - v0.12.0"""
+    __tablename__ = "report_template"
+    
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(max_length=200)
     description: str | None = None
-    category: str  # "executive", "technical", "compliance", "custom"
-    is_system: bool = False  # System templates vs user templates
-    is_public: bool = False  # Shared across projects
-    project_id: int | None = Field(foreign_key="project.id")  # If project-specific
-    file_path: str  # Path to DOCX file in storage
-    created_at: datetime
-    updated_at: datetime
-    created_by: str | None  # User email/ID
+    template_type: str  # "Executive", "Technical", "Compliance", "Custom"
+    
+    # Template storage
+    docx_file_path: str | None = None  # Relative path: system/, shared/, projects/{id}/
+    sections: str = Field(default="[]")  # JSON list of section names (legacy)
+    variables: str = Field(default="[]")  # JSON list of required variables (legacy)
+    
+    # Access control
+    is_system_template: bool = Field(default=False)
+    is_public: bool = Field(default=False)  # Shared across projects
+    created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 ```
 
-### 2. Template Storage Structure
+**Storage Structure:**
 ```
-storage/
-  templates/
-    system/           # Default templates (like current report_modules/)
-      executive_summary.docx
-      detailed_findings.docx
-      ...
-    shared/           # User-uploaded shared templates
-      {template_id}.docx
-    projects/         # Project-specific templates
-      {project_id}/
-        {template_id}.docx
+backend/storage/templates/
+  ├── system/              # 11 system templates (seeded via seed_system_templates.py)
+  │   ├── title_page.docx
+  │   ├── executive_summary.docx
+  │   ├── detailed_findings.docx
+  │   ├── top_findings.docx
+  │   ├── recommendations.docx
+  │   ├── risk_charts.docx
+  │   ├── sla_status.docx
+  │   ├── appendix.docx
+  │   ├── compliance_owasp.docx
+  │   ├── compliance_cwe.docx
+  │   └── jira_integration.docx
+  ├── shared/              # Public user templates (is_public=True)
+  │   └── {filename}.docx
+  └── projects/            # Project-specific templates
+      └── {project_id}/
+          └── {filename}.docx
 ```
 
-### 3. API Endpoints
+**Docker Volume Mount:**
+```yaml
+# docker-compose.yml
+backend:
+  volumes:
+    - ./backend/app:/app
+    - ./backend/storage:/code/storage  # Persists templates across rebuilds
+```
+
+### 2. API Endpoints ✅ IMPLEMENTED
 
 ```python
-# Upload template
+# Upload custom template
 POST /projects/{id}/templates/upload
-- Multipart form data with DOCX file
-- Validates file is valid DOCX
-- Stores in project-specific or shared location
-- Returns template metadata
-
-# List templates
-GET /projects/{id}/templates
-- Returns available templates (system + project + shared)
-- Includes preview info, placeholder list
-
-# Generate report with custom templates
-POST /projects/{id}/report/generate
+Content-Type: multipart/form-data
 {
-  "template_ids": [1, 5, 8],  # Selected templates in order
-  "variables": {"company_name": "Acme Corp", ...}
+  "file": <DOCX file>,
+  "name": "My Custom Template",
+  "description": "Custom report for client X",
+  "template_type": "Custom",
+  "is_public": false
 }
-- Loads each template from storage
-- Fills with project data
-- Merges into single DOCX
-- Returns generated report
+Response: Template metadata with file path
+
+# List available templates
+GET /projects/{id}/templates
+Response: {
+  "system_templates": [...],
+  "custom_templates": [...]
+}
+
+# Verify template file integrity
+GET /projects/{id}/templates/verify
+Response: {
+  "total_templates": 11,
+  "valid_templates": 11,
+  "invalid_templates": 0,
+  "templates": [{
+    "id": 5,
+    "name": "Title Page",
+    "file_exists": true,
+    "error_message": null
+  }, ...]
+}
+
+# Delete custom template
+DELETE /projects/{id}/templates/{template_id}
+Response: 204 No Content (deletes both DB record and file)
+
+# Generate report with selected templates
+POST /projects/{id}/report/assemble/v2
+Content-Type: application/json
+{
+  "template_ids": [5, 6, 7],  # Selected templates in order
+  "variables": {
+    "company_name": "Acme Corp",
+    "report_date": "2025-11-12",
+    "report_version": "1.0",
+    "consultant_email": "consultant@example.com",
+    "assessment_period": "Q4 2025"
+  }
+}
+Response: application/vnd.openxmlformats-officedocument.wordprocessingml.document
 ```
 
-### 4. Context Building (Same as POC)
+### 3. Context Building ✅ IMPLEMENTED (report_modular.py)
 
 ```python
-def build_context_from_project(project: Project) -> Dict:
-    """Build comprehensive context with all placeholders."""
+def build_context(project: Any, variables: Optional[Dict] = None) -> Dict:
+    """Build comprehensive context with all placeholders.
+    
+    Features:
+    - Full HTML-stripped text (no truncation on descriptions)
+    - Risk-based sorting (Critical → High → Medium → Low → Informational)
+    - SLA status counters
+    - Extended metadata (CVE, CWE, CVSS, OWASP, Jira)
+    """
     return {
         "project": {
             "name": project.name,
             "consultant_name": project.consultant_name,
-            ...
         },
         "findings": [
             {
-                "section_number": "1.1",
-                "title": "...",
-                "risk_rating": "Critical",
-                "donut_img": InlineImage(...),  # Generated dynamically
-                "affected_resources": "...",
-                "description_text": _strip_html(f.description),
+                "section_number": f"1.1.{idx}",
+                "title": f.title,
+                "risk_rating": "Critical|High|Medium|Low|Informational",
+                "donut_img": InlineImage(...),  # Generated dynamically for ALL templates
+                "has_donut": True,
+                "instances_count": len(instances),
+                "affected_resources": "URL1, URL2 (+3 more)",
+                "description_text": _strip_html(f.description),  # FULL TEXT
+                "impact": _strip_html(f.impact),
+                "remediation_text": _strip_html(f.remediation),
                 "poc_content": _strip_html(f.poc_description),
-                ...
+                "references_url": f.references_url or "N/A",
+                "issue_status": "Open|Closed|Reopened",
+                "review_status": "Pending|Approved|Rejected",
+                "reviewer_name": f.reviewer_name or "N/A",
+                "sla_status": "On Track|At Risk|Overdue",
+                "remediation_deadline": "2025-12-31",
+                "remediation_owner": "John Doe",
+                "jira_issue_key": "VULN-123",
+                "jira_status": "To Do|In Progress|Done",
+                "cve_id": "CVE-2024-12345",
+                "cwe_id": "CWE-79",
+                "cvss_score": 9.8,
+                "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                "owasp_category": "A03:2021",
+                "owasp_risk_rating": "High",
+                "discovered_at": "2025-11-01",
+                "resolved_at": "N/A",
             }
-            for f in project.findings
+            for idx, f in enumerate(project.findings, start=1)
         ],
-        "risk_summary": {
-            "critical_count": ...,
-            "high_count": ...,
-            ...
-        },
-        "variables": {
-            "company_name": "...",
-            "report_date": "...",
-            ...
-        }
+        "total_findings": len(findings),
+        "critical_count": 2,
+        "high_count": 5,
+        "medium_count": 8,
+        "low_count": 3,
+        "informational_count": 1,
+        "overdue_count": 2,
+        "at_risk_count": 3,
+        "on_track_count": 13,
+        # User-provided variables
+        "company_name": variables.get("company_name", "N/A"),
+        "report_date": variables.get("report_date", datetime.now().strftime("%Y-%m-%d")),
+        "report_version": variables.get("report_version", "1.0"),
+        "consultant_email": variables.get("consultant_email", "N/A"),
+        "assessment_period": variables.get("assessment_period", "N/A"),
     }
 ```
 
-### 5. Template Rendering Engine
+### 4. Template Rendering Engine ✅ IMPLEMENTED (report_modular.py)
 
 ```python
-def render_user_template(
-    template_path: Path,
-    project: Project,
-    variables: Dict = None,
+def render_module(
+    module_path: Path,
+    context: Dict,
     module_name: str = ""
 ) -> Document:
-    """Render user-supplied template with project data."""
+    """Render user-supplied template with project data.
     
-    # Load template
-    tpl = DocxTemplate(template_path)
+    Features (v0.12.1):
+    - Donut charts automatically added to ALL templates with findings
+    - Colored table borders automatically applied to ALL templates
+    - InlineImage support for dynamic charts
+    - HTML stripping for safe text insertion
+    - Full document merging with docxcompose
+    """
     
-    # Build context
-    ctx = build_context_from_project(project, variables)
+    tpl = DocxTemplate(module_path)
     
-    # Special enhancements (donut charts, colored borders)
-    if should_add_visualizations(template_path, module_name):
-        ctx = enhance_with_visualizations(ctx, tpl)
+    # Add donut charts for ANY template with findings (not just detailed_findings)
+    if "findings" in context and context["findings"]:
+        enhanced_findings = []
+        for f_ctx in context["findings"]:
+            risk = f_ctx.get("risk_rating", "Low")
+            color = RISK_COLORS.get(risk, "DDDDDD")
+            
+            # Generate donut chart image
+            try:
+                donut_stream = _generate_donut_image(risk, color, size_inches=1.2, dpi=150)
+                donut_img = InlineImage(tpl, donut_stream, Cm(3.0))
+                f_ctx["donut_img"] = donut_img
+                f_ctx["has_donut"] = True
+            except Exception as e:
+                f_ctx["donut_img"] = f"[{risk}]"
+                f_ctx["has_donut"] = False
+            
+            enhanced_findings.append(f_ctx)
+        
+        context["findings"] = enhanced_findings
     
-    # Render
-    tpl.render(ctx)
+    # Render template
+    tpl.render(context)
     
-    # Post-process (colored borders, etc.)
-    doc = post_process_document(tpl, ctx, module_name)
+    # Save and reload as Document
+    buf = BytesIO()
+    tpl.save(buf)
+    buf.seek(0)
+    doc = Document(buf)
+    
+    # Post-process: Add colored left borders to tables in ANY template with findings
+    if "findings" in context and context["findings"]:
+        findings_iter = iter(context["findings"])
+        for tbl in doc.tables:
+            try:
+                finding = next(findings_iter)
+                color = RISK_COLORS.get(finding.get("risk_rating", "Low"), "DDDDDD")
+                _set_table_left_border(tbl, color)  # From report_poc_simple.py
+            except StopIteration:
+                break
     
     return doc
+
+
+def assemble_report(
+    session: Session,
+    project: Any,
+    template_ids: List[int],
+    variables: Optional[Dict] = None,
+) -> bytes:
+    """Assemble modular report from selected templates.
+    
+    Main entry point for v0.12.0+ unified template system.
+    """
+    # Load templates from database
+    templates = [get_template_by_id(session, id) for id in template_ids]
+    template_paths = [get_template_path(tmpl) for tmpl in templates]
+    
+    # Build context once for all templates
+    context = build_context(project, variables)
+    
+    # Render each template
+    rendered_docs = [
+        render_module(path, context, module_name=tmpl.name.lower().replace(" ", "_"))
+        for tmpl, path in zip(templates, template_paths)
+    ]
+    
+    # Merge all rendered templates with docxcompose
+    return merge_documents(rendered_docs)
 ```
 
-## Migration Path
+## Implementation Status
 
-### Phase 1: Template Upload/Storage (v0.12.0)
-- [ ] Add `ReportTemplate` model
-- [ ] Create storage directory structure
-- [ ] Add template upload endpoint
-- [ ] Add template list endpoint
-- [ ] Copy existing system templates to storage/templates/system/
+### Phase 1: Template Upload/Storage ✅ COMPLETE (v0.12.0)
+- ✅ Added `ReportTemplate` model (migration 021)
+- ✅ Created storage directory structure (backend/storage/templates/)
+- ✅ Added template upload endpoint (POST /projects/{id}/templates/upload)
+- ✅ Added template list endpoint (GET /projects/{id}/templates)
+- ✅ Seeded 11 system templates via seed_system_templates.py
+- ✅ Docker volume mount for persistence (./backend/storage:/code/storage)
 
-### Phase 2: User Template Rendering (v0.12.0)
-- [ ] Refactor `report_modular.py` to load from storage instead of hardcoded paths
-- [ ] Support both system and user templates
-- [ ] Validate template placeholders on upload
-- [ ] Add template preview/validation
+### Phase 2: User Template Rendering ✅ COMPLETE (v0.12.0)
+- ✅ Refactored `report_modular.py` to load from storage
+- ✅ Support both system and user templates
+- ✅ Unified template system (database-backed)
+- ✅ Template validation on upload (DOCX format check)
 
-### Phase 3: Frontend UI (v0.12.0)
-- [ ] Template upload interface
-- [ ] Template library browser
-- [ ] Template editor/preview (optional)
-- [ ] Drag-drop template selection (existing ModularReportGenerator.tsx)
+### Phase 3: Frontend UI ✅ COMPLETE (v0.12.0)
+- ✅ Template upload interface with file picker
+- ✅ Template library browser (system + custom)
+- ✅ Drag-drop template selection (react-beautiful-dnd)
+- ✅ Template delete button with confirmation dialog
+- ✅ Template verification UI (missing file warnings)
+- ✅ "Generate Reports" button on Dashboard Quick Actions
 
-### Phase 4: Advanced Features (v0.13.0+)
+### Phase 4: Template Management ✅ COMPLETE (v0.12.1)
+- ✅ Delete custom templates (DELETE endpoint)
+- ✅ Verify template file integrity (GET /verify endpoint)
+- ✅ Warning badges for missing template files
+- ✅ Donut charts in ALL custom templates (not just system templates)
+- ✅ Colored table borders in ALL custom templates
+- ✅ Full-text descriptions (removed 500-char truncation)
+
+### Phase 5: Advanced Features 🚧 PLANNED (v0.13.0+)
 - [ ] Template variables form builder (dynamic based on placeholders)
 - [ ] Template sharing/marketplace
-- [ ] Template versioning
+- [ ] Template versioning (save revisions)
 - [ ] Template inheritance/composition
 - [ ] Placeholder documentation generator
+- [ ] Template preview in UI
+- [ ] Bulk template operations
+- [ ] Template categories/tags
 
 ## Available Placeholders (Complete List)
 
@@ -234,8 +421,8 @@ def render_user_template(
 - `{{ f.donut_img }}` - Risk donut chart (InlineImage)
 - `{{ f.instances_count }}` - Number of instances
 - `{{ f.affected_resources }}` - Affected URLs/systems
-- `{{ f.description_text }}` - HTML-stripped description
-- `{{ f.impact }}` - Impact description
+- `{{ f.description_text }}` - HTML-stripped description (FULL TEXT, no truncation)
+- `{{ f.impact }}` - Impact description (FULL TEXT)
 - `{{ f.remediation_text }}` - Remediation guidance
 - `{{ f.poc_content }}` - Proof of concept
 - `{{ f.references_url }}` - Reference links
@@ -316,13 +503,22 @@ References: {{ f.references_url }}
 
 ## Next Steps
 
-1. **Decision Point**: Should we refactor current modular system or create parallel system?
-   - Option A: Refactor existing `report_modular.py` to use storage
-   - Option B: Keep current system as "quickstart", add new user template system
-   
-2. **Implementation Priority**: Start with Phase 1 (storage) or go straight to full implementation?
+### Immediate Priorities (v0.12.2)
+1. **Template Preview** - Show rendered preview before generating full report
+2. **Variable Form Builder** - Auto-generate UI form fields from template placeholders
+3. **Template Validation** - Check for required placeholders on upload
 
-3. **Backward Compatibility**: Keep existing `/report/assemble` endpoint or deprecate?
+### Future Enhancements (v0.13.0+)
+1. **Template Marketplace** - Share templates between organizations
+2. **Version Control** - Track template changes over time
+3. **Template Editor** - In-browser DOCX editing
+4. **Smart Placeholders** - Auto-suggest available placeholders while editing
+
+### Open Questions
+1. ~~Should we refactor current modular system or create parallel system?~~ ✅ RESOLVED: Unified system implemented
+2. ~~Implementation Priority: Start with Phase 1 (storage) or go straight to full implementation?~~ ✅ RESOLVED: Full implementation complete
+3. ~~Backward Compatibility: Keep existing `/report/assemble` endpoint or deprecate?~~ ✅ RESOLVED: New endpoint `/report/assemble/v2` added
 
 ---
-*This design document captures the vision for a user-driven template system inspired by report_poc_simple.py*
+*Last Updated: v0.12.1 (November 12, 2025)*  
+*This design document captures the vision and implementation of the user-driven template system inspired by report_poc_simple.py*
