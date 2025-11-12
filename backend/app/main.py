@@ -76,6 +76,9 @@ from app.models import (
     ReportTemplateRead,
     ReportTemplateCreate,
     ReportTemplateUpdate,
+    ReportTemplateVersion,
+    ReportTemplateVersionRead,
+    ReportTemplateVersionCreate,
 )
 
 # Use the RiskRating from FindingBase
@@ -7629,6 +7632,213 @@ def delete_template(
     session.commit()
     
     logger.info(f"Deleted report template: {template_id} - {template.name}")
+
+
+# =====================================================
+# TEMPLATE VERSIONING ENDPOINTS
+# =====================================================
+
+@app.post("/templates/{template_id}/versions", response_model=ReportTemplateVersionRead)
+def create_template_version(
+    template_id: int,
+    version_data: ReportTemplateVersionCreate,
+    session: Session = Depends(get_session)
+):
+    """
+    Create a new version snapshot of a template.
+    
+    This saves the current state of the template to version history.
+    The template file is copied to a versioned storage location.
+    
+    Args:
+        template_id: Template to version
+        version_data: Version metadata (change description)
+    
+    Returns:
+        Created version with metadata
+    """
+    from app.models import ReportTemplate, ReportTemplateVersion
+    from app.report_modular import get_template_path, STORAGE_ROOT
+    import shutil
+    import hashlib
+    from pathlib import Path
+    
+    # Get template
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # System templates cannot be versioned
+    if template.is_system_template:
+        raise HTTPException(status_code=403, detail="Cannot version system templates")
+    
+    # Get current template file
+    try:
+        template_path = get_template_path(template)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Template file not found")
+    
+    # Calculate next version number
+    existing_versions = session.exec(
+        select(ReportTemplateVersion)
+        .where(ReportTemplateVersion.template_id == template_id)
+        .order_by(ReportTemplateVersion.version_number.desc())
+    ).all()
+    
+    next_version = 1 if not existing_versions else existing_versions[0].version_number + 1
+    
+    # Create versions directory if it doesn't exist
+    versions_dir = STORAGE_ROOT / "versions"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate version file path
+    version_filename = f"template_{template_id}_v{next_version}.docx"
+    version_file_path = versions_dir / version_filename
+    
+    # Copy template file to version storage
+    shutil.copy2(template_path, version_file_path)
+    
+    # Calculate file hash and size
+    with open(version_file_path, 'rb') as f:
+        file_bytes = f.read()
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        file_size = len(file_bytes)
+    
+    # Mark all previous versions as not current
+    for version in existing_versions:
+        version.is_current = False
+        session.add(version)
+    
+    # Create new version record
+    new_version = ReportTemplateVersion(
+        template_id=template_id,
+        version_number=next_version,
+        name=template.name,
+        description=template.description,
+        template_type=template.template_type,
+        change_description=version_data.change_description,
+        file_size_bytes=file_size,
+        file_hash=file_hash,
+        version_file_path=str(version_file_path.relative_to(STORAGE_ROOT)),
+        created_at=datetime.now(),
+        is_current=True
+    )
+    
+    session.add(new_version)
+    session.commit()
+    session.refresh(new_version)
+    
+    logger.info(f"Created version {next_version} for template {template_id}: {template.name}")
+    
+    return new_version
+
+
+@app.get("/templates/{template_id}/versions", response_model=List[ReportTemplateVersionRead])
+def list_template_versions(
+    template_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    List all versions of a template.
+    
+    Returns versions in descending order (newest first).
+    
+    Args:
+        template_id: Template to get versions for
+    
+    Returns:
+        List of template versions with metadata
+    """
+    from app.models import ReportTemplate, ReportTemplateVersion
+    
+    # Verify template exists
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Get all versions
+    versions = session.exec(
+        select(ReportTemplateVersion)
+        .where(ReportTemplateVersion.template_id == template_id)
+        .order_by(ReportTemplateVersion.version_number.desc())
+    ).all()
+    
+    return versions
+
+
+@app.post("/templates/{template_id}/versions/{version_id}/restore", status_code=200)
+def restore_template_version(
+    template_id: int,
+    version_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Restore a template to a previous version.
+    
+    This replaces the current template file with the version file.
+    Creates a new version snapshot before restoring (backup current state).
+    
+    Args:
+        template_id: Template to restore
+        version_id: Version to restore to
+    
+    Returns:
+        Success message
+    """
+    from app.models import ReportTemplate, ReportTemplateVersion, ReportTemplateVersionCreate
+    from app.report_modular import get_template_path, STORAGE_ROOT
+    import shutil
+    
+    # Get template
+    template = session.get(ReportTemplate, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # System templates cannot be restored
+    if template.is_system_template:
+        raise HTTPException(status_code=403, detail="Cannot restore system templates")
+    
+    # Get version to restore
+    version = session.get(ReportTemplateVersion, version_id)
+    if not version or version.template_id != template_id:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # Get current template file path
+    try:
+        current_template_path = get_template_path(template)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Current template file not found")
+    
+    # Get version file path
+    version_file_path = STORAGE_ROOT / version.version_file_path
+    if not version_file_path.exists():
+        raise HTTPException(status_code=404, detail="Version file not found")
+    
+    # Create backup of current state before restoring
+    try:
+        backup_version_data = ReportTemplateVersionCreate(
+            change_description=f"Auto-backup before restoring to version {version.version_number}"
+        )
+        create_template_version(template_id, backup_version_data, session)
+    except Exception as e:
+        logger.error(f"Failed to create backup before restore: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create backup")
+    
+    # Restore version file to current template location
+    shutil.copy2(version_file_path, current_template_path)
+    
+    # Update template metadata
+    template.updated_at = datetime.now()
+    session.add(template)
+    session.commit()
+    
+    logger.info(f"Restored template {template_id} to version {version.version_number}")
+    
+    return {
+        "message": f"Successfully restored to version {version.version_number}",
+        "template_id": template_id,
+        "restored_version": version.version_number
+    }
 
 
 # =====================================================

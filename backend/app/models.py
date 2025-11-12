@@ -321,6 +321,38 @@ class ReportTemplate(ReportTemplateBase, table=True):
     updated_at: datetime = Field(default=None)
     created_by_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
 
+
+class ReportTemplateVersionBase(SQLModel):
+    """Base model for report template version history (snapshot-based versioning)."""
+    template_id: int = Field(..., foreign_key="reporttemplate.id", index=True)
+    version_number: int = Field(..., index=True)  # Auto-incremented per template
+    
+    # Snapshot of template metadata at this version
+    name: str = Field(..., max_length=200)
+    description: Optional[str] = Field(default=None)
+    template_type: str = Field(default="Custom", max_length=50)
+    
+    # Version-specific metadata
+    change_description: Optional[str] = Field(default=None, max_length=1000)  # What changed in this version?
+    file_size_bytes: Optional[int] = Field(default=None)  # Size of DOCX file
+    file_hash: Optional[str] = Field(default=None, max_length=64)  # SHA-256 hash for integrity
+    
+    # Storage location for this version's file
+    version_file_path: str = Field(...)  # e.g., "versions/template_5_v3.docx"
+    
+    # Metadata
+    created_by_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default=None, index=True)
+    is_current: bool = Field(default=False)  # Is this the active version?
+
+
+class ReportTemplateVersion(ReportTemplateVersionBase, table=True):
+    """Database model for ReportTemplateVersion."""
+    __tablename__ = "report_template_versions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+
 # --- Vulnerability Repository Models ---
 
 class VulnerabilityTemplateBase(SQLModel):
@@ -981,6 +1013,18 @@ class ReportTemplateUpdate(SQLModel):
     variables: Optional[str] = Field(default=None)
     layout_config: Optional[str] = Field(default=None)
     is_public: Optional[bool] = Field(default=None)
+
+
+class ReportTemplateVersionRead(ReportTemplateVersionBase):
+    """Read model for template versions with full metadata."""
+    id: int
+    created_at: datetime
+
+
+class ReportTemplateVersionCreate(SQLModel):
+    """Model for creating a new template version."""
+    change_description: Optional[str] = Field(default=None, max_length=1000)
+
 
 # Rebuild models to resolve forward references
 FindingReadWithInstances.model_rebuild()

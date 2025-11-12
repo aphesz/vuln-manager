@@ -43,11 +43,13 @@ import {
   Warning as WarningIcon,
   VerifiedUser as VerifyIcon,
   Visibility as PreviewIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import PageBreadcrumbs from './PageBreadcrumbs';
 import TemplateVariablesForm from './TemplateVariablesForm';
+import TemplateVersionHistory from './TemplateVersionHistory';
 
 // Use relative path for API calls - proxied through Nginx in Docker
 const API_BASE_URL = '/api';
@@ -96,6 +98,8 @@ const ModularReportGenerator: React.FC = () => {
   const [selectedTemplateInfo, setSelectedTemplateInfo] = useState<ReportTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<ReportTemplate | null>(null);
   const [variablesDialogOpen, setVariablesDialogOpen] = useState(false);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  const [selectedTemplateForVersions, setSelectedTemplateForVersions] = useState<ReportTemplate | null>(null);
   
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -267,6 +271,16 @@ const ModularReportGenerator: React.FC = () => {
     } finally {
       setPreviewing(false);
     }
+  };
+
+  const handleShowVersionHistory = (template: ReportTemplate) => {
+    setSelectedTemplateForVersions(template);
+    setVersionHistoryOpen(true);
+  };
+
+  const handleVersionRestored = () => {
+    setSuccess('Template restored successfully! Reloading templates...');
+    loadAvailableTemplates();
   };
 
   const handleUploadTemplate = async () => {
@@ -613,6 +627,17 @@ const ModularReportGenerator: React.FC = () => {
                             </IconButton>
                             <IconButton
                               size="small"
+                              color="info"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShowVersionHistory(template);
+                              }}
+                              title="Version history"
+                            >
+                              <HistoryIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
                               color="error"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -945,6 +970,20 @@ const ModularReportGenerator: React.FC = () => {
         templateIds={selectedTemplateIds}
         onSubmit={handleVariablesSubmit}
       />
+
+      {/* Template Version History Dialog */}
+      {selectedTemplateForVersions && (
+        <TemplateVersionHistory
+          open={versionHistoryOpen}
+          onClose={() => {
+            setVersionHistoryOpen(false);
+            setSelectedTemplateForVersions(null);
+          }}
+          templateId={selectedTemplateForVersions.id}
+          templateName={selectedTemplateForVersions.name}
+          onVersionRestored={handleVersionRestored}
+        />
+      )}
     </Box>
   );
 };
