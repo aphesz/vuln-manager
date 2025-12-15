@@ -31,7 +31,7 @@ RUN node node_modules/vite/bin/vite.js build
 
 # Stage 2: Serve the application using a lightweight web server
 # Pinned to specific digest for reproducible builds
-FROM nginx:alpine@sha256:b3c656d55d7ad751196f21b7fd2e8d4da9cb430e32f646adcf92441b72f82b14
+FROM nginx:alpine@sha256:052b75ab72f690f33debaa51c7e08d9b969a0447a133eb2b99cc905d9188cb2b
 
 # Copy the built React app from the builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
