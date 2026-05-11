@@ -1,7 +1,7 @@
 # Stage 1: Build the React application with Vite
 # Using Node 22 LTS Alpine for latest security patches (CVE mitigation)
 # Pinned to specific digest for reproducible builds
-FROM node:22-alpine@sha256:b2358485e3e33bc3a33114d2b1bdb18cdbe4df01bd2b257198eb51beb1f026c5 AS builder
+FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea AS builder
 
 # Set the working directory
 WORKDIR /app
