@@ -2,7 +2,7 @@
 pip>=25.3
 
 fastapi>=0.115.0  # security: fix PYSEC-2024-38 (was 0.109.0)
-starlette>=0.40.0  # security: fix GHSA-f96h-pmfr-66vw, GHSA-2c2j-9gv5-cj73, GHSA-7f5h-v6xp-fcq8 (was 0.35.1)
+starlette>=1.2.1  # security: fix GHSA-f96h-pmfr-66vw, GHSA-2c2j-9gv5-cj73, GHSA-7f5h-v6xp-fcq8 (was 0.35.1)
 uvicorn[standard]==0.27.0.post1
 sqlmodel==0.0.16
 psycopg2-binary==2.9.9  # PostgreSQL driver (required)
