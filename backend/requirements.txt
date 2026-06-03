@@ -1,5 +1,5 @@
 # Security: upgrade pip to fix CVE-2025-8869 and malicious wheel vulnerabilities
-pip>=25.3
+pip>=26.1.2
 
 fastapi>=0.115.0  # security: fix PYSEC-2024-38 (was 0.109.0)
 starlette>=0.40.0  # security: fix GHSA-f96h-pmfr-66vw, GHSA-2c2j-9gv5-cj73, GHSA-7f5h-v6xp-fcq8 (was 0.35.1)
