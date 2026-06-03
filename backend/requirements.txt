@@ -23,7 +23,7 @@ pytest-cov==4.1.0  # coverage reporting
 
 # Advanced Reporting (v1.1.0)
 matplotlib>=3.8.0  # Chart generation for executive reports
-pillow>=10.0.0  # Image processing for charts
+pillow>=12.2.0  # Image processing for charts
 apscheduler>=3.10.0  # Job scheduling for automated reports
 python-pptx>=0.6.23  # PowerPoint export
 docxtpl==0.16.7  # DOCX templating for PoC report generator
