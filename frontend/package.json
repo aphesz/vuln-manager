@@ -22,7 +22,7 @@
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.3.0",
-    "react-router-dom": "^6.21.0",
+    "react-router-dom": "^7.16.0",
     "typescript": "^5.3.3",
     "web-vitals": "^4.2.0"
   },
